@@ -1,0 +1,3 @@
+root_environment_path: /home/tiger/.environment
+harness_template_repository: /home/tiger/egoagent/harness
+identity_repository: /home/tiger/egoagent/identity

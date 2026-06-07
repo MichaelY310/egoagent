@@ -1,0 +1,19 @@
+{
+    "type": "function",
+    "function": {
+        "name": "read_file",
+        "description": "Use this tool when you want to read a file.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "description": "The path to the file you want to read.",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "file_path"
+            ]
+        }
+    }
+}

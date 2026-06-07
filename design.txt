@@ -1,0 +1,62 @@
+tools that create and update a wiki page.
+search chat history
+
+每个agent可以直接由一个identity目录定义，其中包含：
+    1. agent独有的tool
+    2. agent独有的knowledge
+    3. 特有的prompt，如设置性格和功能
+    4. 特定的llm，如claude，gpt，或者自己微调的
+
+agent可以自己创建identity。只需要写一个identity目录后重新加载即可。此外应该内置一个tool让agent可以根据identity创建agent。
+agent也可以创建knowledge和tool，无论是给自己专用，给别人专用，或者放在一个环境中。
+
+用户可以选择和agent对话，或者创建agent系统
+agent系统包含多个agent，用户可以自己创建系统，定义父子agent关系，可使用的tool
+
+sync行为
+agent自己创建的东西可能和现有环境或知识冲突，因此每当agent创建新内容时需要进行审核。
+
+knowledge 应当包含
+    1. 对环境的认知
+    2. 对其他agent的认知
+    3. 对用户的认知
+    4. 对任务的认知（类似skill）
+
+环境包含
+    1. 可用工具
+    2. 专属环境本身的knowledge
+环境中的内容可以被每一个在环境下工作的agent看见
+用户设备本身是最大的环境。在任何时候这个环境都是可见的
+每进入一个新workspace都会创建一个新环境
+环境是可以被agent修改的。
+
+
+
+
+
+==== 问题场景 ====
+1. 给定一大堆论文文件，在询问相关内容后做一些无关的问答，然后再次询问论文相关内容后会上网搜索还是直接查看论文文件
+2. 给定论文文件并让其写一个新论文后，经过多轮关于给定论文的询问后，再次询问创建的新论文，是否能找到相关内容
+3. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+summary agent
+Given a very long text, like a book, ask a agent to create questions based on each chunk of the book. Create a dataset componsed of the questions. 
+During training, ask a agent to summarize each chunk, and then repetitively merge two consecutive chunks, until the result is a short paragraph, then ask agent to answer questions.
+There can also be a summarizer that summarizes user's command line operations.
+
+
+根据agent最近的操作推荐tools

@@ -1,0 +1,12 @@
+{
+    "name": "react_single",
+    "description": "Single agent ReAct loop with user interaction. Agent receives user input and can use tools in a loop until it gives a text response.",
+    "slots": {
+        "agent": {
+            "description": "The main agent that interacts with the user",
+            "required": true
+        }
+    },
+    "return_mode": "all",
+    "max_turns": 100
+}

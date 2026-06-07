@@ -1,0 +1,305 @@
+# 如何创建/复制/修改 Harness 模板
+
+## 概述
+
+Harness 是控制 agent 交互逻辑的模板，存放在：
+```
+{{config.harness_template_repository}}
+```
+
+每个 harness 是一个文件夹，包含：
+- `config.json`：元信息（名称、slots、prompts、return_mode 等）
+- `protocol.py`：交互逻辑（必须导出一个 `run(harness)` 函数）
+
+当前可用的 harness 模板：
+- `react_single`：单 agent 与用户交互的 ReAct 循环
+- `turn_based`：带裁判的多 agent 辩论协议
+
+## 方法一：复制现有模板再修改（推荐）
+
+### 第 1 步：复制 harness 模板
+使用 `copy_harness` tool：
+```
+copy_harness(source_name="react_single", new_name="my_harness", overwrite=true)
+```
+这会把 `{{config.harness_template_repository}}/react_single` 复制到 `{{config.harness_template_repository}}/my_harness`，并自动更新 config.json 中的 name 字段。
+
+### 第 2 步：修改 config.json
+用 read_file 读取 `{{config.harness_template_repository}}/my_harness/config.json`，然后用 write_file 修改。
+
+### 第 3 步：修改 protocol.py
+用 read_file 读取 `{{config.harness_template_repository}}/my_harness/protocol.py`，然后用 write_file 修改交互逻辑。
+
+### 第 4 步：使用新 harness
+```
+create_harness(harness_dir="my_harness", agents="agent:identity/dog")
+```
+
+---
+
+## 方法二：从零创建
+
+### 第 1 步：创建目录和 config.json
+在 `{{config.harness_template_repository}}/` 下新建文件夹，然后写入 config.json。
+
+### 第 2 步：编写 protocol.py
+在同一文件夹下写入 protocol.py，必须导出 `run(harness)` 函数。
+
+---
+
+## config.json 详细说明
+
+### 必填字段
+- `name`（string）：harness 名称，必须和文件夹名一致
+- `slots`（object）：定义 agent 插槽
+
+### 可选字段
+- `description`（string）：描述
+- `prompts`（object）：可参数化的 prompt 定义
+- `return_mode`（string）："all" 返回所有消息 / "last" 只返回最后一条（默认 "last"）
+- `max_turns`（number）：最大轮数
+
+### slots 格式
+```json
+{
+    "slots": {
+        "slot_name": {
+            "description": "这个 slot 的作用说明",
+            "required": true
+        }
+    }
+}
+```
+- 每个 key 是 slot 名称（agent 的 name 会被设为 slot 名）
+- `required: true` 表示启动前必须填入 agent
+
+### prompts 格式
+```json
+{
+    "prompts": {
+        "prompt_name": {
+            "description": "这个 prompt 的用途说明",
+            "required": true,
+            "default": "默认值（如果有）"
+        }
+    }
+}
+```
+- `required: true` 的 prompt 没有 default 时，调用者必须传入
+- 在 protocol.py 中通过 `harness.prompts.get("prompt_name")` 读取
+
+### 示例：react_single 的 config.json
+```json
+{
+    "name": "react_single",
+    "description": "Single agent ReAct loop with user interaction.",
+    "slots": {
+        "agent": {
+            "description": "The main agent that interacts with the user",
+            "required": true
+        }
+    },
+    "return_mode": "all",
+    "max_turns": 100
+}
+```
+
+### 示例：turn_based 的 config.json
+```json
+{
+    "name": "turn_based",
+    "description": "带裁判的辩论协议。裁判开场后，正方与反方轮流发言，裁判每轮点评并可提前宣判结束。",
+    "slots": {
+        "正方": { "description": "支持议题的辩手", "required": true },
+        "反方": { "description": "反对议题的辩手", "required": true },
+        "裁判": { "description": "裁判议题", "required": true }
+    },
+    "prompts": {
+        "task": {
+            "description": "辩题内容和规则说明",
+            "required": true
+        },
+        "debater": {
+            "description": "辩手行为规范提示词",
+            "default": "你是一个正式辩手。..."
+        },
+        "judge_opening": {
+            "description": "裁判开场白提示词",
+            "default": "你是本场辩论的裁判。..."
+        },
+        "judge_review": {
+            "description": "裁判每轮点评提示词",
+            "default": "..."
+        },
+        "judge_final": {
+            "description": "裁判最终宣判提示词",
+            "default": "..."
+        }
+    },
+    "return_mode": "last",
+    "max_turns": 20
+}
+```
+
+---
+
+## protocol.py 详细说明
+
+protocol.py 必须导出一个 `run(harness)` 函数，这是 harness 的执行入口。
+
+### harness 对象可用的属性和方法
+- `harness.agents`（dict）：`{slot_name: Agent}` 字典
+- `harness.session`（Session）：当前 session，提供 `record(msg)` 和 `messages` 
+- `harness.prompts`（dict）：`{prompt_name: str}` 所有已解析的 prompt
+- `harness.workspace`（Path or None）：当前 workspace 路径
+- `harness.config`（dict）：config.json 的原始内容
+
+### Agent 对象可用的方法
+- `agent.step(messages)` → `(response, tool_calls)`：调用一次 LLM，自动记录
+- `agent.execute_tool_call(tool_call)` → `result_str`：执行 tool，自动记录
+- `agent.name`：agent 名字（即 slot 名）
+- `agent.identity.SEGO[0]["task_prompt"]`：动态修改 agent 的任务提示
+
+### Session 记录格式
+每条消息是一个 dict：
+- `{"role": "user", "content": "..."}`
+- `{"role": "assistant", "name": "agent_name", "content": "..."}`
+- `{"role": "tool", "tool_call_id": "...", "content": "..."}`
+
+用 `harness.session.record(msg)` 记录。`agent.step()` 和 `agent.execute_tool_call()` 会自动记录。
+
+### 示例：react_single 的 protocol.py
+```python
+"""Single Agent ReAct Loop"""
+
+def run(harness):
+    agent = harness.agents["agent"]
+    while True:
+        user_input = input(">>> ")
+        if user_input == "exit":
+            break
+
+        harness.session.record({"role": "user", "content": user_input})
+        harness.session.record_full({"role": "user", "content": user_input})
+
+        step_count = 0
+        while True:
+            print(f"=== Step {step_count}")
+            response, tool_calls = agent.step(harness.session.messages)
+
+            if tool_calls:
+                for tool_call in tool_calls:
+                    result = agent.execute_tool_call(tool_call)
+                    print(f"[tool] {tool_call['function']['name']} -> {result[:100]}")
+            else:
+                break
+            print(f"=== End of step {step_count}")
+            step_count += 1
+```
+
+### 示例：turn_based 的 protocol.py（简化版）
+```python
+"""Turn-Based Debate Protocol with Judge"""
+
+def agent_speak(agent, harness, max_steps=3):
+    """让 agent 完成一次 ReAct 发言"""
+    step_count = 0
+    response = ""
+    while step_count < max_steps:
+        response, tool_calls = agent.step(harness.session.messages)
+        if tool_calls:
+            for tool_call in tool_calls:
+                result = agent.execute_tool_call(tool_call)
+            step_count += 1
+        else:
+            break
+    return response
+
+def run(harness):
+    agent_pro = harness.agents["正方"]
+    agent_con = harness.agents["反方"]
+    judge = harness.agents["裁判"]
+
+    task = harness.prompts.get("task", "请围绕给定议题展开辩论。")
+
+    # 辩题作为初始 user message
+    harness.session.record({"role": "user", "content": task})
+
+    # 裁判开场
+    agent_speak(judge, harness)
+
+    # 辩论轮次
+    for round_num in range(1, 6):
+        agent_speak(agent_pro, harness)
+        agent_speak(agent_con, harness)
+        judge_response = agent_speak(judge, harness)
+        if "[DONE]" in judge_response:
+            break
+```
+
+---
+
+## 关键设计模式
+
+### 1. 带用户交互的循环（如 react_single）
+```python
+while True:
+    user_input = input(">>> ")
+    harness.session.record({"role": "user", "content": user_input})
+    # agent.step 循环直到无 tool_calls
+```
+
+### 2. 无用户交互的自动执行（如 turn_based）
+```python
+harness.session.record({"role": "user", "content": task_prompt})
+# 多个 agent 轮流 speak，不需要 input()
+```
+
+### 3. 动态修改 agent 行为
+```python
+agent.identity.SEGO[0]["task_prompt"] = "新的任务提示"
+```
+
+### 4. 终止条件
+- protocol 函数 return 即结束
+- agent 可调用 end_session tool 抛出 EndSession 异常
+- 在 response 中检测特定标记（如 [DONE]）然后 break
+
+---
+
+## 使用 create_harness tool 启动
+创建好 harness 后用 create_harness tool 启动：
+```
+create_harness(
+    harness_dir="my_harness",
+    agents="slot1:identity/dog,slot2:identity/cat",
+    prompts="task:辩题内容|other_prompt:值",
+    return_mode="all"
+)
+```
+- `harness_dir`：harness 模板名称（会自动在 {{config.harness_template_repository}} 下查找）
+- `agents`：格式 "slot:identity_path,slot:identity_path"
+- `prompts`：格式 "name:value|name:value"（可选）
+- `return_mode`："all" 或 "last"（可选，覆盖 config 默认值）
+
+---
+
+## 完整流程示例
+
+假设用户要求："创建一个新的 harness，让两个 agent 轮流回答同一个问题"
+
+1. `copy_harness(source_name="react_single", new_name="two_agents_alternate", overwrite=true)`
+2. `read_file(path="{{config.harness_template_repository}}/two_agents_alternate/config.json")`
+3. 用 write_file 修改 config.json：添加两个 slot、添加 task prompt
+4. `read_file(path="{{config.harness_template_repository}}/two_agents_alternate/protocol.py")`  
+5. 用 write_file 重写 protocol.py：实现轮流发言逻辑
+6. 测试：`create_harness(harness_dir="two_agents_alternate", agents="agent1:identity/dog,agent2:identity/cat", prompts="task:问题内容")`
+
+## 注意事项
+- harness 模板存放位置：`{{config.harness_template_repository}}/`，不要放在其他地方
+- identity 存放位置：`{{config.identity_repository}}/`
+- config.json 的 name 字段必须和文件夹名一致
+- protocol.py 必须导出 `run(harness)` 函数
+- agent.step() 会自动记录消息到 session，不需要手动 record assistant 消息
+- 用户消息需要手动 record：`harness.session.record({"role": "user", "content": ...})`
+- 如果不需要用户交互，第一条 user message 用 prompt 内容代替

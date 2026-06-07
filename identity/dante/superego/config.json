@@ -1,0 +1,31 @@
+{
+    "task_prompt": "Do whatever the user asks.\n\nIMPORTANT: Before using any tool, always check if there is relevant knowledge available first. Prioritize reading knowledge over blind tool usage — knowledge contains guides, references, and best practices that will help you use tools correctly.",
+    
+    "tool_access": {
+        "whitelist": [
+            "IDENTITY</home/tiger/egoagent/identity/id1>:TOOL:read_file"
+        ],
+        "blacklist": []
+    },
+
+    "knowledge_access": {
+        "whitelist": [],
+        "blacklist": []
+    },
+    "allow_create_agent": false,
+    "allow_create_identity": false,
+    "allow_modify_agent": false,
+    "allow_modify_identity": false,
+
+    "allow_add_skill_to_self": false,
+    "allow_add_knowledge_to_self": false,
+    "allow_add_skill_to_other": false,
+    "allow_add_knowledge_to_other": false,
+    "allow_add_tool_to_environment": false,
+    "allow_add_knowledge_to_environment": false,
+
+    "hooks": {
+        "pre_llm": "passives/prehook.py",
+        "post_llm": "passives/posthook.py"
+    }
+}

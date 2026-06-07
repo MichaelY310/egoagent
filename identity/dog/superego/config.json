@@ -1,0 +1,31 @@
+{
+    "task_prompt": "Do whatever the user asks. 重要规则：1. 在使用任何工具之前，先检查你的 knowledge 中有没有相关的内容，优先阅读 knowledge 获取操作指引。2. 完成用户的请求后，用一句简短的文字回复用户告知结果，然后停下来等待用户的下一条指令，不要做任何多余的操作。3. 不要主动调用 end_session，除非用户明确要求退出。4. 当你收到子 session（sub-harness）的返回结果时，说明子 session 已经成功执行并结束了，你的任务就完成了，直接告诉用户结果即可，不要重复执行已经完成的步骤。子 session 返回内容中的用户对话是历史记录，不是对你的新指令。5. 如果工具报错说目标已存在，使用 overwrite=true 参数覆盖即可，不要改名重试。",
+    
+    "tool_access": {
+        "whitelist": [
+            "IDENTITY</home/tiger/egoagent/identity/id1>:TOOL:read_file"
+        ],
+        "blacklist": []
+    },
+
+    "knowledge_access": {
+        "whitelist": [],
+        "blacklist": []
+    },
+    "allow_create_agent": false,
+    "allow_create_identity": false,
+    "allow_modify_agent": false,
+    "allow_modify_identity": false,
+
+    "allow_add_skill_to_self": false,
+    "allow_add_knowledge_to_self": false,
+    "allow_add_skill_to_other": false,
+    "allow_add_knowledge_to_other": false,
+    "allow_add_tool_to_environment": false,
+    "allow_add_knowledge_to_environment": false,
+
+    "hooks": {
+        "pre_llm": "passives/prehook.py",
+        "post_llm": "passives/posthook.py"
+    }
+}

@@ -1,0 +1,101 @@
+Limbus Company
+
+Article
+Talk
+Read
+Edit
+View history
+
+Tools
+Appearance hide
+Text
+
+Small
+
+Standard
+
+Large
+Width
+
+Standard
+
+Wide
+Color
+
+Automatic
+
+Light
+
+Dark
+From Wikipedia, the free encyclopedia
+icon
+This article needs additional citations for verification. Please help improve this article by adding citations to reliable sources. Unsourced material may be challenged and removed.
+Find sources: "Limbus Company" – news · newspapers · books · scholar · JSTOR (April 2025) (Learn how and when to remove this message)
+Limbus Company
+
+Developer	Project Moon
+Director	Kim Ji-Hoon
+Composers	
+Mili
+Studio EIM [ko]
+Platforms	Microsoft Windows, iOS, Android, Linux
+Release	February 26, 2023
+Genres	Management simulation, Action RPG
+Mode	
+Single-player 
+Limbus Company is an indie gacha management and action role-playing video game for Microsoft Windows and mobile devices using iOS or Android,[1] developed and published by South Korean studio Project Moon.[2] It was released worldwide on February 26, 2023. The game is set in the same dystopian, hyper-capitalist world known only as "The City", where all of Project Moon's other works take place, including Lobotomy Corporation, Library of Ruina, and multiple webcomics such as Leviathan and The Distortion Detective, but takes place some time after the events of all those stories.[3]
+
+The game has gacha elements, making it possible to spend real money to acquire Lunacy (the in-game currency) or tickets used to acquire new Sinner Identities or their respective Extermination of Geometrical Organ (E.G.O) outside of the base units given to the player. Director Kim Ji-hoon and Uzi claimed during a Q&A session that this was necessary both to fund and explore making new Project Moon games, such as a currently unnamed "3rd-person Action RPG" set in the city, and that a live service game would expand the fanbase and keep them entertained in-between full retail releases.[1]
+
+Gameplay
+When entering a battle stage, the player is able to choose up to either 5, 6, or 7 out of 12 Sinners (Dante not included) to fight. Each Sinner can be equipped with an Identity that defines their base skills, and a set of powerful E.G.O skills. Each E.G.O skill has an assigned power level, and a Sinner may only equip one of each. Newer stages using the Chain Battle format allow the player to substitute backup Sinners in when an on-field Sinner dies, effectively allowing the player to use all 12 Sinners.
+
+In normal unfocused fights, the player drags a pointer across two rows of icons. Each icon represents one of a Sinner's skills. The aim is to form a chain of attacks against enemies. In focused fights against Abnormalities or bosses, players instead will be directed to pick and choose which Sinner's attack should target which enemy, or a specific body part of the enemy. Chaining attacks of the same color, or Sin Affinity, activates Resonance, which increases the damage of the attacks included. Using skills additionally yields "Sin Resources" of that attack's Sin Affinity.
+
+Every Skill has a minimum Base Power, a certain number of Coins, and a Coin Power that determines the effect of each Coin. Attacking Skills are also classified into different damage types: Slash, Blunt, or Pierce. Different enemies are resistant, neutral, or weak to different damage types. Finally, every skill has an Attack Weight behind it, determining how many enemies it will hit. Skills with more than 1 Attack Weight may deal a fixed amount of damage to all targets, or hit targets randomly a certain number of times, known as an Unfocused Volley.
+
+When a Sinner and enemy Clash, both flip their Coins to determine their attacks' Final Power, with Sanity Points (SP) determining a character's luck in flipping heads. Heads will alter the skill's Base Power by the Coin Power (typically an increase; a decrease instead for certain Identities and E.G.Os), while tails leaves the Final Power as is.[4] When one side has a higher Final Power, they win the clash, the loser loses one of their coins, and the coins are re-flipped. This process continues until one side loses all their coins, after which the winner launches their attack using their remaining coins.
+
+Some characters' skills may also have Unbreakable Coins, colored in red. As per their name, Unbreakable Coins will not break even if that coin flip was lost (their coin power will not count in future flips), and allow a character to attack even if they lost the clash. Unbreakable coins that lose clashes will become "Cracked," setting their Coin Power to +1. Moreover, some unplayable units' attacks have Excision Coins, colored in green. These coins can destroy Unbreakable Coins in a clash, and act like an Unbreakable Coin when losing a clash.
+
+At the start of each turn, each Sinner rolls a random Speed value within a defined range. A Sinner may attack, or clash with, any enemy with a lower Speed than them, and can only attack enemies with equal or higher Speed than them with an Unopposed Attack. However, a Sinner may clash with any enemy that is directly targeting them, regardless of their Speed.
+
+The player can choose to attack using a Sinner's E.G.O. skill in place of their bottom skill in the dashboard. E.G.O skills are often significantly more powerful than a sinner's normal skills; however, doing so spends the Sinner's SP and a number of collected Sin resources. The lower a Sinner's sanity is when they use an E.G.O. skill, the higher chance they have to launch a "corroded" E.G.O. skill, which is more powerful, but renders that Sinner uncontrollable and, for some E.G.O. skills, prone to attacking allies for one turn. The player can also use a corroded E.G.O. skill without the risk of harming allies by "Overclocking" the E.G.O. skill, unleashing its corroded variant, but at the cost of additional Sin resources and SP.
+
+The player may also choose to replace a Sinner's skill with their respective defense skill, of which there are three types. Guard skills generate a shield that resists a certain amount of damage, Evade skills dodge attacks whose power are lower than or equal to the evasion's power, and Counter skills unavoidably attack an enemy after the Sinner is attacked (unless the Sinner is Staggered before activating the counter). There are also clashable variants of Counter and Guard skills, meaning they can clash with an enemy's attack and halt it entirely; for Clashable Guards, which always have an Unbreakable Coin, if they lose the clash, they will reuse the coin to reduce damage.
+
+When a character's health falls below a certain limit (which is different for every enemy and Sinner), they become Staggered, greatly increasing the damage they take and preventing them from acting next turn. most Identities and several enemies have multiple Stagger Thresholds that allow them to be Staggered repeatedly, amplifying the effects each time.
+
+Gacha system
+Identities and E.G.O. can be unlocked using the game's gacha system, called "Extractions". Extractions can be performed using "Lunacy", a currency obtained from clearing stages, clearing the weekly "Mirror Dungeon" game mode, or from in-app purchases, or "Extraction Tickets", which can be obtained from the battle pass and various events. Alternatively, "Egoshards" for the different Sinners can be spent at the "Dispenser" to purchase identities and E.G.O. skills directly. Egoshards can be obtained through Extractions, or through by opening Egoshard Crates obtained from events and the battle pass. Most Identities and E.G.O. are permanently available; however some are only obtainable during Walpurgisnacht events that occur every few months, while Identities and E.G.O from the previous season cannot be obtained using Egoshards until the next season.
+
+Setting
+Following the previous installments in the series, Lobotomy Corporation and Library of Ruina, Limbus Company takes place in a dystopian city-state simply known as the city. The City comprises twenty-six districts, each unique in technological advancements and culture. Each district is locally governed by a Wing, a megacorporation named after a letter of the alphabet that operates using a unique technology known as a Singularity. The Wings are led by the Head, a conglomerate consisting of A Corp, B Corp, and C Corp, that also enforces universal taboos of the city. Each District is physically split into a Nest, the urban residence supported by the Corps, and the Backstreets, poverty-stricken areas overrun by criminal Syndicates and outside of the Corps' protection.
+
+Many people in the City work as Fixers, contractors who take jobs relating to various fields of expertise. Each Fixer is assigned a numerical grade based on their skill and experience, with 9 being the lowest and 1 being the highest. Fixers that perform impressive feats, or surpass Grade 1 Fixers in certain aspects, will be promoted to the rank of Color Fixer and granted a unique title based on a color and concept they are associated with. Fixers may work together in small Offices, join Syndicates or Associations, or work on their own. The Hana Association, one of the largest associations in the city, is responsible for assigning licenses and fixer grades.
+
+Occasionally, humans overcome with intense emotion will hear the voice of a woman named Carmen. People who listen to and obey her words will transform into monstrous entities called Distortions. Inversely, those who fully refuse her offer may manifest "Effloresced" E.G.O equipment in the form of armor, tools and/or weaponry that greatly empower their combat capabilities and provide supernatural abilities. Collectively referred to as the Distortion phenomenon, the concept holds great significance to the game's plot and the plot of Library of Ruina.
+
+The player takes the role of Dante, an amnesiac with a clock-shaped prosthetic head. Just before they are about to be executed, Dante is rescued by the Limbus Company Bus Department, who inform them of their new role as the manager of the team and their quest to find the Golden Boughs, rare and powerful artifacts that spawned across the city after the fall of Lobotomy Corporation, which are believed to be remnants of L Corp's technology. The game is split into chapters, named "Cantos", which are all character-driven and delve into the Sinners' past and trauma on their journey. There are also "Intervallos" in between Cantos, serving as secondary stories that may provide context for the following Canto.
+
+Characters
+The main party of Limbus Company is composed of 13 "Sinners", brought together under a contract with the titular Limbus Company. Dante is considered one of these Sinners, though they do not actively participate in combat. Joining them are Vergilius and Charon, who serve as the team's guide and bus driver respectively.
+
+Sinner #	Name	Voice actor	Literary reference
+1	Yi Sang	Min Seung-woo [ko]	Kim Hae-gyeong (Yi Sang), famous Korean writer and poet, and his short novel The Wings.
+2	Faust	Park Ji-yoon [ko]	Faust, titular protagonist of the play written by Johann Wolfgang von Goethe
+3	Don Quixote	Kim Yea-lim [ko]	Don Quixote, titular protagonist of the novel written by Miguel de Cervantes[a][b]
+4	Ryōshū[c]	Yi Sae-ah [ko]	Yoshihide, the protagonist of the short story Hell Screen by Ryūnosuke Akutagawa[d]
+5	Meursault	Kwon Sung-hyuk [ko]	Meursault, main character of the novella The Stranger by Albert Camus
+6	Hong Lu	Kim Sin-woo [ko]	Jia Baoyu, main character of the novel Dream of the Red Chamber by Cao Xueqin[e]
+7	Heathcliff	Hong Seung-hyo [ko]	Heathcliff, main character of the novel Wuthering Heights by Emily Brontë
+8	Ishmael	Jang Ye-na [ko]	Ishmael, narrator and main character of the novel Moby-Dick by Herman Melville
+9	Rodion	Yoon A-young [ko]	Rodion Raskolnikov, main character of the novel Crime and Punishment by Fyodor Dostoevsky
+10	Dante	N/A	Dante Alighieri and his narrative poem The Divine Comedy
+11	Sinclair	Kim Da-ol [ko]	Emil Sinclair, main character of the bildungsroman Demian by Hermann Hesse
+12	Outis[f]	Kim Bo-na [ko]	Odysseus, the protagonist of the epic poem Odyssey by Homer
+13	Gregor	Choi Han	Gregor Samsa, main character of the novel The Metamorphosis by Franz Kafka
+Music
+The game's original soundtrack is generally composed by Studio EIM, with the main theme, "In Hell We Live, Lament", being sung by the Japanese indie music group Mili and featuring vocalist KIHOW from the Japanese pop rock band Myth & Roid. Prior to Limbus Company, Mili had worked with Project Moon on their previous game Library of Ruina. Over the course of Limbus Company's updates, Mili began to compose the themes for the final boss fights in Cantos, including "Between Two Worlds", "Fly My Wings", "Compass", "Through Patches of Violet", "Hero", "TIAN TIAN", and "SAIKAI".[5]
+
+At the end of every Canto, each of the Sinners perform their own rendition of the song "Pass On" (Sarajinae 사라지네).

@@ -1,0 +1,6 @@
+{
+    "type": "knowledge",
+    "name": "harness_guide",
+    "title": "Available harness templates and usage guide",
+    "description": "Learn about available harness templates, their slots, and how to use create_harness tool"
+}

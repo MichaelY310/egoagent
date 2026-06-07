@@ -1,0 +1,16 @@
+{
+    "type": "knowledge",
+    "title": "Limbus Company",
+    "name": "learn_limbus_company",
+    "description": "Use this knowledge when you want to learn about Limbus Company, a gacha management and action RPG game developed by Project Moon.",
+    "author": "admin",
+    "created_at": "2025-05-20",
+    "updated_at": "2025-05-20",
+    "relations": [],
+    "metadata": {
+        "views": null,
+        "likes": null,
+        "comments": null
+    },
+    "embedding": null
+}

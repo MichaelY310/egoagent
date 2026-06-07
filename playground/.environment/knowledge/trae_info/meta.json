@@ -1,0 +1,16 @@
+{
+    "type": "knowledge",
+    "title": "Trae",
+    "name": "learn_trae",
+    "description": "Use this knowledge when you want to learn about Trae, an AI-powered IDE developed by ByteDance.",
+    "author": "admin",
+    "created_at": "2025-05-20",
+    "updated_at": "2025-05-20",
+    "relations": [],
+    "metadata": {
+        "views": null,
+        "likes": null,
+        "comments": null
+    },
+    "embedding": null
+}

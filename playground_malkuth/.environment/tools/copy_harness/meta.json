@@ -1,0 +1,23 @@
+{
+    "type": "tool",
+    "name": "copy_harness",
+    "description": "复制一个现有的 harness 模板到新名称。会自动更新 config.json 中的 name 字段。复制后可以修改 config.json 和 protocol.py 来自定义新 harness 的行为。",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "source_name": {
+                "type": "string",
+                "description": "源 harness 模板名称（如 react_single、turn_based）"
+            },
+            "new_name": {
+                "type": "string",
+                "description": "新 harness 模板的名称"
+            },
+            "overwrite": {
+                "type": "boolean",
+                "description": "如果目标已存在，是否覆盖。默认 false"
+            }
+        },
+        "required": ["source_name", "new_name"]
+    }
+}

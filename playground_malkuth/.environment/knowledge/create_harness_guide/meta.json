@@ -1,0 +1,5 @@
+{
+    "type": "knowledge",
+    "name": "create_harness_guide",
+    "description": "详细教程：如何从零创建一个 harness 模板，或复制已有模板并修改。包含 config.json 和 protocol.py 的完整说明、示例代码。当需要创建或修改 harness 模板时先读取此 knowledge。"
+}

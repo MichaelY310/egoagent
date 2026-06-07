@@ -1,0 +1,99 @@
+# 如何创建一个新的 Identity
+
+## 概述
+Identity 是 agent 的身份定义，存放在 /home/tiger/egoagent/identity/ 目录下。
+每个 identity 是一个文件夹，包含：
+- id.json：基础信息（名字、性格、描述、LLM 配置）
+- ego/skills/：技能（工具）
+- ego/knowledge/：知识
+- superego/config.json：行为约束和任务提示
+
+## 创建步骤
+
+### 第 0 步：查看现有 identity
+首先使用 list_identities tool 查看所有可用的 identity 及其绝对路径：
+```
+list_identities(mode="detailed")
+```
+这会输出每个 identity 的绝对路径（如 /home/tiger/egoagent/identity/dog）、描述、skills、knowledge 等信息。
+选择一个合适的 identity 作为复制源。
+
+### 第 1 步：复制现有 identity
+使用 copy_identity tool：
+```
+copy_identity(source_name="dog", new_name="cat", overwrite=true)
+```
+这会把 /home/tiger/egoagent/identity/dog 整个复制到 /home/tiger/egoagent/identity/cat，并自动更新 id.json 中的 name。
+如果目标已存在，overwrite=true 会先删除再复制。**务必使用 overwrite=true，不要改名重试。**
+返回值会包含新 identity 的绝对路径。
+
+### 第 2 步：修改 id.json 自定义身份
+复制完成后，用 read_file 读取新 identity 的 id.json：
+```
+read_file(path="/home/tiger/egoagent/identity/cat/id.json")
+```
+
+然后用 write_file 修改它。需要改的字段：
+- "name"：新名字（copy_identity 已自动改好）
+- "description"：新的描述（比如 "A helpful cat who says \"喵喵，\" before everything."）
+- "role"：角色定义
+- "personality"：性格特征
+
+示例 id.json：
+```json
+{
+    "name": "cat",
+    "personality": {
+        "traits": ["gentle", "playful", "curious"],
+        "tone": "cute and friendly",
+        "language": "zh"
+    },
+    "role": "assistant",
+    "description": "A helpful cat who always starts speaking with \"喵喵，\".",
+    "llm": {
+        "type": "custom_llm",
+        "base_url": "http://[fdbd:dc05:a:30e::47]:9910/v1",
+        "model": "Qwen3-8B-yangyuan",
+        "api_key": "",
+        "temperature": 0.95,
+        "max_tokens": 4096
+    }
+}
+```
+
+注意：llm 配置通常不需要改，保持和源 identity 一样即可。
+
+### 第 3 步：使用新 identity 创建 harness
+新 identity 创建好后，可以用 create_harness 启动一个新 session：
+```
+create_harness(
+    harness_dir="react_single",
+    agents="agent:identity/cat"
+)
+```
+
+## 关于 id.json 和 superego/config.json 的区别
+
+- id.json：定义 agent 的**性格和身份**。包括名字、性格特征、说话风格、角色描述。
+  比如"每次说话用喵喵开头"、"说话温柔可爱"、"是一只猫"等都属于性格，写在 id.json 的 description 和 personality 里。
+- superego/config.json：定义 agent 的**任务和行为约束**。比如"帮用户写代码"、"不允许创建其他 agent"等。
+  一般不需要修改，除非要改变 agent 的任务目标或权限。
+
+**重要：性格、说话方式、口头禅等全部写在 id.json 里，不要改 superego。**
+
+## 完整流程示例
+
+假设用户要求："创建一个叫 cat 的 identity，基于 dog，但每次说话用喵喵开头"
+
+1. list_identities(mode="brief")  — 确认 dog 存在并获取路径
+2. copy_identity(source_name="dog", new_name="cat", overwrite=true)
+3. read_file(path="/home/tiger/egoagent/identity/cat/id.json")  — 查看当前内容
+4. write_file 修改 id.json 的 description 和 personality（加入说话风格）
+5. create_harness(harness_dir="react_single", agents="agent:identity/cat")  — 启动
+
+## 注意事项
+- 复制前先用 list_identities 确认源 identity 存在
+- 不要修改 llm 配置（除非确实需要换模型）
+- 性格、说话方式写在 id.json，不要改 superego
+- superego 里的字段（task_prompt、allow_xxx）通常保持不变
+- ego/skills 和 ego/knowledge 会原样继承，通常不需要改

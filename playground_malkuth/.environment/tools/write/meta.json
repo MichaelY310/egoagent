@@ -1,0 +1,27 @@
+{
+    "type": "function",
+    "title": "Write File",
+    "name": "write_file",
+    "description": "Write content to a file. Creates the file if it does not exist, overwrites if it does. Returns an error JSON if the write fails (e.g. permission denied, invalid path).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "description": "The absolute path to the file to write.",
+                "type": "string"
+            },
+            "content": {
+                "description": "The content to write to the file.",
+                "type": "string"
+            }
+        },
+        "required": ["file_path", "content"]
+    },
+    "tags": ["file", "write", "io"],
+    "author": "admin",
+    "created_at": "2025-05-27",
+    "updated_at": "2025-05-27",
+    "relations": [],
+    "metadata": {"views": null, "likes": null, "comments": null},
+    "embedding": null
+}
