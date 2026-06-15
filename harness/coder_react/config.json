@@ -1,0 +1,12 @@
+{
+    "name": "coder_react",
+    "description": "Single coding agent ReAct loop. The agent receives user instructions and can use tools (read, write, edit, run_command, etc.) in a loop until it gives a text response. Designed for software engineering tasks.",
+    "slots": {
+        "agent": {
+            "description": "The coding agent that performs software engineering tasks",
+            "required": true
+        }
+    },
+    "return_mode": "last",
+    "max_turns": 200
+}

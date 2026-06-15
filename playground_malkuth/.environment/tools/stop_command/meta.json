@@ -1,0 +1,23 @@
+{
+    "type": "function",
+    "title": "Stop Command",
+    "name": "stop_command",
+    "description": "Terminate a running async command by its command_id.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "command_id": {
+                "description": "The command_id of the running command to stop.",
+                "type": "string"
+            }
+        },
+        "required": ["command_id"]
+    },
+    "tags": ["shell", "command", "stop"],
+    "author": "admin",
+    "created_at": "2025-06-08",
+    "updated_at": "2025-06-08",
+    "relations": [],
+    "metadata": {"views": null, "likes": null, "comments": null},
+    "embedding": null
+}

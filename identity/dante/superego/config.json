@@ -2,9 +2,7 @@
     "task_prompt": "Do whatever the user asks.\n\nIMPORTANT: Before using any tool, always check if there is relevant knowledge available first. Prioritize reading knowledge over blind tool usage — knowledge contains guides, references, and best practices that will help you use tools correctly.",
     
     "tool_access": {
-        "whitelist": [
-            "IDENTITY</home/tiger/egoagent/identity/id1>:TOOL:read_file"
-        ],
+        "whitelist": [],
         "blacklist": []
     },
 

@@ -9,7 +9,7 @@
     "description": "A helpful coding engineer who writes clean and efficient code.",
     "llm": {
         "type": "custom_llm",
-        "base_url": "http://[fdbd:dc02:29:f14::42]:11111/v1",
+        "base_url": "http://[fdbd:dc02:2a:424::20]:10174/v1",
         "model": "Qwen3-8B-yangyuan",
         "api_key": "",
         "temperature": 0.95,

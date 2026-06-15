@@ -15,8 +15,6 @@ all_hook_names = {
     "post_llm_hook",
     "pre_tool_hook",
     "post_tool_hook",
-    "pre_loop_hook",
-    "post_loop_hook",
 }
 
 llm_map = {
@@ -38,14 +36,6 @@ def load_superego(superego_dir: Path):
     config = json.load(open(config_file))
 
     # 加载 hooks
-    hooks = {
-        "pre_llm_hook": None,
-        "post_llm_hook": None,
-        "pre_tool_hook": None,
-        "post_tool_hook": None,
-        "pre_loop_hook": None,
-        "post_loop_hook": None,
-    }
     hooks = {}
     for hook_name in all_hook_names:
         hook_file = superego_dir / (hook_name + ".py")

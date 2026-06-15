@@ -1,3 +1,18 @@
 root_environment_path: /home/tiger/.environment
 harness_template_repository: /home/tiger/egoagent/harness
 identity_repository: /home/tiger/egoagent/identity
+
+command_blacklist:
+  - rm -rf /
+  - rm -rf /*
+  - mkfs
+  - dd if=/dev
+  - :(){ :|:& };:
+  - chmod -R 777 /
+  - shutdown
+  - reboot
+  - init 0
+  - init 6
+  - kill -9 1
+  - pkill -9
+  - format

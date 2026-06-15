@@ -1,6 +1,6 @@
 
 # 聊天
-python run_harness.py --harness_dir harness/react_single --agents agent:identity/dante --workspace playground
+python run_harness.py --harness_dir harness/react_single --agents agent:identity/dante --workspace playground_malkuth
 
 # 组织辩论
 python run_harness.py --harness_dir harness/react_single --agents agent:identity/dante --workspace playground

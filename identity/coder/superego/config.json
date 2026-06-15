@@ -1,0 +1,25 @@
+{
+    "task_prompt": "You are a coding assistant. Follow these rules strictly:\n1. Before editing any file, ALWAYS read it first to understand its current content.\n2. Use patch_file for small edits, write_file only for new files or full rewrites.\n3. After making changes, verify them by reading the file back if the change is critical.\n4. Use run_command to test your changes when applicable (e.g. run tests, build).\n5. Keep changes minimal — only modify what is necessary to complete the task.\n6. Before using any tool, check if relevant knowledge is available first.\n7. Respond in Chinese (zh) to the user.",
+
+    "tool_access": {
+        "whitelist": [],
+        "blacklist": []
+    },
+
+    "knowledge_access": {
+        "whitelist": [],
+        "blacklist": []
+    },
+
+    "allow_create_agent": false,
+    "allow_create_identity": false,
+    "allow_modify_agent": false,
+    "allow_modify_identity": false,
+
+    "allow_add_skill_to_self": false,
+    "allow_add_knowledge_to_self": false,
+    "allow_add_skill_to_other": false,
+    "allow_add_knowledge_to_other": false,
+    "allow_add_tool_to_environment": false,
+    "allow_add_knowledge_to_environment": false
+}

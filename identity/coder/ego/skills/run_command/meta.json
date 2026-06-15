@@ -1,0 +1,28 @@
+{
+    "type": "function",
+    "title": "Run Command",
+    "name": "run_command",
+    "description": "Execute a shell command. Set blocking=false for long-running processes. Some dangerous commands are blacklisted.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "command": {
+                "description": "The shell command to execute.",
+                "type": "string"
+            },
+            "cwd": {
+                "description": "Working directory for the command.",
+                "type": "string"
+            },
+            "blocking": {
+                "description": "If true (default), wait for completion. Set to false for servers.",
+                "type": "boolean"
+            },
+            "timeout": {
+                "description": "Timeout in seconds for blocking commands. Default: 60.",
+                "type": "integer"
+            }
+        },
+        "required": ["command"]
+    }
+}

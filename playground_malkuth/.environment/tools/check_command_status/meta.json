@@ -1,0 +1,27 @@
+{
+    "type": "function",
+    "title": "Check Command Status",
+    "name": "check_command_status",
+    "description": "Get the status of a previously started async command by its command_id. Returns current status (running/done), exit code, and recent output.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "command_id": {
+                "description": "The command_id returned by run_command when blocking=false.",
+                "type": "string"
+            },
+            "tail_lines": {
+                "description": "Number of output lines to return from the end. Default: 50.",
+                "type": "integer"
+            }
+        },
+        "required": ["command_id"]
+    },
+    "tags": ["shell", "command", "status"],
+    "author": "admin",
+    "created_at": "2025-06-08",
+    "updated_at": "2025-06-08",
+    "relations": [],
+    "metadata": {"views": null, "likes": null, "comments": null},
+    "embedding": null
+}

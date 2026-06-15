@@ -1,0 +1,27 @@
+{
+    "type": "function",
+    "title": "Glob Search",
+    "name": "glob_search",
+    "description": "Find files matching a glob pattern. Supports patterns like '**/*.py' or 'src/**/*.ts'. Returns matching file paths sorted by modification time.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "description": "The glob pattern to match files against (e.g. '**/*.py', 'src/*.ts').",
+                "type": "string"
+            },
+            "path": {
+                "description": "The directory to search in. Defaults to current working directory.",
+                "type": "string"
+            }
+        },
+        "required": ["pattern"]
+    },
+    "tags": ["file", "search", "glob"],
+    "author": "admin",
+    "created_at": "2025-06-08",
+    "updated_at": "2025-06-08",
+    "relations": [],
+    "metadata": {"views": null, "likes": null, "comments": null},
+    "embedding": null
+}

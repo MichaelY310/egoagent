@@ -3,13 +3,13 @@
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
 
 # Sessions (运行时生成)
 sessions/
 
 # Logs
 *.log
-llm_io.log
 
 # IDE
 .idea/
@@ -21,5 +21,20 @@ llm_io.log
 .DS_Store
 Thumbs.db
 
-references
-sessions
+# 第三方源码/二进制
+references/
+qdrant/
+meilisearch/target/
+meilisearch/data.ms/
+meilisearch/dumps/
+
+# Meilisearch 运行时数据
+/tmp/meilisearch_egoagent_*
+meilisearch_dump.json
+
+# Playground 运行时产物（如果不想跟踪）
+playground/
+
+# 杂项
+*.bak
+*.tmp

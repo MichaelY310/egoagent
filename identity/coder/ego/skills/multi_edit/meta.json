@@ -1,0 +1,28 @@
+{
+    "type": "function",
+    "title": "Multi Edit",
+    "name": "multi_edit",
+    "description": "Perform multiple string replacements in a single file. Each edit specifies old_string and new_string. Edits are applied sequentially.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "description": "The absolute path to the file to edit.",
+                "type": "string"
+            },
+            "edits": {
+                "description": "Array of edit operations, each with 'old_string' and 'new_string'.",
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "old_string": {"type": "string", "description": "The exact string to find."},
+                        "new_string": {"type": "string", "description": "The string to replace with."}
+                    },
+                    "required": ["old_string", "new_string"]
+                }
+            }
+        },
+        "required": ["file_path", "edits"]
+    }
+}

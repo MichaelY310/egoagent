@@ -17,17 +17,33 @@ class Agent:
         self.tools = {}
         self.knowledges = {}
         self.workspace = workspace
+
+        # 共享运行时状态，所有 tool 通过 _context 参数访问
+        self._running_commands = {}
+        self._runtime_context = {
+            "running_commands": self._running_commands,
+            "agent_name": self.name,
+        }
+
         self.init_environment()
         self.load_environments(environments)
 
-        self.hooks = {
-            "pre_llm_hooks": [],      # 调 LLM 前
-            "post_llm_hooks": [],     # LLM 返回后
-            "pre_tool_hooks": [],     # 执行 tool 前
-            "post_tool_hooks": [],    # tool 执行后
-            "pre_loop_hooks": [],     # 每轮 loop 开始
-            "post_loop_hooks": [],    # 每轮 loop 结束
+        self.hooks = self._load_hooks()
+
+    def _load_hooks(self):
+        """从 identity SEGO 中加载 hooks"""
+        hooks = {
+            "pre_llm_hook": None,
+            "post_llm_hook": None,
+            "pre_tool_hook": None,
+            "post_tool_hook": None,
         }
+        if self.identity.SEGO:
+            _, sego_hooks = self.identity.SEGO
+            for hook_name in hooks:
+                if hook_name in sego_hooks and sego_hooks[hook_name]:
+                    hooks[hook_name] = sego_hooks[hook_name]
+        return hooks
 
     def set_identity(self, identity: Union[Path, str, Identity]):
         if isinstance(identity, Identity):
@@ -133,10 +149,14 @@ class Agent:
             if constraints:
                 parts.append("\n[Constraints]\n" + "\n".join(constraints))
 
-        # 可用工具和知识库说明
+        # 可用工具和知识库说明（已按权限过滤）
         if self.tools:
-            tool_lines = [f"- `{t.name}`: {t.desc['function'].get('description', '')}" for t in self.tools.values()]
-            parts.append("\n[Available Tools]\n" + "\n".join(tool_lines))
+            tool_lines = []
+            for t in self.tools.values():
+                if self._check_tool_access(t.name) is None:
+                    tool_lines.append(f"- `{t.name}`: {t.desc['function'].get('description', '')}")
+            if tool_lines:
+                parts.append("\n[Available Tools]\n" + "\n".join(tool_lines))
         if self.knowledges:
             knowledge_lines = [f"- `{k.name}`: {k.desc['function'].get('description', '')}" for k in self.knowledges.values()]
             parts.append("\n[Available Knowledge]\nCall these to retrieve knowledge content, they are NOT tools:\n" + "\n".join(knowledge_lines))
@@ -144,9 +164,13 @@ class Agent:
         return "\n".join(parts)
 
     def get_tools_desc(self):
-        """获取所有 tools + knowledges 的 desc 列表（传给 LLM）"""
-        descs = [t.desc for t in self.tools.values()]
-        descs += [k.desc for k in self.knowledges.values()]
+        """获取所有 tools + knowledges 的 desc 列表（传给 LLM），已按权限过滤"""
+        descs = []
+        for t in self.tools.values():
+            if self._check_tool_access(t.name) is None:
+                descs.append(t.desc)
+        for k in self.knowledges.values():
+            descs.append(k.desc)
         return descs
 
     def step(self, messages, tools_desc=None):
@@ -170,6 +194,10 @@ class Agent:
         else:
             full_messages = messages
 
+        # pre_llm_hook: 在调用 LLM 之前触发
+        if self.hooks["pre_llm_hook"]:
+            self.hooks["pre_llm_hook"](agent=self, messages=full_messages, tools_desc=tools_desc)
+
         # 调用 LLM
         response = ""
         tool_calls = []
@@ -181,6 +209,10 @@ class Agent:
             if delta.get("tool_calls"):
                 tool_calls = delta["tool_calls"]
         print()
+
+        # post_llm_hook: 在 LLM 返回后触发
+        if self.hooks["post_llm_hook"]:
+            self.hooks["post_llm_hook"](agent=self, response=response, tool_calls=tool_calls)
 
         # 自动记录到全局 session
         from harness import get_current_harness
@@ -214,15 +246,64 @@ class Agent:
                 return ("knowledge", v)
         return None
 
+    def _check_tool_access(self, tool_name: str) -> str:
+        """检查 tool 是否被权限规则允许。返回 None 表示允许，返回字符串表示拒绝原因。"""
+        if not self.identity.SEGO:
+            return None
+        sego_config, _ = self.identity.SEGO
+        tool_access = sego_config.get("tool_access", {})
+        whitelist = tool_access.get("whitelist", [])
+        blacklist = tool_access.get("blacklist", [])
+
+        short = self._short_name(tool_name)
+
+        # 如果 whitelist 非空，只有匹配的 tool 才允许
+        if whitelist:
+            for pattern in whitelist:
+                if pattern == tool_name or pattern == short or self._short_name(pattern) == short:
+                    break
+            else:
+                return f"Tool '{tool_name}' is not in the allowed whitelist."
+
+        # blacklist 检查
+        if blacklist:
+            for pattern in blacklist:
+                if pattern == tool_name or pattern == short or self._short_name(pattern) == short:
+                    return f"Tool '{tool_name}' is blocked by blacklist."
+
+        return None
+
     def execute_tool_call(self, tool_call):
         """执行单个 tool_call，返回结果字符串，自动记录到全局 session"""
         from harness import EndSession, get_current_harness
         tool_name = tool_call["function"]["name"]
+        arguments = json.loads(tool_call["function"]["arguments"])
+
+        # 权限检查
+        denied = self._check_tool_access(tool_name)
+        if denied:
+            result = f"Permission denied: {denied}"
+            # 仍然记录到 session
+            harness = get_current_harness()
+            if harness:
+                tool_msg = {"role": "tool", "tool_call_id": tool_call["id"], "content": result}
+                harness.session.record(tool_msg)
+                harness.session.record_full(tool_msg)
+            return result
+
+        # pre_tool_hook: 在执行 tool 之前触发
+        if self.hooks["pre_tool_hook"]:
+            self.hooks["pre_tool_hook"](agent=self, tool_name=tool_name, arguments=arguments)
+
         found = self._find_tool_or_knowledge(tool_name)
         if found and found[0] == "tool":
             tool = found[1]
-            arguments = json.loads(tool_call["function"]["arguments"])
             try:
+                # 如果 tool 函数签名中有 _context 参数，自动注入运行时上下文
+                import inspect
+                sig = inspect.signature(tool.func)
+                if "_context" in sig.parameters:
+                    arguments["_context"] = self._runtime_context
                 result = tool.func(**arguments)
             except EndSession:
                 raise
@@ -232,6 +313,10 @@ class Agent:
             result = found[1].render()
         else:
             result = f"Tool not found: {tool_name}"
+
+        # post_tool_hook: 在 tool 执行后触发
+        if self.hooks["post_tool_hook"]:
+            self.hooks["post_tool_hook"](agent=self, tool_name=tool_name, arguments=arguments, result=result)
 
         # 自动记录 tool 结果到全局 session
         harness = get_current_harness()

@@ -1,0 +1,20 @@
+{
+    "type": "function",
+    "title": "Check Command Status",
+    "name": "check_command_status",
+    "description": "Get the status of a previously started async command by its command_id.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "command_id": {
+                "description": "The command_id returned by run_command with blocking=false.",
+                "type": "string"
+            },
+            "tail_lines": {
+                "description": "Number of output lines to return from the end. Default: 50.",
+                "type": "integer"
+            }
+        },
+        "required": ["command_id"]
+    }
+}
