@@ -1,6 +1,7 @@
 """
 Coder ReAct Protocol
 用户输入编程任务 → agent 循环（读代码、搜索、编辑、执行命令）→ 给出文本回复 → 等待下一轮输入
+支持用户直接调用工具: \tool_name(arg=value)
 增强：
 - 更大的 step 上限（30 步）
 - 自动注入 workspace 信息
@@ -9,6 +10,8 @@ Coder ReAct Protocol
 
 
 def run(harness):
+    from harness import parse_user_tool_call, execute_user_tool_call
+
     agent = harness.agents["agent"]
     max_steps = 30  # coding 任务允许更多步骤
 
@@ -23,6 +26,15 @@ def run(harness):
         if user_input.strip().lower() in ("exit", "quit", "q"):
             break
         if not user_input.strip():
+            continue
+
+        # 检查是否是用户直接调用工具
+        parsed = parse_user_tool_call(user_input)
+        if parsed:
+            tool_name, arguments = parsed
+            print(f"[user-tool] 调用 {tool_name}({arguments})")
+            result = execute_user_tool_call(harness, agent, tool_name, arguments)
+            print(f"[user-tool] 结果:\n{result if result else '(empty)'}")
             continue
 
         harness.session.record({"role": "user", "content": user_input})

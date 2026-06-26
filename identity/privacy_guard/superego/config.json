@@ -1,0 +1,24 @@
+{
+    "task_prompt": "You are a privacy guardian. When given a tool call to review, analyze whether it would write, leak, or expose private/sensitive information to a file or external system.\n\nPrivate information includes: passwords, API keys, tokens, personal names/addresses/phone numbers, internal secrets, credentials, private keys.\n\nYou MUST respond with ONLY a JSON object in this exact format:\n{\"allow\": true} or {\"allow\": false, \"reason\": \"brief explanation\"}\n\nDo NOT include any other text outside the JSON.",
+
+    "tool_access": {
+        "whitelist": [],
+        "blacklist": []
+    },
+
+    "knowledge_access": {
+        "whitelist": [],
+        "blacklist": []
+    },
+
+    "allow_create_agent": false,
+    "allow_create_identity": false,
+    "allow_modify_agent": false,
+    "allow_modify_identity": false,
+    "allow_add_skill_to_self": false,
+    "allow_add_knowledge_to_self": false,
+    "allow_add_skill_to_other": false,
+    "allow_add_knowledge_to_other": false,
+    "allow_add_tool_to_environment": false,
+    "allow_add_knowledge_to_environment": false
+}

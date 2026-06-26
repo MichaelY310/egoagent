@@ -1,0 +1,22 @@
+{
+    "name": "guarded_react",
+    "description": "ReAct loop with a guardian agent that reviews tool calls before execution. The worker proposes actions, the guardian filters them.",
+    "slots": {
+        "worker": {
+            "description": "The main agent that interacts with the user and proposes tool calls",
+            "required": true
+        },
+        "guardian": {
+            "description": "The agent that reviews tool calls. Uses process_tool_calls() to filter.",
+            "required": true
+        }
+    },
+    "prompts": {
+        "guardian_review": {
+            "description": "guardian 审查工具调用时使用的 prompt 模板。{tool_calls} 会被替换为实际的工具调用列表。",
+            "default": "审查以下工具调用，判断是否涉及隐私信息泄露（如密码、API key、个人信息等）。\n对每个工具调用，决定是否允许执行。\n\n以 JSON 数组回复，每个元素: {\"id\": \"...\", \"allow\": true/false, \"reason\": \"...\"}\n\n{tool_calls}"
+        }
+    },
+    "return_mode": "all",
+    "max_turns": 100
+}

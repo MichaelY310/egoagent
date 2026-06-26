@@ -11,7 +11,7 @@
         "blacklist": []
     },
 
-    "allow_create_agent": false,
+    "allow_create_agent": true,
     "allow_create_identity": false,
     "allow_modify_agent": false,
     "allow_modify_identity": false,

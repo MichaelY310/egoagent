@@ -1,40 +1,6 @@
-# Python
-.venv/
+SWE-bench/
+SWE-bench_Verified/
+swebench_eval/repos/
+sessions/
 __pycache__/
 *.pyc
-*.pyo
-*.egg-info/
-
-# Sessions (运行时生成)
-sessions/
-
-# Logs
-*.log
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# 第三方源码/二进制
-references/
-qdrant/
-meilisearch/target/
-meilisearch/data.ms/
-meilisearch/dumps/
-
-# Meilisearch 运行时数据
-/tmp/meilisearch_egoagent_*
-meilisearch_dump.json
-
-# Playground 运行时产物（如果不想跟踪）
-playground/
-
-# 杂项
-*.bak
-*.tmp

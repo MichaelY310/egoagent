@@ -12,3 +12,9 @@ python run_harness.py --harness_dir harness/react_single --agents agent:identity
 # 狗狗变猫猫
 python run_harness.py --harness_dir harness/react_single --agents agent:identity/dog --workspace playground_malkuth
 帮我创建一个新 identity，基于你自己(dog)，叫 cat，但每次说话要用"喵喵，"开头。创建好之后启动一个新的 react_single session 让 cat 当 agent。
+
+# coder react（带 workspace 注入）
+python run_harness.py --harness_dir harness/coder_react --agents agent:identity/coder --workspace playground_malkuth
+
+# guarded react（worker + guardian 隐私审查）
+python run_harness.py --harness_dir harness/guarded_react --agents worker:identity/coder guardian:identity/privacy_guard --workspace playground_malkuth

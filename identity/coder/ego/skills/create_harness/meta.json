@@ -1,0 +1,36 @@
+{
+    "type": "tool",
+    "name": "create_harness",
+    "description": "Create and run a sub-harness (multi-agent session). The sub-harness runs to completion, then returns results to the current session. Use return_mode to control how much information comes back: 'last' for just the final message, 'all' for the entire conversation.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "harness_dir": {
+                "type": "string",
+                "description": "Path to the harness template directory (e.g. 'harness/turn_based')"
+            },
+            "agents": {
+                "type": "string",
+                "description": "Agent specs as comma-separated 'slot:identity_path' pairs (e.g. '正方:identity/id1,反方:identity/id1,裁判:identity/dante')"
+            },
+            "prompts": {
+                "type": "string",
+                "description": "Optional prompts to override defaults. Use '|' to separate multiple prompts. Format: 'name:value|name:value' (e.g. 'task:辩题内容...|debater:自定义辩手规则')"
+            },
+            "workspace": {
+                "type": "string",
+                "description": "Optional workspace directory path for the harness"
+            },
+            "inherit_conversation": {
+                "type": "boolean",
+                "description": "If true, the sub-harness session starts with a copy of the current conversation history. Default false."
+            },
+            "return_mode": {
+                "type": "string",
+                "enum": ["all", "last"],
+                "description": "Controls what results come back: 'all' returns entire sub-session conversation, 'last' returns only the final non-tool message. If not specified, uses the harness config default."
+            }
+        },
+        "required": ["harness_dir", "agents"]
+    }
+}

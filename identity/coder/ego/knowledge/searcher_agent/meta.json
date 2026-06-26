@@ -1,0 +1,4 @@
+{
+    "name": "searcher_agent",
+    "description": "当你需要在代码库中大规模搜索代码、查找定义、引用、文件结构时，可以调用 searcher agent 来帮你完成搜索任务。"
+}

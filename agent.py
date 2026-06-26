@@ -149,17 +149,31 @@ class Agent:
             if constraints:
                 parts.append("\n[Constraints]\n" + "\n".join(constraints))
 
-        # 可用工具和知识库说明（已按权限过滤）
+        # 可用工具和知识库说明（已按权限过滤，限制显示数量）
+        max_tools = CONFIG.get("max_prompt_tools", 10)
+        max_knowledges = CONFIG.get("max_prompt_knowledges", 5)
+
         if self.tools:
             tool_lines = []
             for t in self.tools.values():
                 if self._check_tool_access(t.name) is None:
                     tool_lines.append(f"- `{t.name}`: {t.desc['function'].get('description', '')}")
             if tool_lines:
-                parts.append("\n[Available Tools]\n" + "\n".join(tool_lines))
+                shown = tool_lines[:max_tools]
+                remaining = len(tool_lines) - len(shown)
+                header = "\n[Available Tools]\n"
+                parts.append(header + "\n".join(shown))
+                if remaining > 0:
+                    parts.append(f"(... and {remaining} more tools. Use `list_all_resources` or search to find them.)")
+
         if self.knowledges:
             knowledge_lines = [f"- `{k.name}`: {k.desc['function'].get('description', '')}" for k in self.knowledges.values()]
-            parts.append("\n[Available Knowledge]\nCall these to retrieve knowledge content, they are NOT tools:\n" + "\n".join(knowledge_lines))
+            shown = knowledge_lines[:max_knowledges]
+            remaining = len(knowledge_lines) - len(shown)
+            header = "\n[Available Knowledge]\nCall these to retrieve knowledge content, they are NOT tools:\n"
+            parts.append(header + "\n".join(shown))
+            if remaining > 0:
+                parts.append(f"(... and {remaining} more knowledge items. Use `list_all_resources` or search to find them.)")
 
         return "\n".join(parts)
 
@@ -173,6 +187,130 @@ class Agent:
             descs.append(k.desc)
         return descs
 
+    def process_text(self, text, context_messages=None, prompt_template=None):
+        """处理文字：输入 text，输出处理后的 text
+        用于审查或改写另一个 agent 的文本输出。
+        prompt_template 中用 {text} 占位符代表待处理的文本。
+        """
+        if not prompt_template:
+            prompt_template = "Review and process the following text. Return the processed text only.\n\n{text}"
+
+        prompt = prompt_template.replace("{text}", text)
+
+        messages = []
+        if context_messages:
+            recent = context_messages[-4:] if len(context_messages) > 4 else context_messages
+            messages = list(recent)
+        messages.append({"role": "user", "content": prompt})
+
+        # 构造带 system_instructions 的消息
+        system_prompt = self.build_system_prompt()
+        if system_prompt:
+            wrapped = f"<system_instructions>\n{system_prompt}\n</system_instructions>"
+            messages = [{"role": "user", "content": wrapped}] + messages
+
+        result = self.llm.chat(messages)
+        reply = result["choices"][0]["message"].get("content", "").strip()
+
+        # 记录到 session
+        from harness import get_current_harness
+        harness = get_current_harness()
+        if harness:
+            harness.session.record_full({"role": "assistant", "name": self.name, "content": reply, "_op": "process_text"})
+
+        return reply
+
+    def process_tool_calls(self, tool_calls, context_messages=None, prompt_template=None):
+        """处理工具调用：输入 tool_calls 列表，输出 (allowed_tool_calls, blocked_with_reasons)
+        用于审查另一个 agent 的工具调用。
+        prompt_template 中用 {tool_calls} 占位符代表待审查的工具调用。
+        返回: (allowed: list, blocked: list of (tool_call, reason))
+        """
+        if not tool_calls:
+            return tool_calls, []
+
+        if not prompt_template:
+            prompt_template = (
+                "Review the following tool calls. For each, decide if it should be allowed.\n"
+                "Respond with a JSON array. Each element: {{\"id\": \"...\", \"allow\": true/false, \"reason\": \"...\"}}\n\n"
+                "{tool_calls}"
+            )
+
+        # 序列化 tool_calls 为可读格式
+        tc_readable = []
+        for tc in tool_calls:
+            tc_readable.append({
+                "id": tc["id"],
+                "tool": tc["function"]["name"],
+                "arguments": tc["function"]["arguments"]
+            })
+        tc_str = json.dumps(tc_readable, ensure_ascii=False, indent=2)
+        prompt = prompt_template.replace("{tool_calls}", tc_str)
+
+        messages = []
+        if context_messages:
+            # 过滤掉含 tool_calls 和 role=tool 的消息，避免干扰审查 LLM
+            filtered = [m for m in context_messages if m.get("role") in ("user", "assistant") and "tool_calls" not in m]
+            recent = filtered[-4:] if len(filtered) > 4 else filtered
+            messages = list(recent)
+        messages.append({"role": "user", "content": prompt})
+
+        # 构造带 system_instructions 的消息
+        system_prompt = self.build_system_prompt()
+        if system_prompt:
+            wrapped = f"<system_instructions>\n{system_prompt}\n</system_instructions>"
+            messages = [{"role": "user", "content": wrapped}] + messages
+
+        try:
+            result = self.llm.chat(messages)
+            reply = result["choices"][0]["message"].get("content", "").strip()
+            # 如果 reply 被 <think>...</think> 包裹，提取实际内容
+            if "<think>" in reply and "</think>" in reply:
+                reply = reply.split("</think>", 1)[-1].strip()
+
+            # 去掉可能的 markdown 代码块
+            if reply.startswith("```"):
+                reply = reply.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+            verdicts = json.loads(reply)
+            print(f"  [{self.name}] 审查回复: {reply}")
+        except (json.JSONDecodeError, KeyError, Exception) as e:
+            print(f"  [{self.name}] 审查结果解析失败，默认放行: {e}")
+            print(f"  [{self.name}] 原始回复: {reply if 'reply' in dir() else '(empty)'}")
+            return tool_calls, []
+
+        # 构建 id -> verdict 映射
+        verdict_map = {}
+        if isinstance(verdicts, list):
+            for v in verdicts:
+                verdict_map[v.get("id", "")] = v
+        elif isinstance(verdicts, dict):
+            # 兼容单个 tool_call 的情况
+            verdict_map[verdicts.get("id", tool_calls[0]["id"] if tool_calls else "")] = verdicts
+
+        allowed = []
+        blocked = []
+        for tc in tool_calls:
+            v = verdict_map.get(tc["id"], {"allow": True})
+            if v.get("allow", True):
+                allowed.append(tc)
+                print(f"  [{self.name}] ✓ {tc['function']['name']} - 通过")
+            else:
+                reason = v.get("reason", "rejected by reviewer")
+                blocked.append((tc, reason))
+                print(f"  [{self.name}] ✗ {tc['function']['name']} - 拦截: {reason}")
+
+        # 记录到 session
+        from harness import get_current_harness
+        harness = get_current_harness()
+        if harness:
+            harness.session.record_full({
+                "role": "assistant", "name": self.name, "_op": "process_tool_calls",
+                "content": reply
+            })
+
+        return allowed, blocked
+
     def step(self, messages, tools_desc=None):
         """调用一次 LLM（流式），返回 (response, tool_calls)
         自动插入 system prompt，自动记录到全局 session
@@ -180,17 +318,23 @@ class Agent:
         if tools_desc is None:
             tools_desc = self.get_tools_desc()
 
-        # 插入 system prompt
+        # 插入 system prompt（作为 user 消息 + XML 标签包裹）
         # 如果最后一条是 user，放在它前面；否则放在末尾
         system_prompt = self.build_system_prompt()
-        if system_prompt and messages:
+        if system_prompt:
+            wrapped = f"<system_instructions>\n{system_prompt}\n</system_instructions>"
+            system_msg = {"role": "user", "content": wrapped}
+        else:
+            system_msg = None
+
+        if system_msg and messages:
             last_msg = messages[-1]
             if last_msg.get("role") in ("user",):
-                full_messages = messages[:-1] + [{"role": "system", "content": system_prompt}] + [last_msg]
+                full_messages = messages[:-1] + [system_msg] + [last_msg]
             else:
-                full_messages = messages + [{"role": "system", "content": system_prompt}]
-        elif system_prompt:
-            full_messages = [{"role": "system", "content": system_prompt}]
+                full_messages = messages + [system_msg]
+        elif system_msg:
+            full_messages = [system_msg]
         else:
             full_messages = messages
 
@@ -221,12 +365,27 @@ class Agent:
             session = harness.session
             # full_messages 版本（含 system prompt）
             if system_prompt:
-                session.record_full({"role": "system", "name": self.name, "content": system_prompt})
-            msg = {"role": "assistant", "name": self.name, "content": response}
+                session.record_full({"role": "user", "name": self.name, "content": wrapped})
+
+            # 构建 session 中的 assistant 消息：tool_calls 转为 <tool_call> 文本标签
+            session_content = response
             if tool_calls:
-                msg["tool_calls"] = tool_calls
+                tc_parts = []
+                for tc in tool_calls:
+                    tc_parts.append(
+                        f'<tool_call>{{"name": "{tc["function"]["name"]}", '
+                        f'"arguments": {tc["function"]["arguments"]}}}</tool_call>'
+                    )
+                session_content = session_content + "\n" + "\n".join(tc_parts) if session_content else "\n".join(tc_parts)
+
+            msg = {"role": "assistant", "name": self.name, "content": session_content}
+            if tool_calls:
+                # 保留原始 tool_calls 用于 full_messages（调试/回溯）
+                full_msg = {"role": "assistant", "name": self.name, "content": session_content, "tool_calls": tool_calls}
+            else:
+                full_msg = msg
             session.record(msg)
-            session.record_full(msg)
+            session.record_full(full_msg)
 
         return response, tool_calls
 
@@ -283,10 +442,9 @@ class Agent:
         denied = self._check_tool_access(tool_name)
         if denied:
             result = f"Permission denied: {denied}"
-            # 仍然记录到 session
             harness = get_current_harness()
             if harness:
-                tool_msg = {"role": "tool", "tool_call_id": tool_call["id"], "content": result}
+                tool_msg = {"role": "user", "content": f'<tool_response>{{"tool": "{tool_name}", "status": "denied", "content": "{denied}"}}</tool_response>'}
                 harness.session.record(tool_msg)
                 harness.session.record_full(tool_msg)
             return result
@@ -318,13 +476,13 @@ class Agent:
         if self.hooks["post_tool_hook"]:
             self.hooks["post_tool_hook"](agent=self, tool_name=tool_name, arguments=arguments, result=result)
 
-        # 自动记录 tool 结果到全局 session
+        # 自动记录 tool 结果到全局 session（文本化 <tool_response> 标签）
         harness = get_current_harness()
         if harness:
+            result_str = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
             tool_msg = {
-                "role": "tool",
-                "tool_call_id": tool_call["id"],
-                "content": result
+                "role": "user",
+                "content": f'<tool_response>{{"tool": "{tool_name}", "content": {json.dumps(result_str, ensure_ascii=False)}}}</tool_response>'
             }
             harness.session.record(tool_msg)
             harness.session.record_full(tool_msg)

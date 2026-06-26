@@ -76,14 +76,16 @@ class Session:
         获取 session 结果，用于返回给父 harness。
         mode:
           - "all": 返回所有 messages
-          - "last": 只返回最后一条 role 不为 tool 的 message
+          - "last": 只返回最后一条非 tool_response 的 assistant message
         """
         if mode == "all":
             return self.messages
         else:
-            # 从后往前找第一条 role 不为 tool 的消息
+            # 从后往前找第一条 assistant 消息（不含 <tool_response> 的）
             for msg in reversed(self.messages):
-                if msg.get("role") != "tool":
+                if msg.get("role") == "assistant" and "<tool_call>" not in msg.get("content", ""):
+                    return [msg]
+                if msg.get("role") == "assistant":
                     return [msg]
             return []
 
@@ -235,3 +237,88 @@ class Harness:
     def get_prompt(self, name):
         """获取模板 prompt"""
         return self.prompts.get(name, "")
+
+
+def parse_user_tool_call(user_input: str):
+    """
+    解析用户直接调用工具的语法: \\tool_name(arg1=value1, arg2=value2)
+    返回 (tool_name, arguments_dict) 或 None（如果不是工具调用格式）
+    """
+    import re
+    # 匹配 \tool_name(...) 格式
+    match = re.match(r'^\\(\w+)\((.*)\)$', user_input.strip(), re.DOTALL)
+    if not match:
+        return None
+    tool_name = match.group(1)
+    args_str = match.group(2).strip()
+
+    # 解析参数
+    if not args_str:
+        return tool_name, {}
+
+    # 尝试用 JSON 解析 (如果用户传的是 JSON 格式)
+    try:
+        args = json.loads("{" + args_str + "}")
+        return tool_name, args
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # 用简单的 key=value 解析
+    arguments = {}
+    # 匹配 key="value" 或 key=value 模式
+    pattern = r'(\w+)\s*=\s*(?:"([^"]*?)"|\'([^\']*?)\'|([^,\s]+))'
+    for m in re.finditer(pattern, args_str):
+        key = m.group(1)
+        value = m.group(2) if m.group(2) is not None else (m.group(3) if m.group(3) is not None else m.group(4))
+        arguments[key] = value
+
+    # 如果没有 key=value 格式，尝试作为单个位置参数
+    if not arguments and args_str:
+        # 去掉首尾引号
+        if (args_str.startswith('"') and args_str.endswith('"')) or \
+           (args_str.startswith("'") and args_str.endswith("'")):
+            args_str = args_str[1:-1]
+        arguments["_positional"] = args_str
+
+    return tool_name, arguments
+
+
+def execute_user_tool_call(harness, agent, tool_name: str, arguments: dict):
+    """
+    用户直接调用工具，执行并记录到 session。
+    返回结果字符串。
+    """
+    # 查找 tool
+    found = agent._find_tool_or_knowledge(tool_name)
+    if not found:
+        result = f"Tool not found: {tool_name}"
+    elif found[0] == "knowledge":
+        result = found[1].render()
+    else:
+        tool = found[1]
+        try:
+            import inspect
+            sig = inspect.signature(tool.func)
+            # 如果有 _positional 参数且函数只有一个必填参数，把它映射过去
+            if "_positional" in arguments and len(arguments) == 1:
+                params = [p for p in sig.parameters.values() if p.name != "_context" and p.default is inspect.Parameter.empty]
+                if params:
+                    arguments = {params[0].name: arguments["_positional"]}
+            if "_context" in sig.parameters:
+                arguments["_context"] = agent._runtime_context
+            # 移除 _positional 如果还在
+            arguments.pop("_positional", None)
+            result = tool.func(**arguments)
+        except Exception as e:
+            result = f"Tool {tool_name} error: {str(e)}"
+
+    # 记录到 session：user 发起的 tool 调用（使用 <tool_response> 格式）
+    result_str = result if isinstance(result, str) else str(result)
+    user_tool_msg = {
+        "role": "user",
+        "content": f'<tool_response>{{"tool": "{tool_name}", "content": {json.dumps(result_str, ensure_ascii=False)}, "_user_invoked": true}}</tool_response>',
+    }
+    harness.session.record(user_tool_msg)
+    harness.session.record_full(user_tool_msg)
+
+    return result

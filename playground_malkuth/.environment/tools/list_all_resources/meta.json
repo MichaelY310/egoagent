@@ -1,0 +1,16 @@
+{
+    "type": "tool",
+    "name": "list_all_resources",
+    "description": "List all registered resources across the system: environments' knowledge/tools and identities' knowledge/skills. Reads from the global registry file (~/.egoagent_registry.json). Use 'category' to filter by type.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "category": {
+                "type": "string",
+                "enum": ["all", "env_knowledge", "env_tools", "identity_knowledge", "identity_skills"],
+                "description": "Which category to list. Default: 'all'"
+            }
+        },
+        "required": []
+    }
+}

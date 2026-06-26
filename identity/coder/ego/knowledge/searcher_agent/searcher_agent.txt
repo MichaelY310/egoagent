@@ -1,0 +1,24 @@
+## Searcher Agent
+
+你可以调用一个专门的代码搜索 agent（identity: searcher）来帮你完成搜索任务。
+
+### 什么时候用
+- 需要在大型代码库中查找特定模式、函数定义、类引用
+- 需要梳理目录结构、找到相关文件
+- 搜索任务比较复杂，需要多步搜索和过滤
+
+### 怎么调用
+使用 `create_harness` 工具创建一个搜索子任务：
+
+```
+create_harness(
+    harness_template="react_single",
+    agents={"agent": "identity/searcher"},
+    task="你的搜索任务描述，比如：在项目中找到所有使用了 database connection 的文件，列出文件路径和关键代码行"
+)
+```
+
+### 注意
+- searcher 只能搜索和读取文件，不能修改任何东西
+- searcher 会返回搜索结果给你，你再基于结果进行编码
+- 简单搜索你自己用 search_files / glob_search 即可，不需要调 searcher

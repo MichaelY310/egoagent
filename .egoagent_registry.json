@@ -1,0 +1,16 @@
+{
+    "description": "全局注册表：记录所有已知的 identity 和 environment 路径，供 Meilisearch 索引",
+    "identities": [
+        "/home/tiger/egoagent/identity/cat",
+        "/home/tiger/egoagent/identity/coder",
+        "/home/tiger/egoagent/identity/dante",
+        "/home/tiger/egoagent/identity/dog",
+        "/home/tiger/egoagent/identity/id1"
+    ],
+    "environments": [
+        "/home/tiger/egoagent/playground/.environment",
+        "/home/tiger/egoagent/playground_malkuth/.environment",
+        "/home/tiger/egoagent/playground2/.environment"
+    ],
+    "custom_paths": []
+}
