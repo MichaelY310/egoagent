@@ -20,9 +20,11 @@ class Agent:
 
         # 共享运行时状态，所有 tool 通过 _context 参数访问
         self._running_commands = {}
+        self.meilisearch = None
         self._runtime_context = {
             "running_commands": self._running_commands,
             "agent_name": self.name,
+            "meilisearch": None,
         }
 
         self.init_environment()
@@ -118,20 +120,15 @@ class Agent:
         """从 ID（性格）和 SEGO（任务/约束）组装 system prompt"""
         parts = []
 
-        # 注入 agent 名字
-        parts.append(f"Your name is {self.name}.")
-
         # 从 ID 读取身份和性格
         id_config = self.identity.ID
         if id_config.get("role"):
-            parts.append(f"You are a {id_config['role']}.")
+            parts.append(f"You are {self.name}, a {id_config['role']}.")
+        else:
+            parts.append(f"You are {self.name}.")
         if id_config.get("description"):
             parts.append(id_config["description"])
         personality = id_config.get("personality", {})
-        if personality.get("traits"):
-            parts.append(f"Your personality traits: {', '.join(personality['traits'])}.")
-        if personality.get("tone"):
-            parts.append(f"Your tone: {personality['tone']}.")
         if personality.get("language"):
             parts.append(f"Respond in: {personality['language']}.")
 
@@ -139,52 +136,45 @@ class Agent:
         if self.identity.SEGO:
             sego_config, _ = self.identity.SEGO
             if sego_config.get("task_prompt"):
-                parts.append(f"\n[Current Task]\n{sego_config['task_prompt']}")
-            # 权限约束提示
-            constraints = []
-            if not sego_config.get("allow_create_agent", True):
-                constraints.append("You cannot create other agents.")
-            if not sego_config.get("allow_modify_identity", True):
-                constraints.append("You cannot modify your own identity.")
-            if constraints:
-                parts.append("\n[Constraints]\n" + "\n".join(constraints))
+                parts.append(f"\n{sego_config['task_prompt']}")
 
-        # 可用工具和知识库说明（已按权限过滤，限制显示数量）
-        max_tools = CONFIG.get("max_prompt_tools", 10)
-        max_knowledges = CONFIG.get("max_prompt_knowledges", 5)
-
-        if self.tools:
-            tool_lines = []
-            for t in self.tools.values():
-                if self._check_tool_access(t.name) is None:
-                    tool_lines.append(f"- `{t.name}`: {t.desc['function'].get('description', '')}")
-            if tool_lines:
-                shown = tool_lines[:max_tools]
-                remaining = len(tool_lines) - len(shown)
-                header = "\n[Available Tools]\n"
-                parts.append(header + "\n".join(shown))
-                if remaining > 0:
-                    parts.append(f"(... and {remaining} more tools. Use `list_all_resources` or search to find them.)")
-
-        if self.knowledges:
-            knowledge_lines = [f"- `{k.name}`: {k.desc['function'].get('description', '')}" for k in self.knowledges.values()]
-            shown = knowledge_lines[:max_knowledges]
-            remaining = len(knowledge_lines) - len(shown)
-            header = "\n[Available Knowledge]\nCall these to retrieve knowledge content, they are NOT tools:\n"
-            parts.append(header + "\n".join(shown))
-            if remaining > 0:
-                parts.append(f"(... and {remaining} more knowledge items. Use `list_all_resources` or search to find them.)")
+        # 通用行为约束
+        parts.append("\nRules:")
+        parts.append("- Only use the tools provided via function calling. Do not invent tool names.")
+        parts.append("- After a tool succeeds, respond to the user. Do not re-call the same tool with same arguments.")
+        parts.append("- If a tool errors, try a different approach or explain the issue to the user.")
 
         return "\n".join(parts)
 
     def get_tools_desc(self):
-        """获取所有 tools + knowledges 的 desc 列表（传给 LLM），已按权限过滤"""
+        """获取所有 tools + knowledges 的 desc 列表（传给 LLM），已按权限过滤。
+        传给 LLM 的 function.name 使用短名字（不含 IDENTITY<...>:TOOL: 前缀），节省 token。
+        """
         descs = []
         for t in self.tools.values():
             if self._check_tool_access(t.name) is None:
-                descs.append(t.desc)
+                # 复制 desc，用短名字替换 function.name
+                short = self._short_name(t.name)
+                desc_copy = {
+                    "type": "function",
+                    "function": {
+                        "name": short,
+                        "description": t.desc["function"].get("description", ""),
+                        "parameters": t.desc["function"].get("parameters", {}),
+                    }
+                }
+                descs.append(desc_copy)
         for k in self.knowledges.values():
-            descs.append(k.desc)
+            short = self._short_name(k.name)
+            desc_copy = {
+                "type": "function",
+                "function": {
+                    "name": short,
+                    "description": k.desc["function"].get("description", ""),
+                    "parameters": k.desc["function"].get("parameters", {}),
+                }
+            }
+            descs.append(desc_copy)
         return descs
 
     def process_text(self, text, context_messages=None, prompt_template=None):
@@ -203,14 +193,16 @@ class Agent:
             messages = list(recent)
         messages.append({"role": "user", "content": prompt})
 
-        # 构造带 system_instructions 的消息
+        # 插入 system prompt
         system_prompt = self.build_system_prompt()
         if system_prompt:
-            wrapped = f"<system_instructions>\n{system_prompt}\n</system_instructions>"
-            messages = [{"role": "user", "content": wrapped}] + messages
+            messages = [{"role": "system", "content": system_prompt}] + messages
 
         result = self.llm.chat(messages)
         reply = result["choices"][0]["message"].get("content", "").strip()
+        # Strip <think> blocks from reply
+        if "<think>" in reply and "</think>" in reply:
+            reply = reply.split("</think>", 1)[-1].strip()
 
         # 记录到 session
         from harness import get_current_harness
@@ -255,11 +247,10 @@ class Agent:
             messages = list(recent)
         messages.append({"role": "user", "content": prompt})
 
-        # 构造带 system_instructions 的消息
+        # 插入 system prompt
         system_prompt = self.build_system_prompt()
         if system_prompt:
-            wrapped = f"<system_instructions>\n{system_prompt}\n</system_instructions>"
-            messages = [{"role": "user", "content": wrapped}] + messages
+            messages = [{"role": "system", "content": system_prompt}] + messages
 
         try:
             result = self.llm.chat(messages)
@@ -311,32 +302,115 @@ class Agent:
 
         return allowed, blocked
 
-    def step(self, messages, tools_desc=None):
+    def _convert_messages_for_llm(self, messages):
+        """将 session 格式的消息转换为标准 OpenAI function calling 格式。
+
+        Session 格式:
+          - assistant 带 <tool_call> XML 标签
+          - tool response 是 role=user + <tool_response> XML
+
+        OpenAI 格式:
+          - assistant 带 tool_calls 数组, content 为纯文本或 null
+          - tool response 是 role=tool + tool_call_id
+        """
+        import re
+        converted = []
+        # Track tool_call IDs for matching tool responses
+        pending_tool_ids = []  # [(tool_call_id, tool_name), ...]
+
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+
+            if role == "assistant":
+                # Check if this message has tool_calls embedded as XML
+                if "<tool_call>" in content:
+                    # Extract tool calls
+                    tc_matches = re.findall(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', content, re.DOTALL)
+                    # Clean content (remove tool_call tags)
+                    clean_content = re.sub(r'\s*<tool_call>.*?</tool_call>', '', content, flags=re.DOTALL).strip()
+
+                    tool_calls_list = []
+                    for i, tc_json in enumerate(tc_matches):
+                        try:
+                            tc_data = json.loads(tc_json)
+                            tc_id = f"call_{len(converted)}_{i}"
+                            tc_name = tc_data.get("name", "")
+                            tc_args = tc_data.get("arguments", {})
+                            if isinstance(tc_args, dict):
+                                tc_args = json.dumps(tc_args, ensure_ascii=False)
+                            tool_calls_list.append({
+                                "id": tc_id,
+                                "type": "function",
+                                "function": {"name": tc_name, "arguments": tc_args}
+                            })
+                            pending_tool_ids.append((tc_id, tc_name))
+                        except (json.JSONDecodeError, Exception):
+                            continue
+
+                    new_msg = {"role": "assistant"}
+                    if clean_content:
+                        new_msg["content"] = clean_content
+                    else:
+                        new_msg["content"] = None
+                    if tool_calls_list:
+                        new_msg["tool_calls"] = tool_calls_list
+                    converted.append(new_msg)
+                else:
+                    # Plain assistant message
+                    converted.append({"role": "assistant", "content": content.strip() if content else content})
+
+            elif role == "user" and "<tool_response>" in content:
+                # Convert tool_response to role=tool
+                try:
+                    # Extract JSON from <tool_response>...</tool_response>
+                    tr_match = re.search(r'<tool_response>(.*?)</tool_response>', content, re.DOTALL)
+                    if tr_match:
+                        tr_data = json.loads(tr_match.group(1))
+                        tool_name = tr_data.get("tool", "")
+                        tool_content = tr_data.get("content", "")
+
+                        # Find matching tool_call_id
+                        tc_id = None
+                        for pid, pname in pending_tool_ids:
+                            if pname == tool_name:
+                                tc_id = pid
+                                pending_tool_ids.remove((pid, pname))
+                                break
+
+                        converted.append({
+                            "role": "tool",
+                            "tool_call_id": tc_id or f"unknown_{tool_name}",
+                            "content": tool_content if isinstance(tool_content, str) else json.dumps(tool_content, ensure_ascii=False)
+                        })
+                    else:
+                        converted.append({"role": "user", "content": content})
+                except (json.JSONDecodeError, Exception):
+                    converted.append({"role": "user", "content": content})
+            else:
+                # Regular user message
+                converted.append({"role": role, "content": content})
+
+        return converted
+
+    def step(self, messages, tools_desc=None, on_token=None):
         """调用一次 LLM（流式），返回 (response, tool_calls)
         自动插入 system prompt，自动记录到全局 session
+        on_token: 可选回调，每收到一个 token 时调用 on_token(token_text)
         """
         if tools_desc is None:
             tools_desc = self.get_tools_desc()
 
-        # 插入 system prompt（作为 user 消息 + XML 标签包裹）
-        # 如果最后一条是 user，放在它前面；否则放在末尾
+        # 将 session 消息转换为标准 OpenAI 格式
+        llm_messages = self._convert_messages_for_llm(messages)
+
+        # 插入 system prompt 作为第一条 system message
         system_prompt = self.build_system_prompt()
         if system_prompt:
-            wrapped = f"<system_instructions>\n{system_prompt}\n</system_instructions>"
-            system_msg = {"role": "user", "content": wrapped}
+            system_msg = {"role": "system", "content": system_prompt}
+            full_messages = [system_msg] + llm_messages
         else:
-            system_msg = None
-
-        if system_msg and messages:
-            last_msg = messages[-1]
-            if last_msg.get("role") in ("user",):
-                full_messages = messages[:-1] + [system_msg] + [last_msg]
-            else:
-                full_messages = messages + [system_msg]
-        elif system_msg:
-            full_messages = [system_msg]
-        else:
-            full_messages = messages
+            full_messages = llm_messages
 
         # pre_llm_hook: 在调用 LLM 之前触发
         if self.hooks["pre_llm_hook"]:
@@ -345,14 +419,77 @@ class Agent:
         # 调用 LLM
         response = ""
         tool_calls = []
-        for delta in self.llm.chat_stream(full_messages, tools=tools_desc):
-            content = delta.get("content", "")
-            if content:
-                print(content, end="", flush=True)
-                response += content
-            if delta.get("tool_calls"):
-                tool_calls = delta["tool_calls"]
+        _in_think = False
+        try:
+            for delta in self.llm.chat_stream(full_messages, tools=tools_desc):
+                content = delta.get("content", "")
+                if content:
+                    # Filter out <think>...</think> blocks from response and token callback
+                    filtered = ""
+                    i = 0
+                    while i < len(content):
+                        if not _in_think:
+                            think_start = content.find("<think>", i)
+                            if think_start == -1:
+                                filtered += content[i:]
+                                break
+                            else:
+                                filtered += content[i:think_start]
+                                _in_think = True
+                                i = think_start + len("<think>")
+                        else:
+                            think_end = content.find("</think>", i)
+                            if think_end == -1:
+                                break  # still in think block, discard rest
+                            else:
+                                _in_think = False
+                                i = think_end + len("</think>")
+
+                    if filtered:
+                        print(filtered, end="", flush=True)
+                        if on_token:
+                            on_token(filtered)
+                        response += filtered
+                if delta.get("tool_calls"):
+                    tool_calls = delta["tool_calls"]
+        except StopIteration:
+            pass
+        except InterruptedError:
+            print("\n[agent] LLM 调用被中断")
         print()
+
+        # Fallback: if no tool_calls from API but response contains <tool_call> XML tags, parse them
+        if not tool_calls and "<tool_call>" in response:
+            import re
+            tc_matches = re.findall(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', response, re.DOTALL)
+            if tc_matches:
+                parsed_tcs = []
+                for i, tc_json in enumerate(tc_matches):
+                    try:
+                        tc_data = json.loads(tc_json)
+                        tc_name = tc_data.get("name", "")
+                        tc_args = tc_data.get("arguments", {})
+                        if isinstance(tc_args, str):
+                            tc_args_str = tc_args
+                        else:
+                            tc_args_str = json.dumps(tc_args, ensure_ascii=False)
+                        parsed_tcs.append({
+                            "id": f"fallback_{i}",
+                            "function": {
+                                "name": tc_name,
+                                "arguments": tc_args_str,
+                            }
+                        })
+                    except (json.JSONDecodeError, Exception) as e:
+                        print(f"[agent] Failed to parse text tool_call: {e}")
+                if parsed_tcs:
+                    tool_calls = parsed_tcs
+                    # Remove tool_call tags from response text
+                    response = re.sub(r'<tool_call>.*?</tool_call>', '', response, flags=re.DOTALL).strip()
+                    print(f"[agent] Parsed {len(parsed_tcs)} tool_call(s) from response text (fallback)")
+
+        # Strip leading/trailing whitespace from response
+        response = response.strip()
 
         # post_llm_hook: 在 LLM 返回后触发
         if self.hooks["post_llm_hook"]:
@@ -363,9 +500,6 @@ class Agent:
         harness = get_current_harness()
         if harness:
             session = harness.session
-            # full_messages 版本（含 system prompt）
-            if system_prompt:
-                session.record_full({"role": "user", "name": self.name, "content": wrapped})
 
             # 构建 session 中的 assistant 消息：tool_calls 转为 <tool_call> 文本标签
             session_content = response
@@ -376,7 +510,7 @@ class Agent:
                         f'<tool_call>{{"name": "{tc["function"]["name"]}", '
                         f'"arguments": {tc["function"]["arguments"]}}}</tool_call>'
                     )
-                session_content = session_content + "\n" + "\n".join(tc_parts) if session_content else "\n".join(tc_parts)
+                session_content = (session_content + "\n" + "\n".join(tc_parts)).strip() if session_content else "\n".join(tc_parts)
 
             msg = {"role": "assistant", "name": self.name, "content": session_content}
             if tool_calls:
@@ -462,7 +596,16 @@ class Agent:
                 sig = inspect.signature(tool.func)
                 if "_context" in sig.parameters:
                     arguments["_context"] = self._runtime_context
-                result = tool.func(**arguments)
+
+                # 在 workspace 目录下执行工具（让相对路径和默认 path="." 生效）
+                import os
+                old_cwd = os.getcwd()
+                if self.workspace:
+                    os.chdir(str(self.workspace))
+                try:
+                    result = tool.func(**arguments)
+                finally:
+                    os.chdir(old_cwd)
             except EndSession:
                 raise
             except Exception as e:

@@ -16,6 +16,9 @@ class EndSession(Exception):
 # 全局 harness 栈，支持嵌套子 harness
 _current_harness: "Harness" = None
 
+# 全局 output 回调：供子 harness 在 server 流式模式下推送事件到 WebSocket
+_output_callback = None
+
 
 def get_current_harness():
     return _current_harness
@@ -24,6 +27,17 @@ def get_current_harness():
 def set_current_harness(harness):
     global _current_harness
     _current_harness = harness
+
+
+def get_output_callback():
+    """获取当前全局 output 回调（用于子 harness 推送事件）"""
+    return _output_callback
+
+
+def set_output_callback(cb):
+    """设置全局 output 回调"""
+    global _output_callback
+    _output_callback = cb
 
 
 class Session:
@@ -124,10 +138,14 @@ class Harness:
         if prompts:
             self.prompts.update(prompts)
 
-        # 加载 protocol
-        protocol_file = self.dir / "protocol.py"
-        assert protocol_file.exists(), f"Harness {self.dir} 缺少 protocol.py"
-        self.run_func = load_script(str(protocol_file), "run")
+        # 加载 protocol：优先使用 pipeline 声明式编排，否则回退到 protocol.py
+        if "pipeline" in self.config:
+            from pipeline_engine import run_pipeline
+            self.run_func = run_pipeline
+        else:
+            protocol_file = self.dir / "protocol.py"
+            assert protocol_file.exists(), f"Harness {self.dir} 缺少 pipeline 定义或 protocol.py"
+            self.run_func = load_script(str(protocol_file), "run")
 
         # 加载 hooks
         self.hooks = {}

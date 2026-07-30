@@ -1,0 +1,79 @@
+{
+  "name": "creative_roundtable",
+  "description": "创意圆桌：用户提一个话题 → 创意家脑暴 → 批评家挑刺 → 创意家改进 → 批评家最终评价 → 循环。两个 agent 交替发言，模拟真实的头脑风暴+评审流程。",
+  "slots": {
+    "创意家": {
+      "description": "天马行空的创意者，负责提出和 refine 想法",
+      "required": true,
+      "identity": "creative_brain"
+    },
+    "批评家": {
+      "description": "犀利的评审者，负责挑刺和给出改进建议",
+      "required": true,
+      "identity": "sharp_critic"
+    }
+  },
+  "prompts": {},
+  "return_mode": "all",
+  "pipeline": {
+    "start": "wait_input",
+    "max_steps": 50,
+    "workspace_preview": false,
+    "nodes": {
+      "wait_input": {
+        "id": "wait_input",
+        "op": "等待输入",
+        "edges": [
+          {
+            "condition": "input",
+            "to": "brainstorm"
+          }
+        ]
+      },
+      "brainstorm": {
+        "id": "brainstorm",
+        "op": "推理",
+        "agent": "创意家",
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "critique"
+          }
+        ]
+      },
+      "critique": {
+        "id": "critique",
+        "op": "推理",
+        "agent": "批评家",
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "refine"
+          }
+        ]
+      },
+      "refine": {
+        "id": "refine",
+        "op": "推理",
+        "agent": "创意家",
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "final_eval"
+          }
+        ]
+      },
+      "final_eval": {
+        "id": "final_eval",
+        "op": "推理",
+        "agent": "批评家",
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "wait_input"
+          }
+        ]
+      }
+    }
+  }
+}

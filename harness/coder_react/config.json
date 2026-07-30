@@ -1,12 +1,56 @@
 {
-    "name": "coder_react",
-    "description": "Single coding agent ReAct loop. The agent receives user instructions and can use tools (read, write, edit, run_command, etc.) in a loop until it gives a text response. Designed for software engineering tasks.",
-    "slots": {
-        "agent": {
-            "description": "The coding agent that performs software engineering tasks",
-            "required": true
-        }
-    },
-    "return_mode": "last",
-    "max_turns": 200
+  "name": "coder_react",
+  "description": "Single coding agent ReAct loop. 用户输入 → 推理 → 有工具则执行后继续推理，无工具则等待下一轮输入。自动注入 workspace 目录预览。",
+  "slots": {
+    "agent": {
+      "description": "The coding agent that performs software engineering tasks",
+      "required": true,
+      "identity": "dante"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "wait_input",
+    "max_steps": 30,
+    "workspace_preview": true,
+    "nodes": {
+      "wait_input": {
+        "id": "wait_input",
+        "op": "等待输入",
+        "edges": [
+          {
+            "condition": "input",
+            "to": "infer"
+          }
+        ]
+      },
+      "infer": {
+        "id": "infer",
+        "op": "推理",
+        "agent": "agent",
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "exec_tools"
+          },
+          {
+            "condition": "has_text",
+            "to": "wait_input"
+          }
+        ]
+      },
+      "exec_tools": {
+        "id": "exec_tools",
+        "op": "执行工具",
+        "agent": "agent",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "infer"
+          }
+        ]
+      }
+    }
+  },
+  "prompts": {}
 }

@@ -1,6 +1,6 @@
 {
     "name": "react_single",
-    "description": "Single agent ReAct loop with user interaction. Agent receives user input and can use tools in a loop until it gives a text response.",
+    "description": "Single agent ReAct loop. 用户输入 → 推理 → 有工具则执行后继续推理，无工具则等待下一轮输入。",
     "slots": {
         "agent": {
             "description": "The main agent that interacts with the user",
@@ -8,5 +8,43 @@
         }
     },
     "return_mode": "all",
-    "max_turns": 100
+    "pipeline": {
+        "start": "wait_input",
+        "max_steps": 100,
+        "nodes": {
+            "wait_input": {
+                "op": "等待输入",
+                "edges": [
+                    {
+                        "condition": "input",
+                        "to": "infer"
+                    }
+                ]
+            },
+            "infer": {
+                "op": "推理",
+                "agent": "agent",
+                "edges": [
+                    {
+                        "condition": "has_tool_calls",
+                        "to": "exec_tools"
+                    },
+                    {
+                        "condition": "has_text",
+                        "to": "wait_input"
+                    }
+                ]
+            },
+            "exec_tools": {
+                "op": "执行工具",
+                "agent": "agent",
+                "edges": [
+                    {
+                        "condition": "default",
+                        "to": "infer"
+                    }
+                ]
+            }
+        }
+    }
 }

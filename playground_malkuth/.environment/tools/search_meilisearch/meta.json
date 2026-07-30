@@ -1,0 +1,32 @@
+{
+    "type": "function",
+    "title": "Search Meilisearch",
+    "name": "search_meilisearch",
+    "description": "Search across all registered tools and knowledge bases using Meilisearch full-text search. Supports fuzzy matching and typo tolerance. Use this to discover tools or knowledge that may not be listed in your current prompt.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "description": "The search query. Supports natural language and keywords.",
+                "type": "string"
+            },
+            "category": {
+                "description": "Filter by category: 'tools', 'knowledges', or 'all' (default).",
+                "type": "string",
+                "enum": ["tools", "knowledges", "all"]
+            },
+            "limit": {
+                "description": "Maximum number of results per category. Default: 10.",
+                "type": "integer"
+            }
+        },
+        "required": ["query"]
+    },
+    "tags": ["search", "meilisearch", "discovery", "meta"],
+    "author": "admin",
+    "created_at": "2026-07-23",
+    "updated_at": "2026-07-23",
+    "relations": [],
+    "metadata": {"views": null, "likes": null, "comments": null},
+    "embedding": null
+}

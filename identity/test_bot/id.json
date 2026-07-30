@@ -1,0 +1,19 @@
+{
+  "name": "test_bot",
+  "personality": {
+    "traits": ["helpful", "concise"],
+    "tone": "friendly",
+    "language": "zh"
+  },
+  "role": "test assistant",
+  "description": "A simple test bot for verifying harness pipeline.",
+  "llm": {
+    "type": "dummy_llm",
+    "mode": "scripted",
+    "script": [
+      {"response": "你好！我来帮你搜索相关文件。", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "glob_search", "arguments": "{\"pattern\": \"**/*.py\"}"}}]},
+      {"response": "找到了以下 Python 文件：agent.py, harness.py, environment.py。现在让我读取 agent.py。", "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "read_file", "arguments": "{\"file_path\": \"agent.py\"}"}}]},
+      {"response": "agent.py 包含了 Agent 类的完整实现，包括 step、process_text、process_tool_calls 三个核心方法。任务完成！", "tool_calls": []}
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+    "type": "tool",
+    "name": "run_harness_test",
+    "description": "Run a harness with a specific task/prompt and return structured evaluation results. This is a test-oriented wrapper: it runs the harness non-interactively, evaluates the session, and returns both the result and quality metrics.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "harness_name": {
+                "type": "string",
+                "description": "Name of the harness template to run (e.g. 'react_single', 'coder_react')"
+            },
+            "agent_identity": {
+                "type": "string",
+                "description": "Identity name to use for the main agent slot (e.g. 'dante', 'coder')"
+            },
+            "task": {
+                "type": "string",
+                "description": "The task/prompt to give the agent"
+            },
+            "max_steps": {
+                "type": "integer",
+                "description": "Override max_steps for this test run. Default: 10"
+            }
+        },
+        "required": ["harness_name", "agent_identity", "task"]
+    }
+}

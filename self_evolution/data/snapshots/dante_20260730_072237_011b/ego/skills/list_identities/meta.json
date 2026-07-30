@@ -1,0 +1,16 @@
+{
+    "type": "tool",
+    "name": "list_identities",
+    "description": "List all available identities in the system. Supports brief and detailed output modes.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["brief", "detailed"],
+                "description": "Output mode: 'brief' shows name, path, and description only; 'detailed' also shows skills, knowledge, and key superego settings. Default: brief."
+            }
+        },
+        "required": []
+    }
+}

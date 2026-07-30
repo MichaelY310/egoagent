@@ -1,0 +1,19 @@
+{
+    "type": "tool",
+    "name": "copy_identity",
+    "description": "Copy an existing identity to create a new one. Copies the entire identity folder and updates the name in id.json.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "source_name": {
+                "type": "string",
+                "description": "Name of the identity to copy (folder name under identity/, e.g. 'dante')"
+            },
+            "new_name": {
+                "type": "string",
+                "description": "Name for the new identity. If not provided, defaults to '<source_name>_copy'."
+            }
+        },
+        "required": ["source_name"]
+    }
+}

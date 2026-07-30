@@ -2,6 +2,16 @@ import os
 import json
 
 
+def _unescape_llm_string(s: str) -> str:
+    """Unescape literal \\n, \\t, \\\\  that LLMs often produce in JSON strings."""
+    # Only unescape if the string contains literal backslash-n/t sequences
+    # (real newlines would already be \n character, not two chars '\\' 'n')
+    s = s.replace("\\n", "\n")
+    s = s.replace("\\t", "\t")
+    s = s.replace("\\\\", "\\")
+    return s
+
+
 def patch_file(file_path: str, old_string: str, new_string: str, replace_all: bool = False):
     """Replace old_string with new_string in a file. Returns error JSON on failure."""
     if not file_path:
@@ -23,6 +33,14 @@ def patch_file(file_path: str, old_string: str, new_string: str, replace_all: bo
         return json.dumps({"error": f"Cannot read '{file_path}': file appears to be binary."})
     except Exception as e:
         return json.dumps({"error": f"Failed to read '{file_path}': {str(e)}"})
+
+    # LLMs often emit literal \n instead of actual newlines in JSON args; try unescaped version
+    if old_string not in content:
+        old_string_unescaped = _unescape_llm_string(old_string)
+        new_string = _unescape_llm_string(new_string)
+        if old_string_unescaped in content:
+            old_string = old_string_unescaped
+        # else: keep original old_string so the "not found" error is still accurate
 
     if old_string not in content:
         return json.dumps({

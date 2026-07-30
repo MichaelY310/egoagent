@@ -1,6 +1,6 @@
 {
     "name": "guarded_react",
-    "description": "ReAct loop with a guardian agent that reviews tool calls before execution. The worker proposes actions, the guardian filters them.",
+    "description": "ReAct loop with a guardian agent that reviews tool calls before execution. 用户输入 → worker推理 → guardian审查工具调用 → 执行 → 循环。",
     "slots": {
         "worker": {
             "description": "The main agent that interacts with the user and proposes tool calls",
@@ -18,5 +18,39 @@
         }
     },
     "return_mode": "all",
-    "max_turns": 100
+    "pipeline": {
+        "start": "wait_input",
+        "max_steps": 100,
+        "nodes": {
+            "wait_input": {
+                "op": "等待输入",
+                "edges": [
+                    {"condition": "input", "to": "worker_infer"}
+                ]
+            },
+            "worker_infer": {
+                "op": "推理",
+                "agent": "worker",
+                "edges": [
+                    {"condition": "has_tool_calls", "to": "guardian_review"},
+                    {"condition": "has_text", "to": "wait_input"}
+                ]
+            },
+            "guardian_review": {
+                "op": "处理工具",
+                "agent": "guardian",
+                "prompt": "guardian_review",
+                "edges": [
+                    {"condition": "default", "to": "exec_tools"}
+                ]
+            },
+            "exec_tools": {
+                "op": "执行工具",
+                "agent": "worker",
+                "edges": [
+                    {"condition": "default", "to": "worker_infer"}
+                ]
+            }
+        }
+    }
 }

@@ -1,0 +1,24 @@
+{
+    "type": "tool",
+    "name": "generate_test_tasks",
+    "description": "Generate a set of test tasks for evaluating a specific harness or agent capability. Returns tasks of varying difficulty that can be used with run_harness_test.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "harness_name": {
+                "type": "string",
+                "description": "The harness being tested (to understand what tools/capabilities are available)"
+            },
+            "category": {
+                "type": "string",
+                "enum": ["tool_usage", "reasoning", "multi_step", "error_recovery", "mixed"],
+                "description": "Category of test tasks to generate"
+            },
+            "count": {
+                "type": "integer",
+                "description": "Number of tasks to generate. Default: 3"
+            }
+        },
+        "required": ["harness_name", "category"]
+    }
+}

@@ -1,0 +1,15 @@
+{
+    "type": "tool",
+    "name": "end_session",
+    "description": "End the current session. Be cautious when you want to use the tool, because ending the current session means that the whole conversation will be terminated. Call this when the user says goodbye or wants to stop the conversation.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "farewell_message": {
+                "type": "string",
+                "description": "A farewell message to show the user before ending the session."
+            }
+        },
+        "required": []
+    }
+}

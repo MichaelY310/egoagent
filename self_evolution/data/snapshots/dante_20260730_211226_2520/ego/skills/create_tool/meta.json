@@ -1,0 +1,31 @@
+{
+    "type": "tool",
+    "name": "create_tool",
+    "description": "Create a new tool (skill) for an identity. Writes meta.json and Python script. Available on next load.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "identity_name": {
+                "type": "string",
+                "description": "Target identity name (e.g. 'dante', 'researcher')"
+            },
+            "tool_name": {
+                "type": "string",
+                "description": "Tool name in snake_case (e.g. 'summarize_text')"
+            },
+            "description": {
+                "type": "string",
+                "description": "What the tool does (shown to LLM)"
+            },
+            "parameters_schema": {
+                "type": "string",
+                "description": "Parameters as 'name:type:desc, name:type:desc'. Example: 'text:string:input text, max_length:integer:max output length'"
+            },
+            "function_code": {
+                "type": "string",
+                "description": "Python code defining a function named tool_name. Example: 'def summarize_text(text: str, max_length: int = 100):\\n    return text[:max_length]'"
+            }
+        },
+        "required": ["identity_name", "tool_name", "description", "parameters_schema", "function_code"]
+    }
+}

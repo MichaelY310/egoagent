@@ -375,6 +375,137 @@ class MeilisearchManager:
             "knowledges": self.search_knowledges(query, limit=limit),
         }
 
+    def get_indexed_ids(self, index_name="tools"):
+        """获取已索引的文档 ID 列表（用于增量索引判断）"""
+        if not self.client:
+            return set()
+        try:
+            index = self.client.index(index_name)
+            ids = set()
+            offset = 0
+            while True:
+                docs = index.get_documents({"limit": 1000, "offset": offset, "fields": ["id"]})
+                for doc in docs.results:
+                    d = doc if isinstance(doc, dict) else doc.__dict__
+                    ids.add(d.get("id", ""))
+                if len(docs.results) < 1000:
+                    break
+                offset += 1000
+            return ids
+        except Exception:
+            return set()
+
+    def upsert_tool(self, full_name, tool):
+        """增量 upsert 单个 tool"""
+        if not self.client:
+            return
+        doc_id = full_name.replace("/", "_").replace("<", "_").replace(">", "_").replace(":", "_")
+        short_name = full_name.split(":")[-1] if ":" in full_name else full_name
+        source = ""
+        if "IDENTITY<" in full_name:
+            source = "identity"
+        elif "ENV<" in full_name:
+            source = "environment"
+
+        desc = tool.desc.get("function", {})
+        doc = {
+            "id": doc_id,
+            "full_name": full_name,
+            "name": desc.get("name", short_name),
+            "short_name": short_name,
+            "description": desc.get("description", ""),
+            "parameters": json.dumps(desc.get("parameters", {}), ensure_ascii=False),
+            "tags": tool.meta.get("tags", []),
+            "type": "tool",
+            "source": source,
+        }
+        index = self.client.index(TOOLS_INDEX)
+        task = index.add_documents([doc], primary_key="id")
+        self.client.wait_for_task(task.task_uid)
+
+    def upsert_knowledge(self, full_name, knowledge):
+        """增量 upsert 单个 knowledge"""
+        if not self.client:
+            return
+        doc_id = full_name.replace("/", "_").replace("<", "_").replace(">", "_").replace(":", "_")
+        short_name = full_name.split(":")[-1] if ":" in full_name else full_name
+        source = ""
+        if "IDENTITY<" in full_name:
+            source = "identity"
+        elif "ENV<" in full_name:
+            source = "environment"
+
+        desc = knowledge.desc.get("function", {})
+        content_preview = knowledge.content[:500] if knowledge.content else ""
+
+        doc = {
+            "id": doc_id,
+            "full_name": full_name,
+            "name": desc.get("name", short_name),
+            "short_name": short_name,
+            "description": desc.get("description", ""),
+            "content_preview": content_preview,
+            "tags": knowledge.meta.get("tags", []),
+            "type": "knowledge",
+            "source": source,
+        }
+        index = self.client.index(KNOWLEDGE_INDEX)
+        task = index.add_documents([doc], primary_key="id")
+        self.client.wait_for_task(task.task_uid)
+
+    def incremental_index_tools(self, tools_dict):
+        """增量索引：只添加新的 tool，跳过已存在的"""
+        if not self.client:
+            return
+        existing_ids = self.get_indexed_ids(TOOLS_INDEX)
+        new_count = 0
+        for full_name, tool in tools_dict.items():
+            doc_id = full_name.replace("/", "_").replace("<", "_").replace(">", "_").replace(":", "_")
+            if doc_id not in existing_ids:
+                self.upsert_tool(full_name, tool)
+                new_count += 1
+        if new_count:
+            print(f"[MeilisearchManager] 增量索引了 {new_count} 个新 tool")
+
+    def incremental_index_knowledges(self, knowledges_dict):
+        """增量索引：只添加新的 knowledge，跳过已存在的"""
+        if not self.client:
+            return
+        existing_ids = self.get_indexed_ids(KNOWLEDGE_INDEX)
+        new_count = 0
+        for full_name, knowledge in knowledges_dict.items():
+            doc_id = full_name.replace("/", "_").replace("<", "_").replace(">", "_").replace(":", "_")
+            if doc_id not in existing_ids:
+                self.upsert_knowledge(full_name, knowledge)
+                new_count += 1
+        if new_count:
+            print(f"[MeilisearchManager] 增量索引了 {new_count} 个新 knowledge")
+
+    def get_stats(self):
+        """获取索引统计信息"""
+        if not self.client:
+            return {"error": "not connected"}
+        try:
+            stats = self.client.get_all_stats()
+            tool_count = 0
+            knowledge_count = 0
+            try:
+                tool_count = self.client.index(TOOLS_INDEX).get_stats().number_of_documents
+            except Exception:
+                pass
+            try:
+                knowledge_count = self.client.index(KNOWLEDGE_INDEX).get_stats().number_of_documents
+            except Exception:
+                pass
+            return {
+                "database_size_bytes": stats.get("databaseSize", 0),
+                "tools_count": tool_count,
+                "knowledges_count": knowledge_count,
+                "last_update": stats.get("lastUpdate", "N/A"),
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
     @property
     def is_running(self):
         return self.process is not None and self.process.poll() is None

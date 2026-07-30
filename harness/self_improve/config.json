@@ -1,0 +1,35 @@
+{
+    "name": "self_improve",
+    "description": "Ego self-improvement loop: the meta-agent analyzes past sessions, identifies weaknesses in target agents, and iteratively improves their prompts/tools/configs. The meta-agent has evaluate_session and modify_identity tools to introspect and refine.",
+    "slots": {
+        "meta": {
+            "description": "The meta-agent that performs self-improvement analysis and modifications",
+            "required": true
+        }
+    },
+    "return_mode": "last",
+    "pipeline": {
+        "start": "wait_input",
+        "max_steps": 20,
+        "nodes": {
+            "wait_input": {
+                "op": "等待输入",
+                "edges": [{"condition": "input", "to": "infer"}]
+            },
+            "infer": {
+                "op": "推理",
+                "agent": "meta",
+                "edges": [
+                    {"condition": "has_tool_calls", "to": "exec_tools"},
+                    {"condition": "has_text", "to": "wait_input"}
+                ]
+            },
+            "exec_tools": {
+                "op": "执行工具",
+                "agent": "meta",
+                "edges": [{"condition": "default", "to": "infer"}]
+            }
+        }
+    },
+    "prompts": {}
+}

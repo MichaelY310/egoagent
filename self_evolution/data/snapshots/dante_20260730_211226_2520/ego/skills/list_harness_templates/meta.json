@@ -1,0 +1,15 @@
+{
+    "type": "tool",
+    "name": "list_harness_templates",
+    "description": "List all available harness templates. Returns each template's name, description, slot definitions, and pipeline structure. Use this to discover existing templates before creating a new one or invoking create_harness.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "verbose": {
+                "type": "boolean",
+                "description": "If true, include full pipeline node details. If false (default), only show name/description/slots."
+            }
+        },
+        "required": []
+    }
+}

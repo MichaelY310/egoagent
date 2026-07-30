@@ -1,0 +1,15 @@
+{
+    "type": "tool",
+    "name": "evaluate_session",
+    "description": "Analyze a completed session trajectory to evaluate agent performance. Returns statistics, error patterns, and quality indicators.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "session_dir": {
+                "type": "string",
+                "description": "Path to session directory (e.g. 'sessions/react_single_20260728_171006')"
+            }
+        },
+        "required": ["session_dir"]
+    }
+}

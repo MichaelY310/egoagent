@@ -1,0 +1,57 @@
+{
+    "name": "text_review_react",
+    "description": "带文字审查的 ReAct：agent 推理 → reviewer 审查文本输出 → 有工具则执行后继续推理，无工具则展示审查后的文本。",
+    "slots": {
+        "agent": {
+            "description": "主 agent，执行推理和工具调用",
+            "required": true
+        },
+        "reviewer": {
+            "description": "文字审查 agent，审查主 agent 的文本输出",
+            "required": true
+        }
+    },
+    "prompts": {
+        "text_review": {
+            "description": "审查文本输出时使用的 prompt 模板。{text} 会被替换为实际文本。",
+            "default": "审查以下文本输出，检查是否包含不当内容（攻击性言论、敏感信息、事实错误等）。\n\n原文：\n{text}\n\n请输出修改后的安全版本，如果无需修改则原样输出。"
+        }
+    },
+    "return_mode": "all",
+    "pipeline": {
+        "start": "wait_input",
+        "max_steps": 100,
+        "workspace_preview": false,
+        "nodes": {
+            "wait_input": {
+                "op": "等待输入",
+                "edges": [
+                    {"condition": "input", "to": "infer"}
+                ]
+            },
+            "infer": {
+                "op": "推理",
+                "agent": "agent",
+                "edges": [
+                    {"condition": "has_tool_calls", "to": "exec_tools"},
+                    {"condition": "has_text", "to": "review_text"}
+                ]
+            },
+            "review_text": {
+                "op": "处理文字",
+                "agent": "reviewer",
+                "prompt": "text_review",
+                "edges": [
+                    {"condition": "default", "to": "wait_input"}
+                ]
+            },
+            "exec_tools": {
+                "op": "执行工具",
+                "agent": "agent",
+                "edges": [
+                    {"condition": "default", "to": "infer"}
+                ]
+            }
+        }
+    }
+}

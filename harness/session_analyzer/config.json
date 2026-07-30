@@ -1,0 +1,37 @@
+{
+    "name": "session_analyzer",
+    "description": "Analyzes a session trajectory: evaluates performance, identifies patterns, errors, and inefficiencies, then produces a structured analysis report with actionable suggestions.",
+    "slots": {
+        "analyst": {
+            "description": "The agent that performs session analysis",
+            "required": true
+        }
+    },
+    "return_mode": "last",
+    "pipeline": {
+        "start": "wait_input",
+        "max_steps": 15,
+        "nodes": {
+            "wait_input": {
+                "op": "等待输入",
+                "edges": [{"condition": "input", "to": "infer"}]
+            },
+            "infer": {
+                "op": "推理",
+                "agent": "analyst",
+                "edges": [
+                    {"condition": "has_tool_calls", "to": "exec_tools"},
+                    {"condition": "has_text", "to": "wait_input"}
+                ]
+            },
+            "exec_tools": {
+                "op": "执行工具",
+                "agent": "analyst",
+                "edges": [{"condition": "default", "to": "infer"}]
+            }
+        }
+    },
+    "prompts": {
+        "analyst_system_suffix": "You are a session analyst. When given a session to analyze, use evaluate_session to get metrics, then provide a structured report with: 1) Summary of what the agent attempted, 2) What went well, 3) What went wrong (with specific evidence), 4) Root cause analysis, 5) Concrete improvement suggestions."
+    }
+}

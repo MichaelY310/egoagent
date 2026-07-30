@@ -1,0 +1,32 @@
+{
+  "target_harness": "react_single",
+  "target_identity": "dante",
+  "iterations": [
+    {
+      "iteration": 1,
+      "score_before": 0.5,
+      "score_after": 0.2333333333333333,
+      "action": "Updated description via text gradient",
+      "decision": "rollback"
+    },
+    {
+      "iteration": 2,
+      "score_before": 0.5,
+      "score_after": 0.5666666666666667,
+      "action": "Updated description via text gradient",
+      "decision": "accept"
+    },
+    {
+      "iteration": 3,
+      "score_before": 0.5666666666666667,
+      "score_after": 0.6333333333333333,
+      "action": "Updated description via text gradient",
+      "decision": "accept"
+    }
+  ],
+  "initial_score": 0.5,
+  "final_score": 0.6333333333333333,
+  "total_accepted": 2,
+  "total_rejected": 0,
+  "total_rollbacks": 1
+}

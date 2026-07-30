@@ -197,6 +197,7 @@ def main():
             # 将 manager 引用注入到每个 agent，供搜索 tool 使用
             for agent in agents.values():
                 agent.meilisearch = _meilisearch_mgr
+                agent._runtime_context["meilisearch"] = _meilisearch_mgr
 
     print()
 

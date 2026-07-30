@@ -1,0 +1,24 @@
+{
+    "type": "tool",
+    "name": "modify_identity",
+    "description": "Modify a field in an identity's configuration. Can update task_prompt (superego), description, role, temperature, or max_tokens.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "identity_name": {
+                "type": "string",
+                "description": "Name of the identity to modify"
+            },
+            "field": {
+                "type": "string",
+                "description": "Field to modify: 'task_prompt', 'description', 'role', 'temperature', or 'max_tokens'",
+                "enum": ["task_prompt", "description", "role", "temperature", "max_tokens"]
+            },
+            "value": {
+                "type": "string",
+                "description": "New value for the field (for temperature/max_tokens use numeric string)"
+            }
+        },
+        "required": ["identity_name", "field", "value"]
+    }
+}

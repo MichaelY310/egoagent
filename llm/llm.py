@@ -1,4 +1,5 @@
 from .custom_llm import CustomLLM
+from .dummy_llm import DummyLLM
 import json
 import importlib.util
 from pathlib import Path
@@ -18,7 +19,8 @@ all_hook_names = {
 }
 
 llm_map = {
-    "custom_llm" : CustomLLM,
+    "custom_llm": CustomLLM,
+    "dummy_llm": DummyLLM,
 }
 
 class Skill:

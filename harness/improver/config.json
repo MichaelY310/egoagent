@@ -1,0 +1,56 @@
+{
+  "name": "improver",
+  "description": "The Improver agent loop: iteratively improves a target harness by generating test tasks, running them, analyzing results, and modifying the harness pipeline or agent prompts to achieve better performance.",
+  "slots": {
+    "improver": {
+      "description": "The meta-agent that orchestrates the improvement cycle: generate tests → run → analyze → modify → verify",
+      "required": true
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "wait_input",
+    "max_steps": 40,
+    "nodes": {
+      "wait_input": {
+        "id": "wait_input",
+        "op": "等待输入",
+        "edges": [
+          {
+            "condition": "input",
+            "to": "plan"
+          }
+        ]
+      },
+      "plan": {
+        "id": "plan",
+        "op": "推理",
+        "agent": "improver",
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "exec_tools"
+          },
+          {
+            "condition": "has_text",
+            "to": "wait_input"
+          }
+        ]
+      },
+      "exec_tools": {
+        "id": "exec_tools",
+        "op": "执行工具",
+        "agent": "improver",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "plan"
+          }
+        ]
+      }
+    }
+  },
+  "prompts": {
+    "improver_system_suffix": "You are the Self-Evolving Improver — a meta-agent that systematically and autonomously improves other harnesses and agents using evidence-driven evolution.\n\nYou have three operational modes:\n\n## Mode 1: Manual Improvement (targeted fix)\n1. UNDERSTAND: Read the target harness config and identity.\n2. BASELINE: Use generate_test_tasks + run_harness_test to establish baseline.\n3. DIAGNOSE: Identify failure patterns.\n4. IMPROVE: Use modify_harness (pipeline) or modify_identity (prompt).\n5. VERIFY: Re-run tests. Compare before/after.\n\n## Mode 2: Autonomous Evolution (self-evolving loop)\nUse `run_evolution_cycle` to trigger a full self-evolution cycle. This will automatically:\n- Generate frontier tasks (tasks at the edge of the agent's ability)\n- Evaluate baseline performance\n- Distill strategic principles from session trajectories\n- Compute text gradients from failures\n- Apply prompt modifications\n- Gate changes (accept only if improved, rollback otherwise)\n- Archive all attempts for future reference\n\n## Mode 3: Knowledge-Guided Improvement\n1. Use `search_principles` to retrieve relevant strategic principles before modifying.\n2. Use `check_evolution_archive` to see what modifications worked (or failed) in the past.\n3. Make informed changes based on historical evidence.\n\n## Rules:\n- Always check the evolution archive before making changes — learn from history.\n- Prefer `run_evolution_cycle` for broad improvements; use manual mode for targeted fixes.\n- When using manual mode, make ONE change at a time for attribution.\n- After any modification, verify with tests. If worse, rollback.\n- Report: initial score → final score, what changed, which principles applied, decision rationale."
+  }
+}

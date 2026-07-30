@@ -1,0 +1,27 @@
+{
+    "type": "tool",
+    "name": "create_knowledge",
+    "description": "Create a new knowledge file for an identity. Knowledge files are automatically injected into the agent's context when relevant. Use this to give an agent domain expertise, reference materials, or operational guides.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "identity_name": {
+                "type": "string",
+                "description": "The identity to add knowledge to (e.g. 'dante', 'coder', 'research_expert')"
+            },
+            "knowledge_name": {
+                "type": "string",
+                "description": "Unique knowledge name in snake_case (e.g. 'api_reference', 'coding_standards')"
+            },
+            "content": {
+                "type": "string",
+                "description": "The knowledge content (text). Can be documentation, guides, reference materials, rules, etc."
+            },
+            "filename": {
+                "type": "string",
+                "description": "Optional filename for the knowledge file. Defaults to '{knowledge_name}.txt'"
+            }
+        },
+        "required": ["identity_name", "knowledge_name", "content"]
+    }
+}

@@ -1,0 +1,19 @@
+{
+  "target_harness": "react_single",
+  "target_identity": "dante",
+  "max_iterations": 1,
+  "iterations": [
+    {
+      "iteration": 1,
+      "score_before": 0.7999999999999999,
+      "score_after": 0.7999999999999999,
+      "action": "Updated description via text gradient",
+      "decision": "accept"
+    }
+  ],
+  "initial_score": 0.7999999999999999,
+  "final_score": 0.7999999999999999,
+  "total_accepted": 1,
+  "total_rejected": 0,
+  "total_rollbacks": 0
+}

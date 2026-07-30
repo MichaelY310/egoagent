@@ -1,0 +1,57 @@
+{
+    "name": "debate_with_moderator",
+    "description": "辩论赛：用户提出辩题 → 正方立论 → 反方反驳 → 裁判点评 → 循环。裁判可输出 [DONE] 结束辩论。",
+    "slots": {
+        "正方": {
+            "description": "正方辩手，支持辩题",
+            "required": true
+        },
+        "反方": {
+            "description": "反方辩手，反对辩题",
+            "required": true
+        },
+        "裁判": {
+            "description": "裁判，点评双方观点并决定是否继续",
+            "required": true
+        }
+    },
+    "prompts": {},
+    "return_mode": "all",
+    "pipeline": {
+        "start": "wait_input",
+        "max_steps": 30,
+        "workspace_preview": false,
+        "nodes": {
+            "wait_input": {
+                "op": "等待输入",
+                "edges": [
+                    {"condition": "input", "to": "pro_speak"}
+                ]
+            },
+            "pro_speak": {
+                "op": "推理",
+                "agent": "正方",
+                "edges": [
+                    {"condition": "has_text", "to": "con_speak"},
+                    {"condition": "default", "to": "con_speak"}
+                ]
+            },
+            "con_speak": {
+                "op": "推理",
+                "agent": "反方",
+                "edges": [
+                    {"condition": "has_text", "to": "judge_review"},
+                    {"condition": "default", "to": "judge_review"}
+                ]
+            },
+            "judge_review": {
+                "op": "推理",
+                "agent": "裁判",
+                "edges": [
+                    {"condition": "has_text", "to": "wait_input"},
+                    {"condition": "default", "to": "wait_input"}
+                ]
+            }
+        }
+    }
+}

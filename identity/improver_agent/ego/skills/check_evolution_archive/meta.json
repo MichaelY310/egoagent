@@ -1,0 +1,17 @@
+{
+  "name": "check_evolution_archive",
+  "description": "Query the Evolution Archive to see past modification attempts, their outcomes (accepted/rejected/rolled-back), and historical performance deltas.",
+  "parameters": {
+    "target": {
+      "type": "string",
+      "description": "Target harness/identity name to query (e.g., 'react_single/dante')",
+      "required": true
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Max number of records to return (default: 10)",
+      "required": false
+    }
+  },
+  "scripts": ["scripts/check_evolution_archive.py"]
+}

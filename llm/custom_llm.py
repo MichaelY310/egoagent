@@ -1,5 +1,6 @@
 import json
 import requests
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 # class LLM:
@@ -33,7 +34,7 @@ class CustomLLM:
         else:
             log_entry["response"] = response
             log_entry["tool_calls"] = tool_calls
-        with open(session.save_dir / "llm_io.jsonl", "a", encoding="utf-8") as f:
+        with open(Path(session.save_dir) / "llm_io.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
     def chat(
@@ -112,4 +113,7 @@ class CustomLLM:
                     return
                 chunk = json.loads(data)
                 delta = chunk["choices"][0]["delta"]
+                # Some models put thinking in reasoning_content field — skip it
+                if "reasoning_content" in delta and not delta.get("content"):
+                    continue
                 yield delta

@@ -1,0 +1,71 @@
+# Harness 使用指南
+
+## 概念
+Harness = 多 agent 交互的运行环境。每个 harness 有：
+- config.json：定义名称、slots（角色槽位）、prompts（可参数化的提示词）、return_mode（返回模式）
+- protocol.py：定义交互流程逻辑
+
+## 可用 Harness 模板
+
+### harness/react_single
+- 单 agent 与用户的 ReAct 对话循环
+- Slots: `agent`（必填）
+- 无特殊 prompts
+- return_mode 默认: last
+
+### harness/turn_based
+- 带裁判的辩论协议：裁判开场 → 正方/反方轮流 → 裁判每轮点评 → 最多5轮或提前宣判
+- Slots: `正方`（必填）、`反方`（必填）、`裁判`（必填）
+- Prompts:
+  - `task`（必填）：辩题内容
+  - `debater`：辩手行为规范（有默认值）
+  - `judge_opening`：裁判开场白（有默认值）
+  - `judge_review`：裁判点评规则（有默认值）
+  - `judge_final`：最终宣判规则（有默认值）
+- return_mode 默认: last
+
+## 可用 Identity
+- `identity/dante`：通用 agent，有文件操作、搜索、create_harness 等 skill
+- `identity/id1`：基础 agent，有文件操作 skill
+
+## Workspace
+- `playground`：通用工作区
+- `playground2`：辩论工作区（含 .environment/knowledge 参考资料）
+
+## return_mode（返回模式）
+控制子 harness 结束后返回什么给父 session：
+- `"last"`：只返回最后一条 role 不为 tool 的消息（适合只关心结论）
+- `"all"`：返回子 session 全部消息（适合需要看完整过程）
+
+可在三个层级指定（优先级从高到低）：
+1. create_harness tool 的 `return_mode` 参数
+2. harness config.json 的 `"return_mode"` 字段
+3. 兜底默认值 `"last"`
+
+## 创建子 Harness 的步骤
+
+1. **确定目标**：明确要完成什么任务（辩论、协作、研究等）
+2. **选模板**：根据目标选择合适的 harness 模板
+3. **分配角色**：为每个 slot 选择合适的 identity
+4. **准备 prompts**：至少提供 required 的 prompt（如辩题），其他用默认值或自定义
+5. **选 return_mode**：只要结论用 last，要完整过程用 all
+6. **选 workspace**：如果 agent 需要读写文件或参考资料，指定 workspace
+7. **决定是否继承对话**：`inherit_conversation=true` 让子 session 的 agent 能看到之前的对话
+
+## 调用示例
+
+```
+create_harness(
+    harness_dir="harness/turn_based",
+    agents="正方:identity/id1,反方:identity/id1,裁判:identity/dante",
+    prompts="task:AI 陪伴系统是否应该被允许替代人类情感关系？",
+    workspace="playground2",
+    return_mode="last"
+)
+```
+
+## 注意事项
+- prompts 中多个值用 `|` 分隔（因为值本身可能含逗号）
+- 子 harness 是同步阻塞运行的，完成后才返回结果
+- EndSession 只终止当前层的 harness，不会影响父 harness
+- 子 harness 结束后会自动保存 session 到 sessions/ 目录

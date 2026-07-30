@@ -1,0 +1,19 @@
+{
+    "type": "tool",
+    "name": "list_sessions",
+    "description": "List available session directories with basic info (harness name, date, message count). Use this to discover sessions for analysis.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "filter": {
+                "type": "string",
+                "description": "Optional filter string to match session names (e.g. 'coder', 'react_single'). Leave empty for all."
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of sessions to return. Default 20."
+            }
+        },
+        "required": []
+    }
+}

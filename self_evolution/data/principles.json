@@ -1,0 +1,178 @@
+[
+  {
+    "id": "55369e8a",
+    "type": "guiding",
+    "description": "Proceed with the main task despite initial errors or obstacles.",
+    "score": 0.3333333333333333,
+    "usage_count": 1,
+    "success_count": 0
+  },
+  {
+    "id": "e2009415",
+    "type": "cautionary",
+    "description": "Avoid using additional tools not explicitly specified in the instructions.",
+    "score": 0.3333333333333333,
+    "usage_count": 1,
+    "success_count": 0
+  },
+  {
+    "id": "e238b775",
+    "type": "guiding",
+    "description": "Directly modify task_prompts to enforce specific behavioral rules by appending precise instructions.",
+    "score": 0.3333333333333333,
+    "usage_count": 1,
+    "success_count": 0
+  },
+  {
+    "id": "39790e25",
+    "type": "cautionary",
+    "description": "Verify directory paths exist before initiating operations to prevent unresolved path errors.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "67fa4e58",
+    "type": "guiding",
+    "description": "Specify clear, actionable rules when modifying task prompts to ensure precise behavioral changes.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "f5437d13",
+    "type": "cautionary",
+    "description": "Avoid using unauthorized tools that may cause errors or偏离 the specified workflow.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "20139da3",
+    "type": "guiding",
+    "description": "Prioritize efficiency in task prompts by explicitly adding rules like 'Always prefer the most efficient approach' to guide decision-making.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "dc8ee91d",
+    "type": "cautionary",
+    "description": "Verify directory paths exist before invoking tools like evaluate_session to avoid resolution errors.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "1c62ab6a",
+    "type": "guiding",
+    "description": "Append efficiency-focused rules directly to task_prompts to influence decision-making prioritization.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "d8b9606c",
+    "type": "cautionary",
+    "description": "Avoid unnecessary tool calls when the required action is straightforward modification of identity configurations.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "18a028cc",
+    "type": "guiding",
+    "description": "Prioritize efficiency in task_prompt modifications by directly appending efficiency-focused rules.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "4f5d0851",
+    "type": "cautionary",
+    "description": "Verify directory paths exist before initiating session evaluations to avoid resolution errors.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "250efb18",
+    "type": "guiding",
+    "description": "Use targeted tools like modify_identity for precise configuration changes rather than general-purpose tools.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "abf91d3c",
+    "type": "cautionary",
+    "description": "Avoid unnecessary tool calls by focusing only on required actions in the workflow.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "bb62ccf2",
+    "type": "guiding",
+    "description": "Directly modify task_prompts to shape agent behavior by appending specific efficiency rules.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "81c45e69",
+    "type": "cautionary",
+    "description": "Avoid initiating unrelated tool calls that may lead to errors or distractions.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "50f1ce72",
+    "type": "guiding",
+    "description": "Append specific efficiency rules to the task_prompt field of an identity to influence its decision-making process.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "286ae7b6",
+    "type": "cautionary",
+    "description": "Verify the correct file path exists before attempting modifications to avoid directory not found errors.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "ca0b7578",
+    "type": "guiding",
+    "description": "Prioritize efficiency in task prompts by explicitly adding rules like 'Always prefer the most efficient approach' to guide decision-making.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "e5e85472",
+    "type": "cautionary",
+    "description": "Verify directory paths exist before attempting to evaluate sessions to prevent resolution errors.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "5f47f795",
+    "type": "guiding",
+    "description": "Test edge cases thoroughly to catch off-by-one errors.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  },
+  {
+    "id": "1fac35d8",
+    "type": "cautionary",
+    "description": "Avoid overlooking loop boundaries when debugging.",
+    "score": 0.5,
+    "usage_count": 0,
+    "success_count": 0
+  }
+]

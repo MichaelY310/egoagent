@@ -1,6 +1,69 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# === Node.js / Frontend ===
+node_modules/
+harness_editor/node_modules/
+harness_editor/dist/
+harness_editor/tsconfig.tsbuildinfo
+.vite/
+
+# === IDE / Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# === Environment / Secrets ===
+.env
+.env.*
+!.env.example
+
+# === Sessions (runtime data, can be large) ===
+sessions/
+
+# === SWE-bench repos (cloned evaluation repos) ===
 SWE-bench/
 SWE-bench_Verified/
 swebench_eval/repos/
-sessions/
-__pycache__/
-*.pyc
+
+# === Meilisearch (external reference project, ~38MB) ===
+meilisearch/
+
+# === Research: cloned reference projects (not our code) ===
+research/ADAS/
+research/Agent0/
+research/AgentEvolver/
+research/EvoAgentX/
+research/EvolveR/
+research/Godel_Agent/
+research/SSP/
+
+# === Self-evolution runtime data ===
+self_evolution/data/archive.json
+self_evolution/data/eval_tasks.json
+self_evolution/data/task_pool.json
+# Keep principles.json as it's part of the system config
+
+# === Logs ===
+*.log
+logs/
+
+# === OS artifacts ===
+Thumbs.db
+.DS_Store
+
+# === Misc ===
+*.bak
+*.tmp
+test_llm_output.txt

@@ -1,0 +1,1 @@
+def word_count(text: str): return len(text)

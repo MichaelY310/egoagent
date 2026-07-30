@@ -1,0 +1,53 @@
+{
+    "name": "research_loop",
+    "description": "用于研究的ReAct循环 harness",
+    "slots": {
+        "researcher": {
+            "description": "主研究者代理",
+            "required": true
+        }
+    },
+    "prompts": {},
+    "return_mode": "all",
+    "pipeline": {
+        "start": "input_node",
+        "max_steps": 20,
+        "workspace_preview": false,
+        "nodes": {
+            "input_node": {
+                "op": "等待输入",
+                "agent": "researcher",
+                "edges": [
+                    {
+                        "condition": "input",
+                        "to": "think_node"
+                    }
+                ]
+            },
+            "think_node": {
+                "op": "推理",
+                "agent": "researcher",
+                "edges": [
+                    {
+                        "condition": "has_tool_calls",
+                        "to": "tool_node"
+                    },
+                    {
+                        "condition": "has_text",
+                        "to": "input_node"
+                    }
+                ]
+            },
+            "tool_node": {
+                "op": "执行工具",
+                "agent": "researcher",
+                "edges": [
+                    {
+                        "condition": "default",
+                        "to": "think_node"
+                    }
+                ]
+            }
+        }
+    }
+}

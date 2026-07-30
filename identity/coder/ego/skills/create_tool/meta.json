@@ -1,0 +1,31 @@
+{
+    "type": "tool",
+    "name": "create_tool",
+    "description": "Create a new tool (skill) for an identity. This writes a meta.json declaration and a Python script implementing the tool function. The tool becomes immediately available to the identity on next harness load.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "identity_name": {
+                "type": "string",
+                "description": "The identity to add the tool to (e.g. 'dante', 'coder', 'research_expert')"
+            },
+            "tool_name": {
+                "type": "string",
+                "description": "Unique tool name in snake_case (e.g. 'summarize_text', 'query_database')"
+            },
+            "description": {
+                "type": "string",
+                "description": "What the tool does — shown to the LLM in the tool list"
+            },
+            "parameters_schema": {
+                "type": "object",
+                "description": "JSON Schema for tool parameters (same format as OpenAI function calling). Must include 'type': 'object', 'properties': {...}, 'required': [...]"
+            },
+            "function_code": {
+                "type": "string",
+                "description": "Complete Python function code. Must define a function with the same name as tool_name. Example: 'def summarize_text(text: str, max_length: int = 100):\\n    return text[:max_length]'"
+            }
+        },
+        "required": ["identity_name", "tool_name", "description", "parameters_schema", "function_code"]
+    }
+}

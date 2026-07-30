@@ -1,11 +1,11 @@
-root_environment_path: /home/tiger/.environment
+root_environment_path: /home/tiger/egoagent/.environment
 harness_template_repository: /home/tiger/egoagent/harness
 identity_repository: /home/tiger/egoagent/identity
 registry_path: ~/.egoagent_registry.json
 
 # prompt 中最多显示多少个 tool 和 knowledge（identity自身+当前环境的前N个）
-max_prompt_tools: 10
-max_prompt_knowledges: 5
+max_prompt_tools: 20
+max_prompt_knowledges: 10
 
 command_blacklist:
   - rm -rf /

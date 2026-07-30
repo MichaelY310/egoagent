@@ -17,9 +17,17 @@ def run(harness):
 
     # 自动注入 workspace 信息到首条消息
     if harness.workspace:
-        workspace_msg = f"[System] Working directory: {harness.workspace}"
-        harness.session.record({"role": "system", "content": workspace_msg})
-        harness.session.record_full({"role": "system", "content": workspace_msg})
+        import os
+        workspace_path = str(harness.workspace)
+        # 获取 workspace 顶层目录结构
+        try:
+            top_items = sorted(os.listdir(workspace_path))[:30]
+            dir_preview = "\n".join(f"  {'[dir] ' if os.path.isdir(os.path.join(workspace_path, x)) else '      '}{x}" for x in top_items if not x.startswith('.'))
+        except Exception:
+            dir_preview = "(unable to list)"
+        workspace_msg = f"[System] Working directory: {workspace_path}\nTop-level contents:\n{dir_preview}"
+        harness.session.record({"role": "user", "content": workspace_msg})
+        harness.session.record_full({"role": "user", "content": workspace_msg})
 
     while True:
         user_input = input(">>> ")

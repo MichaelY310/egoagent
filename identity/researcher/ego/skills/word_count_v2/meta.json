@@ -1,0 +1,17 @@
+{
+    "type": "tool",
+    "name": "word_count_v2",
+    "description": "统计输入文本的字数（已存在同名工具，使用新名称创建）",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "输入文本"
+            }
+        },
+        "required": [
+            "text"
+        ]
+    }
+}

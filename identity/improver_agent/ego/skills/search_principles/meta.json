@@ -1,0 +1,17 @@
+{
+  "name": "search_principles",
+  "description": "Search the Principle Library for relevant strategic principles. These are distilled from past sessions and ranked by historical effectiveness.",
+  "parameters": {
+    "query": {
+      "type": "string",
+      "description": "Description of the current task/scenario to match against principles",
+      "required": true
+    },
+    "top_k": {
+      "type": "integer",
+      "description": "Number of top principles to return (default: 3)",
+      "required": false
+    }
+  },
+  "scripts": ["scripts/search_principles.py"]
+}

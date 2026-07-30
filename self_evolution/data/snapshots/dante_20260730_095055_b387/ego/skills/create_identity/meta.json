@@ -1,0 +1,52 @@
+{
+    "type": "tool",
+    "name": "create_identity",
+    "description": "Create a brand new agent identity from scratch. This creates the full directory structure (id.json, ego/skills/, ego/knowledge/, superego/) so the identity can immediately be used in harnesses. Use list_identities first to check existing identities.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Unique identity name (snake_case, e.g. 'research_expert', 'code_reviewer')"
+            },
+            "role": {
+                "type": "string",
+                "description": "The role/title of this agent (e.g. '研究专家', 'Code Reviewer', '辩论裁判')"
+            },
+            "description": {
+                "type": "string",
+                "description": "Detailed description of what this agent does, its expertise and responsibilities"
+            },
+            "personality_traits": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of personality traits (e.g. ['analytical', 'thorough', 'objective'])"
+            },
+            "personality_tone": {
+                "type": "string",
+                "description": "Communication tone (e.g. 'professional', 'friendly', 'academic')"
+            },
+            "language": {
+                "type": "string",
+                "description": "Primary language: 'zh' or 'en'. Default: 'zh'"
+            },
+            "llm_model": {
+                "type": "string",
+                "description": "LLM model name to use. Default: uses the system default model."
+            },
+            "llm_base_url": {
+                "type": "string",
+                "description": "LLM API base URL. Default: uses the system default."
+            },
+            "task_prompt": {
+                "type": "string",
+                "description": "Optional superego task prompt that constrains this agent's behavior"
+            },
+            "skills_to_copy_from": {
+                "type": "string",
+                "description": "Optional: comma-separated identity names to copy skills from (e.g. 'coder,dante'). Copies all skills from those identities."
+            }
+        },
+        "required": ["name", "role", "description"]
+    }
+}

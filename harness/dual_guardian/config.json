@@ -1,0 +1,73 @@
+{
+    "name": "dual_guardian",
+    "description": "双 Guardian 审查：worker 推理 → 工具审查 → 文字审查 → 执行工具 → 循环。工具和文本都经过独立审查。",
+    "slots": {
+        "worker": {
+            "description": "主 agent，执行推理和工具调用",
+            "required": true
+        },
+        "tool_guardian": {
+            "description": "工具审查 agent，审查工具调用是否安全",
+            "required": true
+        },
+        "text_guardian": {
+            "description": "文字审查 agent，审查文本输出是否合规",
+            "required": true
+        }
+    },
+    "prompts": {
+        "tool_review": {
+            "description": "审查工具调用时使用的 prompt 模板",
+            "default": "审查以下工具调用，判断是否涉及隐私泄露或危险操作。\n\n{tool_calls}\n\n返回你允许执行的工具调用列表（JSON 数组）。不允许的直接删除。"
+        },
+        "text_review": {
+            "description": "审查文本输出时使用的 prompt 模板",
+            "default": "审查以下文本，检查是否包含不当内容。\n\n{text}\n\n输出修改后的安全版本。"
+        }
+    },
+    "return_mode": "all",
+    "pipeline": {
+        "start": "wait_input",
+        "max_steps": 100,
+        "workspace_preview": false,
+        "nodes": {
+            "wait_input": {
+                "op": "等待输入",
+                "edges": [
+                    {"condition": "input", "to": "worker_infer"}
+                ]
+            },
+            "worker_infer": {
+                "op": "推理",
+                "agent": "worker",
+                "edges": [
+                    {"condition": "has_tool_calls", "to": "review_tools"},
+                    {"condition": "has_text", "to": "review_text"}
+                ]
+            },
+            "review_tools": {
+                "op": "处理工具",
+                "agent": "tool_guardian",
+                "prompt": "tool_review",
+                "edges": [
+                    {"condition": "default", "to": "exec_tools"}
+                ]
+            },
+            "exec_tools": {
+                "op": "执行工具",
+                "agent": "worker",
+                "edges": [
+                    {"condition": "default", "to": "worker_infer"}
+                ]
+            },
+            "review_text": {
+                "op": "处理文字",
+                "agent": "text_guardian",
+                "prompt": "text_review",
+                "edges": [
+                    {"condition": "default", "to": "wait_input"}
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,28 @@
+{
+    "type": "tool",
+    "name": "modify_harness",
+    "description": "Modify an existing harness's pipeline config. Can add/remove/update nodes, edges, slots, prompts, or overwrite the entire pipeline. Returns the updated config.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "harness_name": {
+                "type": "string",
+                "description": "Name of the harness to modify (directory name under harness/)"
+            },
+            "action": {
+                "type": "string",
+                "enum": ["update_node", "add_node", "remove_node", "update_edge", "set_field", "replace_pipeline"],
+                "description": "The modification action to perform"
+            },
+            "target": {
+                "type": "string",
+                "description": "Target of modification. For node actions: node_id. For set_field: field path like 'description' or 'pipeline.max_steps' or 'slots.agent.description'. For replace_pipeline: ignored."
+            },
+            "value": {
+                "type": "string",
+                "description": "JSON string of the new value. For update_node: node object. For add_node: {id, node_object}. For remove_node: ignored. For update_edge: {source_node, edge_index, new_edge}. For set_field: the new value. For replace_pipeline: entire pipeline object."
+            }
+        },
+        "required": ["harness_name", "action", "target", "value"]
+    }
+}

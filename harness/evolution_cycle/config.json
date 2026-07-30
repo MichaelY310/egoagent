@@ -1,0 +1,207 @@
+{
+  "name": "evolution_cycle",
+  "description": "Self-Evolution Cycle: 用声明式 pipeline 实现完整的自进化闭环。包含任务生成、基线评估、前沿筛选、测试运行、原则蒸馏、文本梯度优化、门控决策与回滚。",
+  "slots": {
+    "evolver": {
+      "description": "The evolution orchestrator agent (provides LLM access for llm_call nodes)",
+      "required": true
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "init",
+    "max_steps": 500,
+    "context": {
+      "target_harness": "react_single",
+      "target_identity": "dante",
+      "max_iterations": 3,
+      "task_pool": [],
+      "eval_tasks": [],
+      "baseline_score": 0.0,
+      "current_score": 0.0,
+      "frontier_tasks": [],
+      "current_task": "",
+      "test_results": [],
+      "failed_tasks": [],
+      "new_principles": [],
+      "gradient": "",
+      "snap_id": "",
+      "new_score": 0.0,
+      "iteration": 0,
+      "report": {},
+      "_loop_stack": []
+    },
+    "nodes": {
+      "init": {
+        "id": "init",
+        "op": "脚本",
+        "script": "init_evolution",
+        "input_vars": ["target_harness", "target_identity", "max_iterations"],
+        "output_vars": ["task_pool", "eval_tasks", "report"],
+        "edges": [{"condition": "default", "to": "eval_baseline"}]
+      },
+      "eval_baseline": {
+        "id": "eval_baseline",
+        "op": "循环",
+        "list_var": "eval_tasks",
+        "item_var": "current_task",
+        "counter_var": "_eval_i",
+        "body_start": "baseline_run_task",
+        "max_count": 5,
+        "edges": [{"condition": "loop_done", "to": "compute_baseline"}]
+      },
+      "baseline_run_task": {
+        "id": "baseline_run_task",
+        "op": "子流程",
+        "harness": "${ctx.target_harness}",
+        "identity_map": {"agent": "${ctx.target_identity}"},
+        "initial_message": "${ctx.current_task}",
+        "output_var": "_sub_response",
+        "edges": [{"condition": "default", "to": "baseline_judge"}]
+      },
+      "baseline_judge": {
+        "id": "baseline_judge",
+        "op": "llm_call",
+        "prompt": "judge_prompt",
+        "input_vars": ["current_task", "_sub_response"],
+        "output_var": "_loop_result",
+        "parse_as": "text",
+        "edges": [{"condition": "default", "to": "eval_baseline"}]
+      },
+      "compute_baseline": {
+        "id": "compute_baseline",
+        "op": "脚本",
+        "script": "compute_score",
+        "input_vars": ["eval_tasks_results"],
+        "output_vars": ["baseline_score", "current_score"],
+        "edges": [{"condition": "default", "to": "iter_start"}]
+      },
+      "iter_start": {
+        "id": "iter_start",
+        "op": "脚本",
+        "script": "filter_frontier",
+        "input_vars": ["task_pool", "iteration", "max_iterations"],
+        "output_vars": ["frontier_tasks"],
+        "edges": [
+          {"condition": "expr:ctx.get('iteration', 0) >= ctx.get('max_iterations', 3)", "to": "final_report"},
+          {"condition": "default", "to": "run_tests"}
+        ]
+      },
+      "run_tests": {
+        "id": "run_tests",
+        "op": "循环",
+        "list_var": "frontier_tasks",
+        "item_var": "current_task",
+        "counter_var": "_test_i",
+        "body_start": "test_run_task",
+        "max_count": 3,
+        "edges": [{"condition": "loop_done", "to": "collect_failures"}]
+      },
+      "test_run_task": {
+        "id": "test_run_task",
+        "op": "子流程",
+        "harness": "${ctx.target_harness}",
+        "identity_map": {"agent": "${ctx.target_identity}"},
+        "initial_message": "${ctx.current_task}",
+        "output_var": "_sub_response",
+        "edges": [{"condition": "default", "to": "test_judge"}]
+      },
+      "test_judge": {
+        "id": "test_judge",
+        "op": "llm_call",
+        "prompt": "judge_prompt",
+        "input_vars": ["current_task", "_sub_response"],
+        "output_var": "_loop_result",
+        "parse_as": "text",
+        "edges": [{"condition": "default", "to": "run_tests"}]
+      },
+      "collect_failures": {
+        "id": "collect_failures",
+        "op": "脚本",
+        "script": "collect_failures",
+        "input_vars": ["frontier_tasks", "frontier_tasks_results"],
+        "output_vars": ["failed_tasks", "test_results"],
+        "edges": [{"condition": "default", "to": "distill_principles"}]
+      },
+      "distill_principles": {
+        "id": "distill_principles",
+        "op": "llm_call",
+        "prompt": "distill_prompt",
+        "input_vars": ["failed_tasks", "test_results"],
+        "output_var": "new_principles",
+        "parse_as": "json",
+        "edges": [{"condition": "default", "to": "compute_gradient"}]
+      },
+      "compute_gradient": {
+        "id": "compute_gradient",
+        "op": "llm_call",
+        "prompt": "gradient_prompt",
+        "input_vars": ["failed_tasks", "target_identity"],
+        "output_var": "gradient",
+        "parse_as": "text",
+        "edges": [{"condition": "default", "to": "snapshot_and_apply"}]
+      },
+      "snapshot_and_apply": {
+        "id": "snapshot_and_apply",
+        "op": "脚本",
+        "script": "snapshot_and_apply",
+        "input_vars": ["target_identity", "gradient", "new_principles"],
+        "output_vars": ["snap_id", "action_desc"],
+        "edges": [{"condition": "default", "to": "re_evaluate"}]
+      },
+      "re_evaluate": {
+        "id": "re_evaluate",
+        "op": "循环",
+        "list_var": "eval_tasks",
+        "item_var": "current_task",
+        "counter_var": "_reeval_i",
+        "body_start": "reeval_run_task",
+        "max_count": 5,
+        "edges": [{"condition": "loop_done", "to": "gate_decision"}]
+      },
+      "reeval_run_task": {
+        "id": "reeval_run_task",
+        "op": "子流程",
+        "harness": "${ctx.target_harness}",
+        "identity_map": {"agent": "${ctx.target_identity}"},
+        "initial_message": "${ctx.current_task}",
+        "output_var": "_sub_response",
+        "edges": [{"condition": "default", "to": "reeval_judge"}]
+      },
+      "reeval_judge": {
+        "id": "reeval_judge",
+        "op": "llm_call",
+        "prompt": "judge_prompt",
+        "input_vars": ["current_task", "_sub_response"],
+        "output_var": "_loop_result",
+        "parse_as": "text",
+        "edges": [{"condition": "default", "to": "re_evaluate"}]
+      },
+      "gate_decision": {
+        "id": "gate_decision",
+        "op": "脚本",
+        "script": "gate_decision",
+        "input_vars": ["eval_tasks_results", "current_score", "snap_id", "target_identity", "iteration", "max_iterations", "action_desc", "gradient", "report"],
+        "output_vars": ["new_score", "decision", "current_score", "iteration", "report"],
+        "edges": [
+          {"condition": "expr:ctx.get('iteration', 0) >= ctx.get('max_iterations', 3)", "to": "final_report"},
+          {"condition": "default", "to": "iter_start"}
+        ]
+      },
+      "final_report": {
+        "id": "final_report",
+        "op": "脚本",
+        "script": "final_report",
+        "input_vars": ["report", "baseline_score", "current_score"],
+        "output_vars": ["report"],
+        "edges": [{"condition": "default", "to": null}]
+      }
+    }
+  },
+  "prompts": {
+    "judge_prompt": "Rate the quality of this response to the task on a scale of 0.0 to 1.0.\nTask: {current_task}\nResponse: {_sub_response}\n\nOutput ONLY a single float number between 0.0 and 1.0. No explanation. No thinking. Just the number:",
+    "distill_prompt": "Analyze these failed tasks and extract 2-3 strategic principles.\n\nFailed tasks: {failed_tasks}\nTest results: {test_results}\n\nFor each principle, determine:\n- type: \"guiding\" (what to do) or \"cautionary\" (what to avoid)\n- description: concise actionable principle\n\nReturn a JSON array: [{{\"type\": \"guiding\"|\"cautionary\", \"description\": \"...\"}}]\nOutput ONLY valid JSON array:",
+    "gradient_prompt": "You are a prompt optimization expert. The agent \"{target_identity}\" failed on these tasks:\n{failed_tasks}\n\nAnalyze what went wrong and produce a concise \"text gradient\" — specific instructions for how to modify the agent's system prompt to fix these failures.\n\nOutput a concise, actionable modification instruction (the gradient):",
+    "apply_gradient_prompt": "Apply this modification instruction to the given text value.\n\nCurrent value:\n{current_prompt}\n\nModification instruction (gradient):\n{gradient}\n\nOutput ONLY the new value (no explanation):"
+  }
+}

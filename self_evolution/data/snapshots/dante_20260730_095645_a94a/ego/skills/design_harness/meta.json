@@ -1,0 +1,36 @@
+{
+    "type": "tool",
+    "name": "design_harness",
+    "description": "Design and create a brand new harness template from scratch. This allows you to define a custom multi-agent pipeline with arbitrary nodes, edges, and agent slots. The harness is saved to disk and can immediately be used with create_harness. Use list_harness_templates first to see existing templates and avoid duplication.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Unique name for the harness template (snake_case, e.g. 'research_debate', 'code_review_pipeline')"
+            },
+            "description": {
+                "type": "string",
+                "description": "Human-readable description of what this harness does and when to use it"
+            },
+            "slots": {
+                "type": "object",
+                "description": "Agent slot definitions. Keys are slot names, values are objects with 'description' (string) and optionally 'required' (boolean, default true). Example: {\"worker\": {\"description\": \"主执行者\", \"required\": true}, \"reviewer\": {\"description\": \"审查者\"}}"
+            },
+            "pipeline": {
+                "type": "object",
+                "description": "Pipeline definition with 'start' (string, first node name), 'max_steps' (int, default 100), and 'nodes' (object). Each node has 'op' (one of: '等待输入', '推理', '处理工具', '处理文字', '执行工具'), 'agent' (slot name, required for 推理/处理工具/处理文字/执行工具), and 'edges' (array of {condition, to}). Conditions: 'input', 'has_tool_calls', 'no_tool_calls', 'has_text', 'default'."
+            },
+            "prompts": {
+                "type": "object",
+                "description": "Optional reusable prompt templates. Keys are prompt names, values are prompt text strings. Nodes can reference these via 'prompt' field."
+            },
+            "return_mode": {
+                "type": "string",
+                "enum": ["all", "last"],
+                "description": "What to return when harness completes: 'all' (entire conversation) or 'last' (final message only). Default: 'all'."
+            }
+        },
+        "required": ["name", "description", "slots", "pipeline"]
+    }
+}

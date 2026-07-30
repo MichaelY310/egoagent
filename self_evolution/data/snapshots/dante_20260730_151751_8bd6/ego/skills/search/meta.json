@@ -1,0 +1,35 @@
+{
+    "type": "function",
+    "title": "Search Files",
+    "name": "search_files",
+    "description": "Search for a pattern in files. Supports regex patterns. Returns matching lines with file paths and line numbers. Use path to scope the search directory, file_glob to filter file types.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "description": "The regex pattern to search for.",
+                "type": "string"
+            },
+            "path": {
+                "description": "Directory to search in. Defaults to current working directory.",
+                "type": "string"
+            },
+            "file_glob": {
+                "description": "Glob pattern to filter files (e.g. '*.py', '*.json').",
+                "type": "string"
+            },
+            "limit": {
+                "description": "Maximum number of results to return. Default: 50.",
+                "type": "integer"
+            }
+        },
+        "required": ["pattern"]
+    },
+    "tags": ["file", "search", "grep"],
+    "author": "admin",
+    "created_at": "2025-05-27",
+    "updated_at": "2025-05-27",
+    "relations": [],
+    "metadata": {"views": null, "likes": null, "comments": null},
+    "embedding": null
+}

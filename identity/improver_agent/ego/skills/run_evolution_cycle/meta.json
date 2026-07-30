@@ -1,0 +1,22 @@
+{
+  "name": "run_evolution_cycle",
+  "description": "Execute a full self-evolution cycle on a target harness+identity. This will: generate frontier tasks, evaluate baseline, compute text gradients from failures, apply prompt modifications, gate the changes (accept/rollback), and archive results.",
+  "parameters": {
+    "target_harness": {
+      "type": "string",
+      "description": "Name of the harness to evolve (e.g., 'react_single')",
+      "required": true
+    },
+    "target_identity": {
+      "type": "string",
+      "description": "Name of the identity/agent to evolve (e.g., 'dante')",
+      "required": true
+    },
+    "max_iterations": {
+      "type": "integer",
+      "description": "Max evolution iterations (default: 3)",
+      "required": false
+    }
+  },
+  "scripts": ["scripts/run_evolution_cycle.py"]
+}
