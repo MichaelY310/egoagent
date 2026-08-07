@@ -1,0 +1,52 @@
+nohup: ignoring input
+╔══════════════════════════════════════════════════════════════╗
+║  EgoAgent Structural Evolution — Multi-Scenario Test        ║
+╚══════════════════════════════════════════════════════════════╝
+
+============================================================
+  Scenario: format_missing
+  Solver 不知道需要 <final_answer> 格式
+  Eval format: <final_answer>
+============================================================
+
+  Round 1: nodes=['wait_input', 'infer', 'exec_tools']
+    accuracy=0%, format=0%
+    Calling Evolver...
+
+  Round 2: nodes=['wait_input', 'infer', 'exec_tools']
+    accuracy=0%, format=0%
+    Calling Evolver...
+
+  Round 3: nodes=['wait_input', 'infer', 'exec_tools']
+    accuracy=0%, format=0%
+    Calling Evolver...
+
+  Round 4: nodes=['wait_input', 'infer', 'exec_tools']
+    accuracy=0%, format=0%
+    Calling Evolver...
+
+============================================================
+  Scenario: multi_step_extraction
+  多步计算题，response 中有很多中间数字，需要准确提取最终答案
+  Eval format: <final_answer>
+============================================================
+
+  Round 1: nodes=['wait_input', 'infer', 'exec_tools']
+    accuracy=75%, format=75%
+    ✓ Good enough. Stopping.
+
+============================================================
+  Scenario: boxed_format_mismatch
+  LLM 倾向于输出 \boxed{} 格式，但评估需要 <final_answer> 标签。需要后处理转换。
+  Eval format: <final_answer>
+============================================================
+
+  Round 1: nodes=['wait_input', 'infer', 'exec_tools']
+    accuracy=0%, format=0%
+    Calling Evolver...
+
+  Round 2: nodes=['wait_input', 'infer', 'exec_tools']
+    accuracy=0%, format=0%
+    Calling Evolver...
+
+  Round 3: nodes=['wait_input', 'infer', 'exec_tools']

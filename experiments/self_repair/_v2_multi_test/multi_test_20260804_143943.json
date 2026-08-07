@@ -1,0 +1,146 @@
+[
+  {
+    "scenario": "format_missing",
+    "rounds": [
+      {
+        "round": 1,
+        "accuracy": 0.0,
+        "format_rate": 0.0,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      },
+      {
+        "round": 2,
+        "accuracy": 1.0,
+        "format_rate": 1.0,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      }
+    ],
+    "final_accuracy": 1.0,
+    "structural_changes": [],
+    "final_prompt": "You are a math problem solver. Solve the given problem and provide the final answer within <final_answer> tags. Use the format: <final_answer>NUMBER</final_answer>."
+  },
+  {
+    "scenario": "multi_step_extraction",
+    "rounds": [
+      {
+        "round": 1,
+        "accuracy": 0.5,
+        "format_rate": 0.5,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      },
+      {
+        "round": 2,
+        "accuracy": 0.5,
+        "format_rate": 0.5,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      },
+      {
+        "round": 3,
+        "accuracy": 0.5,
+        "format_rate": 0.5,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      },
+      {
+        "round": 4,
+        "accuracy": 0.5,
+        "format_rate": 0.5,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      },
+      {
+        "round": 5,
+        "accuracy": 0.75,
+        "format_rate": 0.75,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      }
+    ],
+    "final_accuracy": 0.75,
+    "structural_changes": [],
+    "final_prompt": "You are a math problem solver. Show your work step by step. Put your final answer inside <final_answer></final_answer> tags."
+  },
+  {
+    "scenario": "boxed_format_mismatch",
+    "rounds": [
+      {
+        "round": 1,
+        "accuracy": 0.0,
+        "format_rate": 0.0,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      },
+      {
+        "round": 2,
+        "accuracy": 0.0,
+        "format_rate": 0.0,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      },
+      {
+        "round": 3,
+        "accuracy": 0.0,
+        "format_rate": 0.0,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      },
+      {
+        "round": 4,
+        "accuracy": 0.0,
+        "format_rate": 0.0,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      },
+      {
+        "round": 5,
+        "accuracy": 0.0,
+        "format_rate": 0.0,
+        "nodes": [
+          "wait_input",
+          "infer",
+          "exec_tools"
+        ]
+      }
+    ],
+    "final_accuracy": 0.0,
+    "structural_changes": [],
+    "final_prompt": "You are a math problem solver. Solve step by step. Present your final numerical answer clearly."
+  }
+]

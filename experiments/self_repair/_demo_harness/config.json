@@ -1,0 +1,74 @@
+{
+    "name": "math_react",
+    "description": "数学问答 Agent，ReAct 循环",
+    "slots": {
+        "agent": {
+            "description": "Math solver agent",
+            "required": true
+        }
+    },
+    "return_mode": "all",
+    "pipeline": {
+        "start": "wait_input",
+        "max_steps": 50,
+        "nodes": {
+            "wait_input": {
+                "op": "等待输入",
+                "edges": [
+                    {
+                        "condition": "input",
+                        "to": "infer"
+                    }
+                ]
+            },
+            "infer": {
+                "op": "推理",
+                "agent": "agent",
+                "edges": [
+                    {
+                        "condition": "has_tool_calls",
+                        "to": "exec_tools"
+                    },
+                    {
+                        "condition": "has_text",
+                        "to": "patch_pat_format_missing_tag_1475_L2"
+                    }
+                ]
+            },
+            "exec_tools": {
+                "op": "执行工具",
+                "agent": "agent",
+                "edges": [
+                    {
+                        "condition": "default",
+                        "to": "infer"
+                    }
+                ]
+            },
+            "patch_pat_format_missing_tag_1475_L2": {
+                "op": "llm_call",
+                "prompt": "prompt_patch_pat_format_missing_tag_1475_L2",
+                "input_vars": [
+                    "_last_response"
+                ],
+                "output_var": "_last_response",
+                "parse_as": "text",
+                "edges": [
+                    {
+                        "condition": "default",
+                        "to": "wait_input"
+                    }
+                ],
+                "_patch_meta": {
+                    "source_pattern": "pat_format_missing_tag_1475",
+                    "level": 2,
+                    "mandatory": true,
+                    "escalated_from": "patch_pat_format_missing_tag_1475_L1"
+                }
+            }
+        }
+    },
+    "prompts": {
+        "prompt_patch_pat_format_missing_tag_1475_L2": "You are a format fixer. The following response may be missing required tags: ['final_answer'].\n\nYour job:\n1. Read the response carefully\n2. Identify the final answer\n3. If the required tags are missing, add them around the final answer\n4. If tags are already present and correct, return the response unchanged\n\nRequired format: The response MUST contain <final_answer>ANSWER</final_answer> where ANSWER is the numeric or text answer.\n\nResponse to fix:\n{_last_response}\n\nOutput the fixed response (full text, with tags properly added). Do NOT add explanations."
+    }
+}

@@ -373,24 +373,34 @@ def assess_difficulty(harness: str, identity: str, task: str, n_runs: int = 3) -
 def _run_single_task(harness_dir: Path, identity_dir: Path, task: str) -> float:
     """
     运行单个任务并返回分数。
-    使用简化评估：让 LLM 对结果打分。
+    轻量级评估：直接读取 identity 配置，用 _llm_call 生成回答并评分。
+    不创建完整 Agent/Harness 实例，避免环境初始化阻塞。
     """
-    from agent import Agent
-    from harness import Harness
-
     try:
-        agent = Agent(identity_dir)
-        h = Harness(harness_dir, agents={"agent": agent})
+        # 读取 identity 描述
+        id_file = identity_dir / "id.json"
+        description = "You are a helpful assistant."
+        if id_file.exists():
+            id_data = json.loads(id_file.read_text(encoding="utf-8"))
+            desc = id_data.get("description", "")
+            if not desc:
+                # 从其他字段构建描述
+                role = id_data.get("role", "assistant")
+                personality = id_data.get("personality", {})
+                tone = personality.get("tone", "helpful")
+                traits = personality.get("traits", [])
+                description = f"You are a {role}. Your style is {tone}. Traits: {', '.join(traits)}."
+            else:
+                description = desc
 
-        # 模拟非交互式运行：注入输入后执行有限步数
-        # 使用 LLM 直接评估 task 完成质量
+        # 用 LLM 生成回答
         messages = [
-            {"role": "system", "content": agent.identity.ID.get("description", "You are a helpful assistant.")},
+            {"role": "system", "content": description},
             {"role": "user", "content": task},
         ]
-        llm = agent.llm
-        result = llm.chat(messages, max_tokens=1024, temperature=0.3)
-        response = result["choices"][0]["message"].get("content", "")
+        response = _llm_call(messages, max_tokens=2048, temperature=0.3)
+        if not response or response.startswith("[LLM_ERROR]"):
+            return 0.0
 
         # 用 LLM 评估质量
         eval_prompt = f"""Rate the quality of this response to the task on a scale of 0.0 to 1.0.
@@ -554,12 +564,12 @@ Analyze:
 2. What aspects of the current prompt led to this failure?
 3. What specific changes should be made to the prompt?
 
-Output a concise, actionable "text gradient" (modification instructions):"""
+Output a concise "text gradient" — ONE specific, small modification (not a rewrite):"""
 
     gradient = _llm_call([
-        {"role": "system", "content": "You are a prompt optimization expert. Provide specific, actionable prompt modifications."},
+        {"role": "system", "content": "You are a prompt optimization expert. Suggest ONE small, targeted change. Be specific and concise (under 100 words)."},
         {"role": "user", "content": prompt},
-    ], max_tokens=1024, temperature=0.5)
+    ], max_tokens=2048, temperature=0.5)
 
     return gradient
 
@@ -592,20 +602,26 @@ def apply_gradient(identity_name: str, field: str, gradient: str) -> Dict:
         current = current.get(k, {})
     old_value = current.get(keys[-1], "")
 
-    # 使用 LLM 应用梯度
+    # 使用 LLM 应用梯度（保守修改）
     prompt = f"""Apply this modification instruction to the given text value.
+IMPORTANT CONSTRAINTS:
+- Make MINIMAL changes. Only modify what the instruction explicitly asks for.
+- Keep the result SHORT (under 200 characters for tone/style fields, under 500 for description).
+- Preserve the existing style and structure as much as possible.
+- If the current value is short, keep the result short too.
 
 Current value of field "{field}":
-{old_value}
+{old_value if old_value else "(empty)"}
 
 Modification instruction (gradient):
-{gradient}
+{gradient[:500]}
 
 Output ONLY the new value for this field (no explanation, no quotes unless part of the value):"""
 
     new_value = _llm_call([
+        {"role": "system", "content": "You make minimal, conservative edits. Keep output concise."},
         {"role": "user", "content": prompt},
-    ], max_tokens=512, temperature=0.3)
+    ], max_tokens=512, temperature=0.2)
 
     # 写回
     current[keys[-1]] = new_value.strip()
@@ -671,18 +687,8 @@ def snapshot(target: str) -> str:
     return snapshot_id
 
 
-def evaluate(harness: str, identity: str, tasks: List[str]) -> float:
-    """
-    在一组任务上评估当前 harness+identity 的表现。
-    
-    Args:
-        harness: harness 名称
-        identity: identity 名称
-        tasks: 任务列表
-    
-    Returns:
-        平均分数 [0, 1]
-    """
+def evaluate(harness: str, identity: str, tasks: List[str], n_repeats: int = 3) -> float:
+    """在一组任务上评估当前 harness+identity 的表现。多次评估取中位数以提高稳定性。"""
     if not tasks:
         return 0.0
 
@@ -690,15 +696,21 @@ def evaluate(harness: str, identity: str, tasks: List[str]) -> float:
     harness_dir = Path(CONFIG["harness_template_repository"]) / harness
     identity_dir = Path(CONFIG["identity_repository"]) / identity
 
-    scores = []
-    for task in tasks:
-        try:
-            score = _run_single_task(harness_dir, identity_dir, task)
-            scores.append(score)
-        except Exception:
-            scores.append(0.0)
+    all_scores = []
+    for _ in range(n_repeats):
+        round_scores = []
+        for task in tasks:
+            try:
+                score = _run_single_task(harness_dir, identity_dir, task)
+                round_scores.append(score)
+            except Exception:
+                round_scores.append(0.0)
+        all_scores.append(sum(round_scores) / len(round_scores) if round_scores else 0.0)
 
-    return sum(scores) / len(scores) if scores else 0.0
+    # 取中位数
+    all_scores.sort()
+    mid = len(all_scores) // 2
+    return all_scores[mid] if len(all_scores) % 2 == 1 else (all_scores[mid-1] + all_scores[mid]) / 2
 
 
 def gate_decision(score_before: float, score_after: float, threshold: float = 5.0) -> str:
@@ -815,6 +827,14 @@ def run_evolution_cycle(
     Returns:
         进化总结报告
     """
+    # Auto-snapshot before evolution
+    try:
+        from self_evolution.snapshot_manager import SnapshotManager
+        sm = SnapshotManager()
+        sm.create_snapshot(target_identity, reason="pre_evolution")
+    except Exception:
+        pass  # snapshot failure should not block evolution
+
     from config import CONFIG
 
     def _emit(step: str, detail: str = ""):
@@ -892,7 +912,7 @@ def run_evolution_cycle(
             harness_dir = Path(_cfg["harness_template_repository"]) / target_harness
             identity_dir = Path(_cfg["identity_repository"]) / target_identity
             score = _run_single_task(harness_dir, identity_dir, task)
-            if score < 0.5:
+            if score < 0.8:  # 提高阈值：0.8以下都认为有改进空间
                 failed_tasks.append(task)
 
         # Step 5: 提炼原则（如果有session路径）
@@ -920,13 +940,26 @@ def run_evolution_cycle(
             if id_file.exists():
                 id_data = json.loads(id_file.read_text(encoding="utf-8"))
                 current_prompt = id_data.get("description", "")
+                if not current_prompt:
+                    # 用 fallback 构建的 prompt 作为 current_prompt
+                    role = id_data.get("role", "assistant")
+                    personality = id_data.get("personality", {})
+                    tone = personality.get("tone", "helpful")
+                    traits = personality.get("traits", [])
+                    current_prompt = f"You are a {role}. Your style is {tone}. Traits: {', '.join(traits)}."
 
-            # 构建伪 session 用于梯度计算
+            # 生成真实失败响应用于梯度计算（而非伪造轨迹）
             pseudo_session = DATA_DIR / "_temp_session"
             pseudo_session.mkdir(parents=True, exist_ok=True)
+
+            real_response = _llm_call([
+                {"role": "system", "content": current_prompt},
+                {"role": "user", "content": failed_tasks[0]},
+            ], max_tokens=1024, temperature=0.3)
+
             pseudo_messages = [
                 {"role": "user", "content": failed_tasks[0]},
-                {"role": "assistant", "content": "[Task failed - low quality response]"},
+                {"role": "assistant", "content": real_response[:1500] if real_response else "[Empty response]"},
             ]
             (pseudo_session / "messages.json").write_text(
                 json.dumps(pseudo_messages, ensure_ascii=False), encoding="utf-8"
@@ -943,7 +976,11 @@ def run_evolution_cycle(
         action_desc = ""
 
         if gradient and "[LLM_ERROR]" not in gradient:
-            result = apply_gradient(target_identity, "description", gradient)
+            # 优先修改 personality.tone（有实际内容），避免修改空的 description
+            identity_dir_tmp = Path(CONFIG["identity_repository"]) / target_identity
+            id_tmp = json.loads((identity_dir_tmp / "id.json").read_text(encoding="utf-8"))
+            target_field = "description" if id_tmp.get("description", "") else "personality.tone"
+            result = apply_gradient(target_identity, target_field, gradient)
             if result["success"]:
                 action_desc = f"Updated description via text gradient"
                 if verbose:
@@ -951,15 +988,8 @@ def run_evolution_cycle(
             else:
                 action_desc = "Gradient application failed"
         else:
-            # 如果没有梯度，尝试用原则增强 prompt
-            principles = retrieve_principles(test_tasks[0] if test_tasks else "general improvement")
-            if principles:
-                principle_text = "; ".join(p["description"] for p in principles[:2])
-                result = apply_gradient(target_identity, "description",
-                                       f"Incorporate these principles: {principle_text}")
-                action_desc = f"Enhanced with principles: {principle_text[:80]}"
-            else:
-                action_desc = "No modifications applied (no gradient or principles)"
+            # 如果没有梯度，跳过本轮修改（不用低质量原则做盲目增强）
+            action_desc = "No modifications applied (no gradient available)"
 
         iter_report["action"] = action_desc
 

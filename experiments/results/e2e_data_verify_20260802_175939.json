@@ -1,0 +1,31 @@
+{
+  "dir1_meta_evolution": {
+    "status": "PASS",
+    "avg": 0.9666666666666667,
+    "n": 10
+  },
+  "dir2_identity_persona": {
+    "status": "PASS",
+    "avg": 0.4,
+    "probes": 5
+  },
+  "dir3_evo_benchmark": {
+    "status": "PASS",
+    "avg": 0.55
+  },
+  "dir4_pipeline_search": {
+    "status": "PASS",
+    "fitness": 0.81
+  },
+  "dir5_lifelong_learning": {
+    "status": "PASS",
+    "streams": 44,
+    "buffer": 15,
+    "accuracy": 0.0
+  },
+  "dir6_self_play": {
+    "status": "PASS",
+    "avg": 0.5,
+    "n_debates": 3
+  }
+}

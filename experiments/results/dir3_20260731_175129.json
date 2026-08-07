@@ -1,0 +1,127 @@
+{
+  "direction": "dir3_evolution_benchmark",
+  "status": "PASS",
+  "start_time": "2026-07-31 17:54:18",
+  "steps": [
+    {
+      "name": "init_benchmark",
+      "duration": 0.0002884864807128906,
+      "task_suites": [
+        "coding",
+        "reasoning"
+      ],
+      "suites_loaded": {
+        "coding": 8,
+        "reasoning": 8
+      },
+      "status": "completed"
+    },
+    {
+      "name": "run_evolution_suites",
+      "duration": 871.5083575248718,
+      "suite_results_summary": {
+        "coding": {
+          "final_score": 0.5,
+          "iterations": 3
+        },
+        "reasoning": {
+          "final_score": 0.5,
+          "iterations": 3
+        }
+      },
+      "traces_collected": 2,
+      "status": "completed"
+    },
+    {
+      "name": "compute_metrics",
+      "duration": 6.890296936035156e-05,
+      "metrics_per_suite": {
+        "full_coding": {
+          "effectiveness": {
+            "score_improvement": 0.0,
+            "improvement_rate": 0.0,
+            "convergence_score": 0.5
+          },
+          "efficiency": {
+            "token_cost": 25050.0,
+            "iterations_to_threshold": -1.0,
+            "cost_per_point": Infinity
+          },
+          "stability": {
+            "monotonicity": 1.0,
+            "rollback_rate": 0.0,
+            "variance_across_runs": 0.0,
+            "worst_case_regression": 0.0
+          },
+          "transferability": {
+            "in_domain_transfer": 0.0,
+            "out_of_domain_transfer": 0.0,
+            "negative_transfer_rate": 0.0
+          },
+          "component_attribution": {
+            "principle_contribution": 0.0,
+            "textgrad_contribution": 0.0,
+            "frontier_contribution": 0.0,
+            "gate_contribution": 0.0
+          },
+          "sustainability": {
+            "forgetting_rate": 0.0,
+            "principle_saturation": 0.0,
+            "improvement_decay": 1.0
+          }
+        },
+        "full_reasoning": {
+          "effectiveness": {
+            "score_improvement": 0.0,
+            "improvement_rate": 0.0,
+            "convergence_score": 0.5
+          },
+          "efficiency": {
+            "token_cost": 24597.0,
+            "iterations_to_threshold": -1.0,
+            "cost_per_point": Infinity
+          },
+          "stability": {
+            "monotonicity": 1.0,
+            "rollback_rate": 0.0,
+            "variance_across_runs": 0.0,
+            "worst_case_regression": 0.0
+          },
+          "transferability": {
+            "in_domain_transfer": 0.0,
+            "out_of_domain_transfer": 0.0,
+            "negative_transfer_rate": 0.0
+          },
+          "component_attribution": {
+            "principle_contribution": 0.0,
+            "textgrad_contribution": 0.0,
+            "frontier_contribution": 0.0,
+            "gate_contribution": 0.0
+          },
+          "sustainability": {
+            "forgetting_rate": 0.0,
+            "principle_saturation": 0.0,
+            "improvement_decay": 1.0
+          }
+        }
+      },
+      "total_metric_values": 40,
+      "status": "completed"
+    },
+    {
+      "name": "evolution_cycle",
+      "duration": 570.6618955135345,
+      "initial_score": 0.9166666666666666,
+      "final_score": 0.9499999999999998,
+      "total_accepted": 1,
+      "status": "completed"
+    }
+  ],
+  "errors": [],
+  "end_time": "2026-07-31 18:18:20",
+  "summary": {
+    "suites_evaluated": 2,
+    "metrics_computed": 40,
+    "evolution_improvement": 0.033333333333333215
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "dir1_meta_evolution": {
+    "status": "PASS",
+    "avg": 0.8999999999999999,
+    "n": 10
+  },
+  "dir2_identity_persona": {
+    "status": "PASS",
+    "avg": 0.3333333333333333
+  },
+  "dir3_evo_benchmark": {
+    "status": "PASS",
+    "avg": 0.5599999999999999
+  },
+  "dir4_pipeline_search": {
+    "status": "ERROR",
+    "error": "'SearchSpace' object has no attribute 'sample_random_dag'"
+  },
+  "dir5_lifelong_learning": {
+    "status": "PASS",
+    "streams": 20,
+    "buffer": 13
+  },
+  "dir6_self_play": {
+    "status": "PASS",
+    "avg": 0.5
+  }
+}

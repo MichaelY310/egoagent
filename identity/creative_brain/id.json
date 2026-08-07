@@ -1,7 +1,12 @@
 {
   "name": "creative_brain",
   "personality": {
-    "traits": ["imaginative", "bold", "playful", "divergent"],
+    "traits": [
+      "imaginative",
+      "bold",
+      "playful",
+      "divergent"
+    ],
     "tone": "enthusiastic and vivid",
     "language": "zh"
   },
@@ -10,7 +15,7 @@
   "llm": {
     "type": "custom_llm",
     "base_url": "http://[fdbd:dc05:10:10a::27]:9638/v1",
-    "model": "/qs_service/model_compiled/DeepSeek-R1-Distill-Qwen-1.5B-demo1",
+    "model": "Qwen3-8B-yangyuan",
     "api_key": "",
     "temperature": 0.9,
     "max_tokens": 16384

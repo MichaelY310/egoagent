@@ -1,0 +1,91 @@
+{
+  "direction": "dir4_pipeline_architecture_search",
+  "status": "PASS",
+  "start_time": "2026-07-31 18:18:20",
+  "steps": [
+    {
+      "name": "init_search",
+      "duration": 3.814697265625e-05,
+      "config": {
+        "search_strategy": "mutation",
+        "population_size": 5,
+        "max_generations": 2,
+        "eval_tasks": [
+          "完成一个多步骤编程任务",
+          "分析文本并提取关键信息",
+          "解决一个需要工具使用的问题"
+        ],
+        "mutation_rate": 0.7,
+        "crossover_rate": 0.3,
+        "output_dir": "/home/tiger/egoagent/experiments/results/pipeline_search",
+        "elite_ratio": 0.2
+      },
+      "status": "completed"
+    },
+    {
+      "name": "run_search",
+      "duration": 264.5831470489502,
+      "best_fitness": 0.83,
+      "search_trace": [
+        {
+          "generation": 1,
+          "size": 5,
+          "best_fitness": 0.83,
+          "avg_fitness": 0.8099999999999999,
+          "worst_fitness": 0.8,
+          "diversity": 1.0,
+          "best_individual": "meta_evolution_cycle"
+        },
+        {
+          "generation": 2,
+          "size": 5,
+          "best_fitness": 0.83,
+          "avg_fitness": 0.8140000000000001,
+          "worst_fitness": 0.8099999999999999,
+          "diversity": 1.0,
+          "best_individual": "meta_evolution_cycle"
+        }
+      ],
+      "population_size": 5,
+      "best_pipeline_name": "meta_evolution_cycle",
+      "status": "completed"
+    },
+    {
+      "name": "validate_best",
+      "duration": 8.106231689453125e-05,
+      "validation": {
+        "valid": true,
+        "message": "验证通过"
+      },
+      "status": "completed"
+    },
+    {
+      "name": "evaluate_best",
+      "duration": 0.7631409168243408,
+      "eval_score": 0.83,
+      "status": "completed"
+    },
+    {
+      "name": "population_stats",
+      "duration": 0,
+      "population_count": 5,
+      "fitness_values": [
+        0.83,
+        0.81,
+        0.81,
+        0.8099999999999999,
+        0.8099999999999999
+      ],
+      "avg_fitness": 0.8140000000000001,
+      "status": "completed"
+    }
+  ],
+  "errors": [],
+  "end_time": "2026-07-31 18:22:46",
+  "summary": {
+    "generations_completed": 2,
+    "best_fitness": 0.83,
+    "population_size": 5,
+    "best_valid": true
+  }
+}

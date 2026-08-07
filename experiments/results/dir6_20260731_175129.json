@@ -1,0 +1,94 @@
+{
+  "direction": "dir6_multi_agent_self_play",
+  "status": "PASS",
+  "start_time": "2026-07-31 18:33:14",
+  "steps": [
+    {
+      "name": "init_tri_role",
+      "duration": 0.00019669532775878906,
+      "config": {
+        "target_harness": "react_single",
+        "target_identity": "dante",
+        "max_rounds": 2,
+        "tasks_per_round": 3
+      },
+      "initial_elo": {
+        "proposer": 1500.0,
+        "solver": 1500.0,
+        "judge": 1500.0
+      },
+      "initial_difficulty": 0.5,
+      "status": "completed"
+    },
+    {
+      "name": "run_tournament",
+      "duration": 368.04312920570374,
+      "rounds_played": 2,
+      "final_elo": {
+        "proposer": 1479.9109581250757,
+        "solver": 1483.647783653205,
+        "judge": 1536.4412582217194
+      },
+      "avg_score_trend": [
+        0.3666666666666667,
+        0.39999999999999997
+      ],
+      "pass_rate_trend": [
+        0.6666666666666666,
+        0.6666666666666666
+      ],
+      "difficulty_trend": [
+        0.5,
+        0.5
+      ],
+      "final_avg_score": 0.39999999999999997,
+      "converged": false,
+      "improvement": 0.03333333333333327,
+      "status": "completed"
+    },
+    {
+      "name": "evolution_dynamics",
+      "duration": 3.24249267578125e-05,
+      "n_rounds_completed": 2,
+      "elo_ratings": {
+        "proposer": 1479.9109581250757,
+        "solver": 1483.647783653205,
+        "judge": 1536.4412582217194
+      },
+      "difficulty_curve": [
+        0.5,
+        0.5
+      ],
+      "solver_curve": [
+        0.3666666666666667,
+        0.39999999999999997
+      ],
+      "convergence": false,
+      "status": "completed"
+    },
+    {
+      "name": "elo_analysis",
+      "duration": 0,
+      "elo_changes": {
+        "proposer": -20.089041874924305,
+        "solver": -16.352216346795103,
+        "judge": 36.44125822171941
+      },
+      "dominant_role": "judge",
+      "status": "completed"
+    }
+  ],
+  "errors": [],
+  "end_time": "2026-07-31 18:39:22",
+  "summary": {
+    "rounds_played": 2,
+    "final_avg_score": 0.39999999999999997,
+    "improvement": 0.03333333333333327,
+    "converged": false,
+    "final_elo": {
+      "proposer": 1479.9109581250757,
+      "solver": 1483.647783653205,
+      "judge": 1536.4412582217194
+    }
+  }
+}

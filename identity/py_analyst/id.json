@@ -1,0 +1,20 @@
+{
+  "name": "py_analyst",
+  "template": "research",
+  "traits": [
+    "curious",
+    "analytical",
+    "systematic"
+  ],
+  "tools": [
+    "read_file",
+    "search_files",
+    "write_file",
+    "pytest"
+  ],
+  "temperature": 0.7,
+  "tech_stack": [
+    "python"
+  ],
+  "created_at": 1785994716.3723888
+}

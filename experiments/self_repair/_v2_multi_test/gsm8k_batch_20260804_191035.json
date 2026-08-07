@@ -1,0 +1,135 @@
+{
+  "evolution_accuracy": 0.25,
+  "test_accuracy": 0.3333333333333333,
+  "evolution_rounds": [
+    {
+      "round": 1,
+      "accuracy": 0.3,
+      "format_rate": 0.35,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools"
+      ]
+    },
+    {
+      "round": 2,
+      "accuracy": 0.25,
+      "format_rate": 0.4,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools"
+      ]
+    },
+    {
+      "round": 3,
+      "accuracy": 0.3,
+      "format_rate": 0.4,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools"
+      ]
+    },
+    {
+      "round": 4,
+      "accuracy": 0.4,
+      "format_rate": 0.6,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools",
+        "format_answer"
+      ]
+    },
+    {
+      "round": 5,
+      "accuracy": 0.35,
+      "format_rate": 0.6,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools",
+        "format_answer"
+      ]
+    },
+    {
+      "round": 6,
+      "accuracy": 0.25,
+      "format_rate": 0.25,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools",
+        "format_answer"
+      ]
+    }
+  ],
+  "structural_changes": [
+    "format_answer"
+  ],
+  "final_prompt": "You are a math problem solver. Think step by step and solve the problem. Put your final numerical answer inside <final_answer></final_answer> tags.",
+  "test_failures": [
+    {
+      "question": "I have 10 liters of orange drink that are two-thirds water and I wish to add it to 15 liters of pine",
+      "expected": "15",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Raymond and Samantha are cousins. Raymond was born 6 years before Samantha. Raymond had a son at the",
+      "expected": "14",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Kyle bought last year's best-selling book for $19.50. This is with a 25% discount from the original ",
+      "expected": "26",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Mishka bought 3 pairs of shorts, 3 pairs of pants, and 3 pairs of shoes. One pair of shorts costs $1",
+      "expected": "243",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Cynthia eats one serving of ice cream every night.  She buys cartons of ice cream with 15 servings o",
+      "expected": "16",
+      "extracted": "\\$16.00",
+      "reason": "wrong_answer"
+    },
+    {
+      "question": "Gloria is shoe shopping when she comes across a pair of boots that fit her shoe budget. However, she",
+      "expected": "104",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Darrell and Allen's ages are in the ratio of 7:11. If their total age now is 162, calculate Allen's ",
+      "expected": "109",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Gretchen has 110 coins. There are 30 more gold coins than silver coins. How many gold coins does Gre",
+      "expected": "70",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Siobhan has 2 fewer jewels than Aaron. Aaron has 5 more jewels than half of Raymond's jewels. If Ray",
+      "expected": "23",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Mike plays ping pong for 40 minutes.  In the first 20 minutes, he scores 4 points.  In the second 20",
+      "expected": "9",
+      "extracted": null,
+      "reason": "missing_format"
+    }
+  ]
+}

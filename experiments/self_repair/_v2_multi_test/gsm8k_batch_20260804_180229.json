@@ -1,0 +1,136 @@
+{
+  "evolution_accuracy": 0.45,
+  "test_accuracy": 0.23333333333333334,
+  "evolution_rounds": [
+    {
+      "round": 1,
+      "accuracy": 0.2,
+      "format_rate": 0.25,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools"
+      ]
+    },
+    {
+      "round": 2,
+      "accuracy": 0.35,
+      "format_rate": 0.4,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools"
+      ]
+    },
+    {
+      "round": 3,
+      "accuracy": 0.4,
+      "format_rate": 0.6,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools",
+        "format_fixer"
+      ]
+    },
+    {
+      "round": 4,
+      "accuracy": 0.25,
+      "format_rate": 0.6,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools",
+        "format_fixer"
+      ]
+    },
+    {
+      "round": 5,
+      "accuracy": 0.5,
+      "format_rate": 0.65,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools",
+        "format_fixer"
+      ]
+    },
+    {
+      "round": 6,
+      "accuracy": 0.45,
+      "format_rate": 0.5,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools",
+        "format_fixer"
+      ]
+    }
+  ],
+  "structural_changes": [
+    "format_fixer"
+  ],
+  "final_prompt": "You are a math problem solver. Think step by step and solve the problem. Put your final numerical answer inside <final_answer></final_answer> tags.",
+  "test_failures": [
+    {
+      "question": "I have 10 liters of orange drink that are two-thirds water and I wish to add it to 15 liters of pine",
+      "expected": "15",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Raymond and Samantha are cousins. Raymond was born 6 years before Samantha. Raymond had a son at the",
+      "expected": "14",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Kyle bought last year's best-selling book for $19.50. This is with a 25% discount from the original ",
+      "expected": "26",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Marie ordered one chicken meal that costs $12, 5 packs of milk that costs $3 each, 4 apples that cos",
+      "expected": "2",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Mishka bought 3 pairs of shorts, 3 pairs of pants, and 3 pairs of shoes. One pair of shorts costs $1",
+      "expected": "243",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Cynthia eats one serving of ice cream every night.  She buys cartons of ice cream with 15 servings o",
+      "expected": "16",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Henry made two stops during his 60-mile bike trip. He first stopped after 20 miles. His second stop ",
+      "expected": "25",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Gloria is shoe shopping when she comes across a pair of boots that fit her shoe budget. However, she",
+      "expected": "104",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Darrell and Allen's ages are in the ratio of 7:11. If their total age now is 162, calculate Allen's ",
+      "expected": "109",
+      "extracted": null,
+      "reason": "missing_format"
+    },
+    {
+      "question": "Gunter is trying to count the jelly beans in a jar. He asks his friends how many they think are in t",
+      "expected": "80",
+      "extracted": null,
+      "reason": "missing_format"
+    }
+  ]
+}

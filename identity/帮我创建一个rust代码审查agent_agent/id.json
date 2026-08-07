@@ -1,0 +1,20 @@
+{
+  "name": "帮我创建一个rust代码审查agent_agent",
+  "template": "code_review",
+  "traits": [
+    "meticulous",
+    "constructive",
+    "thorough"
+  ],
+  "tools": [
+    "read_file",
+    "search_files",
+    "patch_file",
+    "cargo_build"
+  ],
+  "temperature": 0.3,
+  "tech_stack": [
+    "rust"
+  ],
+  "created_at": 1785994229.9174726
+}

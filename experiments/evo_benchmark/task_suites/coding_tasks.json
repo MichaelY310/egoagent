@@ -1,0 +1,58 @@
+[
+  {
+    "id": "code_01",
+    "description": "Write a Python function that computes the nth Fibonacci number using dynamic programming. Handle edge cases (n=0, n=1, negative n).",
+    "category": "coding",
+    "difficulty": "easy",
+    "expected_behavior": "Returns correct Fibonacci number with O(n) time complexity and proper edge case handling."
+  },
+  {
+    "id": "code_02",
+    "description": "Implement a binary search function that finds the insertion point for a target value in a sorted array. Return the index where the target should be inserted to maintain sorted order.",
+    "category": "coding",
+    "difficulty": "easy",
+    "expected_behavior": "Correct binary search with O(log n) time, handles empty array and boundary cases."
+  },
+  {
+    "id": "code_03",
+    "description": "Write a Python class implementing an LRU (Least Recently Used) cache with get() and put() operations, both in O(1) time complexity.",
+    "category": "coding",
+    "difficulty": "medium",
+    "expected_behavior": "Uses OrderedDict or doubly-linked list + dict, O(1) for both operations, handles capacity constraint."
+  },
+  {
+    "id": "code_04",
+    "description": "Implement a function to detect cycles in a directed graph given as an adjacency list. Return True if a cycle exists, False otherwise.",
+    "category": "coding",
+    "difficulty": "medium",
+    "expected_behavior": "Uses DFS with coloring or topological sort, handles disconnected components, correct cycle detection."
+  },
+  {
+    "id": "code_05",
+    "description": "Write a function to serialize and deserialize a binary tree. The serialized format should be a string, and deserialization should reconstruct the exact same tree structure.",
+    "category": "coding",
+    "difficulty": "medium",
+    "expected_behavior": "Handles null nodes, preserves structure, works with various tree shapes including single node and skewed trees."
+  },
+  {
+    "id": "code_06",
+    "description": "Implement a rate limiter class using the token bucket algorithm. It should support configurable rate (tokens per second) and burst size. Provide methods allow_request() -> bool and reset().",
+    "category": "coding",
+    "difficulty": "hard",
+    "expected_behavior": "Correct token bucket with time-based refill, thread-safe considerations mentioned, proper burst handling."
+  },
+  {
+    "id": "code_07",
+    "description": "Write a Python function that evaluates mathematical expressions given as strings (supporting +, -, *, /, parentheses, and floating point numbers). Do not use eval().",
+    "category": "coding",
+    "difficulty": "hard",
+    "expected_behavior": "Correct operator precedence, handles parentheses nesting, floating point, negative numbers, error on malformed input."
+  },
+  {
+    "id": "code_08",
+    "description": "Implement a trie (prefix tree) that supports insert, search, startsWith, and delete operations. Include a method to find all words with a given prefix.",
+    "category": "coding",
+    "difficulty": "medium",
+    "expected_behavior": "Correct trie structure with all operations working, efficient prefix matching, handles empty strings."
+  }
+]

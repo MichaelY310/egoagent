@@ -1,0 +1,58 @@
+[
+  {
+    "id": "mixed_01",
+    "description": "Write a Python function to check if a string is a valid email address using regex patterns. Then explain in 2-3 sentences why regex alone is insufficient for full email validation.",
+    "category": "mixed",
+    "difficulty": "easy",
+    "expected_behavior": "Working regex-based validator, acknowledges limitations (internationalized emails, actual deliverability, RFC complexity)."
+  },
+  {
+    "id": "mixed_02",
+    "description": "A database query is running slowly (taking 30 seconds for a table with 1M rows). The query is: SELECT * FROM orders WHERE customer_id = 123 AND status = 'pending' ORDER BY created_at DESC LIMIT 10. Diagnose likely causes and propose solutions with tradeoffs.",
+    "category": "mixed",
+    "difficulty": "medium",
+    "expected_behavior": "Identifies missing index, suggests composite index, discusses index tradeoffs (write speed, storage), mentions EXPLAIN plan, considers covering index."
+  },
+  {
+    "id": "mixed_03",
+    "description": "Design a URL shortening service. Describe the core algorithm for generating short codes, the database schema, and handle the case where two users submit the same long URL. Provide pseudocode for the key operations.",
+    "category": "mixed",
+    "difficulty": "hard",
+    "expected_behavior": "Discusses hashing/encoding approach, handles collisions, efficient schema design, considers concurrent access, provides readable pseudocode."
+  },
+  {
+    "id": "mixed_04",
+    "description": "Explain the CAP theorem in distributed systems. Then give a concrete example of a system that prioritizes CP over AP, explaining what tradeoff the users experience.",
+    "category": "mixed",
+    "difficulty": "medium",
+    "expected_behavior": "Correct CAP explanation (Consistency, Availability, Partition tolerance), valid CP example (e.g., HBase, ZooKeeper), clear tradeoff description."
+  },
+  {
+    "id": "mixed_05",
+    "description": "Write a Python decorator that measures and logs the execution time of any function. The decorator should work with functions that have any number of arguments and keyword arguments, and should preserve the function's docstring and name.",
+    "category": "mixed",
+    "difficulty": "easy",
+    "expected_behavior": "Uses functools.wraps, time.time or time.perf_counter, handles *args/**kwargs, preserves metadata, clean implementation."
+  },
+  {
+    "id": "mixed_06",
+    "description": "You're reviewing a pull request that adds a new caching layer. The code uses a global dictionary as cache with no size limit and no TTL. Write a constructive code review comment identifying the issues and suggesting improvements, then provide an improved implementation.",
+    "category": "mixed",
+    "difficulty": "hard",
+    "expected_behavior": "Identifies: memory leak (no size limit), stale data (no TTL), thread safety, constructive tone, provides bounded cache with TTL."
+  },
+  {
+    "id": "mixed_07",
+    "description": "Convert this recursive Fibonacci function to an iterative version, then analyze the time and space complexity of both versions. Explain which is better and why: def fib(n): return n if n <= 1 else fib(n-1) + fib(n-2)",
+    "category": "mixed",
+    "difficulty": "easy",
+    "expected_behavior": "Correct iterative version, accurate complexity analysis (O(2^n) vs O(n) time, O(n) vs O(1) space), clear explanation of why iterative is better."
+  },
+  {
+    "id": "mixed_08",
+    "description": "A microservice is experiencing intermittent 503 errors during peak load. The service has 4 instances behind a load balancer, each with 2GB RAM and 2 CPU cores. Request rate peaks at 1000 RPS. Systematically diagnose the problem and propose a scaling strategy.",
+    "category": "mixed",
+    "difficulty": "hard",
+    "expected_behavior": "Systematic diagnosis (resource saturation, connection pools, GC pauses, downstream deps), proposes horizontal/vertical scaling, considers auto-scaling, circuit breakers."
+  }
+]

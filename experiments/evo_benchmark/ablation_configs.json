@@ -1,0 +1,64 @@
+{
+  "configs": {
+    "full": {
+      "name": "full",
+      "description": "Full system with all components enabled",
+      "use_principles": true,
+      "use_textgrad": true,
+      "use_gate": true,
+      "use_frontier": true,
+      "task_selection": "frontier",
+      "modification_strategy": "textgrad_with_principles"
+    },
+    "no_principles": {
+      "name": "no_principles",
+      "description": "Principle Library disabled — no principle distillation or retrieval",
+      "use_principles": false,
+      "use_textgrad": true,
+      "use_gate": true,
+      "use_frontier": true,
+      "task_selection": "frontier",
+      "modification_strategy": "textgrad_only"
+    },
+    "no_textgrad": {
+      "name": "no_textgrad",
+      "description": "TextGrad disabled — only principle-based enhancement",
+      "use_principles": true,
+      "use_textgrad": false,
+      "use_gate": true,
+      "use_frontier": true,
+      "task_selection": "frontier",
+      "modification_strategy": "principles_only"
+    },
+    "no_gate": {
+      "name": "no_gate",
+      "description": "Gate Controller disabled — all modifications accepted unconditionally",
+      "use_principles": true,
+      "use_textgrad": true,
+      "use_gate": false,
+      "use_frontier": true,
+      "task_selection": "frontier",
+      "modification_strategy": "textgrad_with_principles"
+    },
+    "no_frontier": {
+      "name": "no_frontier",
+      "description": "Frontier Curriculum disabled — random task selection instead",
+      "use_principles": true,
+      "use_textgrad": true,
+      "use_gate": true,
+      "use_frontier": false,
+      "task_selection": "random",
+      "modification_strategy": "textgrad_with_principles"
+    },
+    "random_baseline": {
+      "name": "random_baseline",
+      "description": "Random baseline — modifications are random prompt perturbations",
+      "use_principles": false,
+      "use_textgrad": false,
+      "use_gate": false,
+      "use_frontier": false,
+      "task_selection": "random",
+      "modification_strategy": "random"
+    }
+  }
+}

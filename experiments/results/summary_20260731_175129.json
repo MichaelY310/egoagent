@@ -1,0 +1,85 @@
+{
+  "timestamp": "20260731_175129",
+  "total_duration_seconds": 2873,
+  "pass_count": 5,
+  "fail_count": 1,
+  "timeout_count": 0,
+  "directions": {
+    "dir1": {
+      "name": "Meta-Evolution",
+      "status": "FAIL",
+      "duration_seconds": 85,
+      "log_file": "/home/tiger/egoagent/experiments/results/dir1_20260731_175129.log",
+      "json_file": "/home/tiger/egoagent/experiments/results/dir1_20260731_175129.json"
+    },
+    "dir2": {
+      "name": "Identity Persona",
+      "status": "PASS",
+      "duration_seconds": 84,
+      "log_file": "/home/tiger/egoagent/experiments/results/dir2_20260731_175129.log",
+      "json_file": "/home/tiger/egoagent/experiments/results/dir2_20260731_175129.json",
+      "detail": {
+        "overall_controllability": 0.5,
+        "drift_recommendation": "accept",
+        "total_probes": 8
+      }
+    },
+    "dir3": {
+      "name": "Evolution Benchmark",
+      "status": "PASS",
+      "duration_seconds": 1442,
+      "log_file": "/home/tiger/egoagent/experiments/results/dir3_20260731_175129.log",
+      "json_file": "/home/tiger/egoagent/experiments/results/dir3_20260731_175129.json",
+      "detail": {
+        "suites_evaluated": 2,
+        "metrics_computed": 40,
+        "evolution_improvement": 0.033333333333333215
+      }
+    },
+    "dir4": {
+      "name": "Pipeline Architecture Search",
+      "status": "PASS",
+      "duration_seconds": 266,
+      "log_file": "/home/tiger/egoagent/experiments/results/dir4_20260731_175129.log",
+      "json_file": "/home/tiger/egoagent/experiments/results/dir4_20260731_175129.json",
+      "detail": {
+        "generations_completed": 2,
+        "best_fitness": 0.83,
+        "population_size": 5,
+        "best_valid": true
+      }
+    },
+    "dir5": {
+      "name": "Lifelong Learning",
+      "status": "PASS",
+      "duration_seconds": 628,
+      "log_file": "/home/tiger/egoagent/experiments/results/dir5_20260731_175129.log",
+      "json_file": "/home/tiger/egoagent/experiments/results/dir5_20260731_175129.json",
+      "detail": {
+        "evolution_improvement": 0.0,
+        "principles_distilled": 1,
+        "conflicts_found": 0,
+        "novel_principles": 1,
+        "buffer_size": 8
+      }
+    },
+    "dir6": {
+      "name": "Multi-Agent Self-Play",
+      "status": "PASS",
+      "duration_seconds": 368,
+      "log_file": "/home/tiger/egoagent/experiments/results/dir6_20260731_175129.log",
+      "json_file": "/home/tiger/egoagent/experiments/results/dir6_20260731_175129.json",
+      "detail": {
+        "rounds_played": 2,
+        "final_avg_score": 0.39999999999999997,
+        "improvement": 0.03333333333333327,
+        "converged": false,
+        "final_elo": {
+          "proposer": 1479.9109581250757,
+          "solver": 1483.647783653205,
+          "judge": 1536.4412582217194
+        }
+      }
+    }
+  }
+}

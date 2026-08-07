@@ -1,0 +1,58 @@
+[
+  {
+    "id": "reason_01",
+    "description": "A farmer has a fox, a chicken, and a bag of grain. He needs to cross a river in a boat that can only carry him and one item at a time. The fox will eat the chicken if left alone, and the chicken will eat the grain if left alone. How can the farmer get everything across safely?",
+    "category": "reasoning",
+    "difficulty": "easy",
+    "expected_behavior": "Provides the classic solution: take chicken first, return, take fox, bring chicken back, take grain, return, take chicken."
+  },
+  {
+    "id": "reason_02",
+    "description": "You have 8 identical-looking balls. One is heavier than the rest. Using a balance scale, what is the minimum number of weighings needed to find the heavier ball? Explain your strategy.",
+    "category": "reasoning",
+    "difficulty": "easy",
+    "expected_behavior": "Answer is 2 weighings using divide-into-thirds strategy. Clear explanation of the algorithm."
+  },
+  {
+    "id": "reason_03",
+    "description": "Three people check into a hotel room that costs $30. They each pay $10. Later, the manager realizes the room should only cost $25, so he sends the bellboy with $5. The bellboy keeps $2 and gives $1 back to each person. Now each person paid $9 (total $27), plus $2 the bellboy kept = $29. Where did the other $1 go?",
+    "category": "reasoning",
+    "difficulty": "medium",
+    "expected_behavior": "Identifies the logical error in the framing. The $27 already includes the bellboy's $2. Correct accounting: $25 (room) + $2 (bellboy) + $3 (returned) = $30."
+  },
+  {
+    "id": "reason_04",
+    "description": "In a village, there is a barber who shaves all those, and only those, who do not shave themselves. Does the barber shave himself? Explain the paradox and its resolution.",
+    "category": "reasoning",
+    "difficulty": "medium",
+    "expected_behavior": "Identifies this as Russell's Paradox. Explains the self-referential contradiction and discusses resolutions (the set doesn't exist, or the premise is contradictory)."
+  },
+  {
+    "id": "reason_05",
+    "description": "You have two ropes, each takes exactly 1 hour to burn completely, but they burn at non-uniform rates (not necessarily proportional to length). How can you measure exactly 45 minutes using only these ropes and matches?",
+    "category": "reasoning",
+    "difficulty": "hard",
+    "expected_behavior": "Light rope 1 from both ends and rope 2 from one end simultaneously. When rope 1 burns out (30 min), light rope 2's other end. When rope 2 burns out = 45 min total."
+  },
+  {
+    "id": "reason_06",
+    "description": "A king tells 100 prisoners: Tomorrow I will line you up and place either a red or blue hat on each head. Starting from the back, each must guess their own hat color aloud. Those who guess correctly survive. You may strategize tonight. What strategy maximizes survivors?",
+    "category": "reasoning",
+    "difficulty": "hard",
+    "expected_behavior": "The parity strategy: last person announces the parity (odd/even) of one color they see. Each subsequent person can deduce their own color from announced answers and what they see. Guarantees 99 survivors."
+  },
+  {
+    "id": "reason_07",
+    "description": "Prove that the square root of 2 is irrational using proof by contradiction.",
+    "category": "reasoning",
+    "difficulty": "medium",
+    "expected_behavior": "Assumes sqrt(2) = p/q in lowest terms, squares both sides, shows p must be even, then q must be even, contradicting lowest terms assumption."
+  },
+  {
+    "id": "reason_08",
+    "description": "Five pirates found 100 gold coins. The most senior pirate proposes a distribution. All pirates vote. If at least half accept, the distribution is made. Otherwise the proposer is thrown overboard. What should pirate 1 (most senior) propose?",
+    "category": "reasoning",
+    "difficulty": "hard",
+    "expected_behavior": "Uses backward induction: Pirate 1 proposes 98-0-1-0-1 (or equivalent). Pirates 3 and 5 accept because they'd get nothing in the alternative scenario."
+  }
+]

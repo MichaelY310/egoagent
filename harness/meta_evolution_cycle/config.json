@@ -1,0 +1,129 @@
+{
+  "name": "meta_evolution_cycle",
+  "description": "Meta-Evolution Cycle: 元进化闭环。外层循环调用内层 evolution_cycle 作为子流程，分析进化历史，计算元梯度，调整进化策略参数，并通过元门控决策是否接受新策略。",
+  "slots": {
+    "evolver": {
+      "description": "The meta-evolution orchestrator agent (provides LLM access for analysis)",
+      "required": true
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "init",
+    "max_steps": 200,
+    "context": {
+      "target_harness": "react_single",
+      "target_identity": "dante",
+      "n_inner_cycles": 2,
+      "current_strategy": {},
+      "old_performance": {},
+      "new_performance": {},
+      "history_analysis": {},
+      "meta_gradient": {},
+      "snapshot_id": "",
+      "new_strategy": {},
+      "meta_decision": "",
+      "meta_report": {},
+      "_loop_stack": []
+    },
+    "nodes": {
+      "init": {
+        "id": "init",
+        "op": "脚本",
+        "script": "meta_init",
+        "input_vars": ["target_harness", "target_identity", "n_inner_cycles"],
+        "output_vars": ["current_strategy", "meta_report"],
+        "edges": [{"condition": "default", "to": "run_old_strategy"}]
+      },
+      "run_old_strategy": {
+        "id": "run_old_strategy",
+        "op": "子流程",
+        "harness": "evolution_cycle",
+        "identity_map": {"evolver": "${ctx.target_identity}"},
+        "initial_message": "Run evolution cycle with current strategy",
+        "output_var": "_old_result",
+        "edges": [{"condition": "default", "to": "collect_old_performance"}]
+      },
+      "collect_old_performance": {
+        "id": "collect_old_performance",
+        "op": "脚本",
+        "script": "collect_performance",
+        "input_vars": ["_old_result", "target_harness", "target_identity", "n_inner_cycles"],
+        "output_vars": ["old_performance"],
+        "edges": [{"condition": "default", "to": "analyze_history"}]
+      },
+      "analyze_history": {
+        "id": "analyze_history",
+        "op": "脚本",
+        "script": "analyze_history",
+        "input_vars": ["old_performance"],
+        "output_vars": ["history_analysis"],
+        "edges": [{"condition": "default", "to": "compute_meta_gradient"}]
+      },
+      "compute_meta_gradient": {
+        "id": "compute_meta_gradient",
+        "op": "llm_call",
+        "prompt": "meta_gradient_prompt",
+        "input_vars": ["current_strategy", "history_analysis"],
+        "output_var": "meta_gradient",
+        "parse_as": "json",
+        "edges": [
+          {"condition": "expr:not ctx.get('meta_gradient')", "to": "final_report"},
+          {"condition": "default", "to": "create_snapshot"}
+        ]
+      },
+      "create_snapshot": {
+        "id": "create_snapshot",
+        "op": "脚本",
+        "script": "create_snapshot",
+        "input_vars": ["current_strategy"],
+        "output_vars": ["snapshot_id"],
+        "edges": [{"condition": "default", "to": "apply_meta_gradient"}]
+      },
+      "apply_meta_gradient": {
+        "id": "apply_meta_gradient",
+        "op": "脚本",
+        "script": "apply_meta_gradient",
+        "input_vars": ["meta_gradient", "current_strategy"],
+        "output_vars": ["new_strategy"],
+        "edges": [{"condition": "default", "to": "run_new_strategy"}]
+      },
+      "run_new_strategy": {
+        "id": "run_new_strategy",
+        "op": "子流程",
+        "harness": "evolution_cycle",
+        "identity_map": {"evolver": "${ctx.target_identity}"},
+        "initial_message": "Run evolution cycle with updated strategy",
+        "output_var": "_new_result",
+        "edges": [{"condition": "default", "to": "collect_new_performance"}]
+      },
+      "collect_new_performance": {
+        "id": "collect_new_performance",
+        "op": "脚本",
+        "script": "collect_performance",
+        "input_vars": ["_new_result", "target_harness", "target_identity", "n_inner_cycles"],
+        "output_vars": ["new_performance"],
+        "edges": [{"condition": "default", "to": "meta_gate"}]
+      },
+      "meta_gate": {
+        "id": "meta_gate",
+        "op": "脚本",
+        "script": "meta_gate",
+        "input_vars": ["current_strategy", "new_strategy", "old_performance", "new_performance", "snapshot_id"],
+        "output_vars": ["meta_decision", "current_strategy"],
+        "edges": [{"condition": "default", "to": "final_report"}]
+      },
+      "final_report": {
+        "id": "final_report",
+        "op": "脚本",
+        "script": "meta_final_report",
+        "input_vars": ["meta_report", "old_performance", "new_performance", "meta_gradient", "meta_decision", "current_strategy"],
+        "output_vars": ["meta_report"],
+        "edges": [{"condition": "default", "to": null}]
+      }
+    }
+  },
+  "prompts": {
+    "meta_gradient_prompt": "You are a meta-optimization expert. Given the current evolution strategy and history analysis, suggest parameter changes.\n\nCurrent strategy: {current_strategy}\nHistory analysis: {history_analysis}\n\nRules:\n1. Change at most 2 parameters.\n2. Valid parameters: gradient_temperature (0.1-1.5), frontier_range ([low,high]), gate_threshold (1.0-20.0), distill_strategy (aggressive/conservative/adaptive), max_eval_tasks (2-20), loop_iterations (1-10).\n\nReturn ONLY a JSON object with parameters to change. Example: {{\"gradient_temperature\": 0.7}}\nOutput ONLY valid JSON:"
+  }
+}

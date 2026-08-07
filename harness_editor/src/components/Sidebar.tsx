@@ -7,6 +7,8 @@ const NODE_TYPES: { op: OpType; icon: string; cssClass: string; label: string }[
   { op: '处理工具',  icon: '🔧', cssClass: 'dnd-tool',  label: '处理工具' },
   { op: '处理文字',  icon: '📝', cssClass: 'dnd-text',  label: '处理文字' },
   { op: '执行工具',  icon: '⚡', cssClass: 'dnd-exec',  label: '执行工具' },
+  { op: '脚本',     icon: '📜', cssClass: 'dnd-script', label: '脚本 (Python)' },
+  { op: 'llm_call', icon: '💬', cssClass: 'dnd-llm',   label: 'LLM Call' },
 ];
 
 export default function Sidebar() {

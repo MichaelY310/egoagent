@@ -103,13 +103,26 @@ function flowToConfig(config: HarnessConfig, flowNodes: Node[], flowEdges: Edge[
 
   flowNodes.forEach((n) => {
     const data = n.data as unknown as PipelineNode;
-    nodes[n.id] = {
+    const node: PipelineNode = {
       id: n.id,
       op: data.op,
       agent: data.agent,
       prompt: data.prompt,
       edges: [],
     };
+    // 脚本节点字段
+    if (data.op === '脚本') {
+      node.script = data.script;
+      node.input_vars = data.input_vars;
+      node.output_vars = data.output_vars;
+    }
+    // llm_call 节点字段
+    if (data.op === 'llm_call') {
+      node.input_vars = data.input_vars;
+      node.output_var = data.output_var;
+      node.parse_as = data.parse_as;
+    }
+    nodes[n.id] = node;
   });
 
   flowEdges.forEach((e) => {
@@ -735,6 +748,8 @@ export default function App() {
                       '处理工具': '#f59e0b',
                       '处理文字': '#a855f7',
                       '执行工具': '#ec4899',
+                      '脚本': '#84cc16',
+                      'llm_call': '#0ea5e9',
                     };
                     return colors[op] || '#4a5568';
                   }}

@@ -53,7 +53,7 @@ export default function EvolutionPanel() {
   const [targetHarness, setTargetHarness] = useState("react_single");
   const [targetIdentity, setTargetIdentity] = useState("dante");
   const [iterations, setIterations] = useState(3);
-  const [evoMode, setEvoMode] = useState<"engine" | "harness">("harness");
+  const [evoMode, setEvoMode] = useState<"v2_structural" | "harness" | "engine">("v2_structural");
 
   // 持久化进化状态
   useEffect(() => {
@@ -172,9 +172,10 @@ export default function EvolutionPanel() {
             Mode:
             <select
               value={evoMode}
-              onChange={(e) => setEvoMode(e.target.value as "engine" | "harness")}
+              onChange={(e) => setEvoMode(e.target.value as "v2_structural" | "harness" | "engine")}
               style={{ marginLeft: 4, padding: "4px 8px", background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 4, color: "#fff" }}
             >
+              <option value="v2_structural">V2 Structural (DAG + Script)</option>
               <option value="harness">Harness Pipeline (DAG)</option>
               <option value="engine">Engine (legacy)</option>
             </select>
@@ -262,6 +263,48 @@ export default function EvolutionPanel() {
               <span style={{ color: "#888", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{iter.action}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* V2 Structural Evolution Report */}
+      {evoReport && (evoReport as any).structural_changes && (
+        <div style={{ ...cardStyle, border: "1px solid #84cc16" }}>
+          <h3 style={{ margin: "0 0 10px", fontSize: 14, color: "#a3e635" }}>🔧 V2 Structural Report</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
+            <div style={{ textAlign: "center", padding: 8, background: "#0a1628", borderRadius: 4 }}>
+              <div style={{ fontSize: 18, fontWeight: "bold", color: "#a3e635" }}>{(evoReport as any).structural_changes?.length || 0}</div>
+              <div style={{ fontSize: 10, color: "#888" }}>Structural Changes</div>
+            </div>
+            <div style={{ textAlign: "center", padding: 8, background: "#0a1628", borderRadius: 4 }}>
+              <div style={{ fontSize: 18, fontWeight: "bold", color: "#7ecfff" }}>{(evoReport as any).iterations?.length || 0}</div>
+              <div style={{ fontSize: 10, color: "#888" }}>Iterations</div>
+            </div>
+            <div style={{ textAlign: "center", padding: 8, background: "#0a1628", borderRadius: 4 }}>
+              <div style={{ fontSize: 18, fontWeight: "bold", color: "#fbbf24" }}>{(evoReport as any).scripts_written?.length || 0}</div>
+              <div style={{ fontSize: 10, color: "#888" }}>Scripts Written</div>
+            </div>
+          </div>
+          {(evoReport as any).iterations?.map((iter: any, idx: number) => (
+            <div key={idx} style={{ fontSize: 11, padding: "6px 0", borderTop: "1px solid #1e3a5f" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ color: "#888" }}>Round {iter.iteration}</span>
+                <span style={{ color: "#a3e635" }}>Nodes: [{iter.nodes_after?.join(", ")}]</span>
+              </div>
+              {iter.actions?.map((a: any, i: number) => (
+                <div key={i} style={{ marginLeft: 16, fontSize: 10, color: a.action.includes("node") || a.action.includes("rewire") ? "#84cc16" : "#888" }}>
+                  → {a.action}: {a.result}
+                </div>
+              ))}
+            </div>
+          ))}
+          {(evoReport as any).scripts_written?.length > 0 && (
+            <div style={{ marginTop: 8, padding: "6px 8px", background: "#0a1628", borderRadius: 4, fontSize: 11 }}>
+              <span style={{ color: "#a3e635" }}>📜 Scripts: </span>
+              {(evoReport as any).scripts_written.map((s: string, i: number) => (
+                <span key={i} style={{ color: "#e0e0e0", marginRight: 8 }}>{s}</span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

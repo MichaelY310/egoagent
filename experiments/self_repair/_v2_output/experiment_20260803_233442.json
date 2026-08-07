@@ -1,0 +1,101 @@
+{
+  "timestamp": "20260803_233442",
+  "rounds": [
+    {
+      "round": 1,
+      "accuracy": 0.0,
+      "format_rate": 0.0,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools"
+      ],
+      "prompt": "You are a math problem solver. Solve the given math problem step by step and provide the final numerical answer."
+    },
+    {
+      "round": 2,
+      "accuracy": 1.0,
+      "format_rate": 1.0,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools",
+        "format_fixer"
+      ],
+      "prompt": "You are a math problem solver. Solve the given math problem step by step and provide the final numerical answer enclosed within <final_answer> tags. Always ensure the answer follows this exact format:"
+    }
+  ],
+  "evolution_history": [
+    {
+      "round": 1,
+      "accuracy_before": 0.0,
+      "n_turns": 1,
+      "actions_summary": [
+        "modify_prompt",
+        "add_node",
+        "rewire_edge",
+        "done"
+      ]
+    }
+  ],
+  "final_dag": {
+    "pipeline": {
+      "start": "wait_input",
+      "nodes": {
+        "wait_input": {
+          "op": "等待输入",
+          "edges": [
+            {
+              "condition": "input",
+              "to": "infer"
+            }
+          ]
+        },
+        "infer": {
+          "op": "推理",
+          "edges": [
+            {
+              "condition": "has_tool_calls",
+              "to": "exec_tools"
+            },
+            {
+              "condition": "has_text",
+              "to": "format_fixer"
+            }
+          ]
+        },
+        "exec_tools": {
+          "op": "执行工具",
+          "edges": [
+            {
+              "condition": "default",
+              "to": "infer"
+            }
+          ]
+        },
+        "format_fixer": {
+          "op": "脚本",
+          "edges": [
+            {
+              "condition": "has_text",
+              "to": "wait_input"
+            }
+          ],
+          "script": "format_fixer",
+          "input_vars": [
+            "response",
+            "question"
+          ],
+          "output_vars": [
+            "response"
+          ]
+        }
+      }
+    },
+    "prompts": {}
+  },
+  "final_prompt": "You are a math problem solver. Solve the given math problem step by step and provide the final numerical answer enclosed within <final_answer> tags. Always ensure the answer follows this exact format: <final_answer>NUMBER</final_answer>.",
+  "structural_changes": [
+    "format_fixer"
+  ]
+}

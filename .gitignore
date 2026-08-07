@@ -31,6 +31,7 @@ harness_editor/tsconfig.tsbuildinfo
 
 # === Sessions (runtime data, can be large) ===
 sessions/
+harness_editor/sessions/
 
 # === SWE-bench repos (cloned evaluation repos) ===
 SWE-bench/
@@ -41,19 +42,23 @@ swebench_eval/repos/
 meilisearch/
 
 # === Research: cloned reference projects (not our code) ===
-research/ADAS/
-research/Agent0/
-research/AgentEvolver/
-research/EvoAgentX/
-research/EvolveR/
-research/Godel_Agent/
-research/SSP/
+research/
 
 # === Self-evolution runtime data ===
 self_evolution/data/archive.json
 self_evolution/data/eval_tasks.json
 self_evolution/data/task_pool.json
-# Keep principles.json as it's part of the system config
+self_evolution/data/_temp_session/
+self_evolution/data/_test_session/
+self_evolution/data/report_*.json
+self_evolution/data/distill_log.json
+self_evolution/data/experience_buffer.json
+self_evolution/data/gold_references.json
+self_evolution/data/judge_calibration.json
+self_evolution/data/meta_archive.json
+self_evolution/data/meta_config.json
+self_evolution/data/meta_snapshots/
+self_evolution/data/probe_templates.json
 
 # === Logs ===
 *.log
@@ -62,6 +67,31 @@ logs/
 # === OS artifacts ===
 Thumbs.db
 .DS_Store
+
+# === Large binaries / runtime tooling (NOT source code) ===
+code-server-4.96.4-linux-amd64/
+code-server.tar.gz
+node-v20.18.2-linux-x64/
+node-v20.tar.xz
+void-bin/
+void-web/
+void-web.tar.gz
+
+# === Void Editor runtime data ===
+.code-server-data/
+.code-server-ext/
+.void-home/
+.void-server-data/
+.vscode-data/
+
+# === EgoAgent runtime data ===
+.egoagent/
+.egoagent_checkpoints/
+
+# === Temporary/test files ===
+_delete_test.txt
+_patch_*.py
+pas_output/
 
 # === Misc ===
 *.bak

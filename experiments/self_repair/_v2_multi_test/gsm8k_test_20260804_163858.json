@@ -1,0 +1,28 @@
+{
+  "scenario": "gsm8k_real_20",
+  "rounds": [
+    {
+      "round": 1,
+      "accuracy": 0.25,
+      "format_rate": 0.3,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools"
+      ]
+    },
+    {
+      "round": 2,
+      "accuracy": 0.75,
+      "format_rate": 0.75,
+      "nodes": [
+        "wait_input",
+        "infer",
+        "exec_tools"
+      ]
+    }
+  ],
+  "final_accuracy": 0.75,
+  "structural_changes": [],
+  "final_prompt": "You are a math problem solver. Think step by step and solve the problem. ALWAYS put your final numerical answer inside <final_answer></final_answer> tags. If you don't use this format, your answer wil"
+}

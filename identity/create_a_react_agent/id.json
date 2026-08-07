@@ -1,0 +1,20 @@
+{
+  "name": "create_a_react_agent",
+  "template": "code_review",
+  "traits": [
+    "meticulous",
+    "constructive",
+    "thorough"
+  ],
+  "tools": [
+    "read_file",
+    "search_files",
+    "patch_file",
+    "npm_run"
+  ],
+  "temperature": 0.3,
+  "tech_stack": [
+    "react"
+  ],
+  "created_at": 1785985734.2806458
+}

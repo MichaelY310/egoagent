@@ -1,0 +1,1288 @@
+{
+  "best_pipeline": {
+    "name": "meta_evolution_cycle",
+    "description": "Meta-Evolution Cycle: 元进化闭环。外层循环调用内层 evolution_cycle 作为子流程，分析进化历史，计算元梯度，调整进化策略参数，并通过元门控决策是否接受新策略。",
+    "slots": {
+      "evolver": {
+        "description": "The meta-evolution orchestrator agent (provides LLM access for analysis)",
+        "required": true
+      }
+    },
+    "return_mode": "last",
+    "pipeline": {
+      "start": "init",
+      "max_steps": 200,
+      "context": {
+        "target_harness": "react_single",
+        "target_identity": "dante",
+        "n_inner_cycles": 2,
+        "current_strategy": {},
+        "old_performance": {},
+        "new_performance": {},
+        "history_analysis": {},
+        "meta_gradient": {},
+        "snapshot_id": "",
+        "new_strategy": {},
+        "meta_decision": "",
+        "meta_report": {},
+        "_loop_stack": []
+      },
+      "nodes": {
+        "init": {
+          "id": "init",
+          "op": "脚本",
+          "script": "meta_init",
+          "input_vars": [
+            "target_harness",
+            "target_identity",
+            "n_inner_cycles"
+          ],
+          "output_vars": [
+            "current_strategy",
+            "meta_report"
+          ],
+          "edges": [
+            {
+              "condition": "default",
+              "to": "run_old_strategy"
+            }
+          ]
+        },
+        "run_old_strategy": {
+          "id": "run_old_strategy",
+          "op": "子流程",
+          "harness": "evolution_cycle",
+          "identity_map": {
+            "evolver": "${ctx.target_identity}"
+          },
+          "initial_message": "Run evolution cycle with current strategy",
+          "output_var": "_old_result",
+          "edges": [
+            {
+              "condition": "default",
+              "to": "collect_old_performance"
+            }
+          ]
+        },
+        "collect_old_performance": {
+          "id": "collect_old_performance",
+          "op": "脚本",
+          "script": "collect_performance",
+          "input_vars": [
+            "_old_result",
+            "target_harness",
+            "target_identity",
+            "n_inner_cycles"
+          ],
+          "output_vars": [
+            "old_performance"
+          ],
+          "edges": [
+            {
+              "condition": "default",
+              "to": "analyze_history"
+            }
+          ]
+        },
+        "analyze_history": {
+          "id": "analyze_history",
+          "op": "脚本",
+          "script": "analyze_history",
+          "input_vars": [
+            "old_performance"
+          ],
+          "output_vars": [
+            "history_analysis"
+          ],
+          "edges": [
+            {
+              "condition": "default",
+              "to": "compute_meta_gradient"
+            }
+          ]
+        },
+        "compute_meta_gradient": {
+          "id": "compute_meta_gradient",
+          "op": "llm_call",
+          "prompt": "meta_gradient_prompt",
+          "input_vars": [
+            "current_strategy",
+            "history_analysis"
+          ],
+          "output_var": "meta_gradient",
+          "parse_as": "json",
+          "edges": [
+            {
+              "condition": "expr:not ctx.get('meta_gradient')",
+              "to": "final_report"
+            },
+            {
+              "condition": "default",
+              "to": "create_snapshot"
+            }
+          ]
+        },
+        "create_snapshot": {
+          "id": "create_snapshot",
+          "op": "脚本",
+          "script": "create_snapshot",
+          "input_vars": [
+            "current_strategy"
+          ],
+          "output_vars": [
+            "snapshot_id"
+          ],
+          "edges": [
+            {
+              "condition": "default",
+              "to": "apply_meta_gradient"
+            }
+          ]
+        },
+        "apply_meta_gradient": {
+          "id": "apply_meta_gradient",
+          "op": "脚本",
+          "script": "apply_meta_gradient",
+          "input_vars": [
+            "meta_gradient",
+            "current_strategy"
+          ],
+          "output_vars": [
+            "new_strategy"
+          ],
+          "edges": [
+            {
+              "condition": "default",
+              "to": "run_new_strategy"
+            }
+          ]
+        },
+        "run_new_strategy": {
+          "id": "run_new_strategy",
+          "op": "子流程",
+          "harness": "evolution_cycle",
+          "identity_map": {
+            "evolver": "${ctx.target_identity}"
+          },
+          "initial_message": "Run evolution cycle with updated strategy",
+          "output_var": "_new_result",
+          "edges": [
+            {
+              "condition": "default",
+              "to": "collect_new_performance"
+            }
+          ]
+        },
+        "collect_new_performance": {
+          "id": "collect_new_performance",
+          "op": "脚本",
+          "script": "collect_performance",
+          "input_vars": [
+            "_new_result",
+            "target_harness",
+            "target_identity",
+            "n_inner_cycles"
+          ],
+          "output_vars": [
+            "new_performance"
+          ],
+          "edges": [
+            {
+              "condition": "default",
+              "to": "meta_gate"
+            }
+          ]
+        },
+        "meta_gate": {
+          "id": "meta_gate",
+          "op": "脚本",
+          "script": "meta_gate",
+          "input_vars": [
+            "current_strategy",
+            "new_strategy",
+            "old_performance",
+            "new_performance",
+            "snapshot_id"
+          ],
+          "output_vars": [
+            "meta_decision",
+            "current_strategy"
+          ],
+          "edges": [
+            {
+              "condition": "default",
+              "to": "final_report"
+            }
+          ]
+        },
+        "final_report": {
+          "id": "final_report",
+          "op": "脚本",
+          "script": "meta_final_report",
+          "input_vars": [
+            "meta_report",
+            "old_performance",
+            "new_performance",
+            "meta_gradient",
+            "meta_decision",
+            "current_strategy"
+          ],
+          "output_vars": [
+            "meta_report"
+          ],
+          "edges": [
+            {
+              "condition": "default",
+              "to": null
+            }
+          ]
+        }
+      }
+    },
+    "prompts": {
+      "meta_gradient_prompt": "You are a meta-optimization expert. Given the current evolution strategy and history analysis, suggest parameter changes.\n\nCurrent strategy: {current_strategy}\nHistory analysis: {history_analysis}\n\nRules:\n1. Change at most 2 parameters.\n2. Valid parameters: gradient_temperature (0.1-1.5), frontier_range ([low,high]), gate_threshold (1.0-20.0), distill_strategy (aggressive/conservative/adaptive), max_eval_tasks (2-20), loop_iterations (1-10).\n\nReturn ONLY a JSON object with parameters to change. Example: {{\"gradient_temperature\": 0.7}}\nOutput ONLY valid JSON:"
+    }
+  },
+  "best_fitness": 0.83,
+  "search_trace": [
+    {
+      "generation": 1,
+      "size": 5,
+      "best_fitness": 0.83,
+      "avg_fitness": 0.8099999999999999,
+      "worst_fitness": 0.8,
+      "diversity": 1.0,
+      "best_individual": "meta_evolution_cycle"
+    },
+    {
+      "generation": 2,
+      "size": 5,
+      "best_fitness": 0.83,
+      "avg_fitness": 0.8140000000000001,
+      "worst_fitness": 0.8099999999999999,
+      "diversity": 1.0,
+      "best_individual": "meta_evolution_cycle"
+    }
+  ],
+  "population": [
+    {
+      "id": "a18cb2b9",
+      "config": {
+        "name": "meta_evolution_cycle",
+        "description": "Meta-Evolution Cycle: 元进化闭环。外层循环调用内层 evolution_cycle 作为子流程，分析进化历史，计算元梯度，调整进化策略参数，并通过元门控决策是否接受新策略。",
+        "slots": {
+          "evolver": {
+            "description": "The meta-evolution orchestrator agent (provides LLM access for analysis)",
+            "required": true
+          }
+        },
+        "return_mode": "last",
+        "pipeline": {
+          "start": "init",
+          "max_steps": 200,
+          "context": {
+            "target_harness": "react_single",
+            "target_identity": "dante",
+            "n_inner_cycles": 2,
+            "current_strategy": {},
+            "old_performance": {},
+            "new_performance": {},
+            "history_analysis": {},
+            "meta_gradient": {},
+            "snapshot_id": "",
+            "new_strategy": {},
+            "meta_decision": "",
+            "meta_report": {},
+            "_loop_stack": []
+          },
+          "nodes": {
+            "init": {
+              "id": "init",
+              "op": "脚本",
+              "script": "meta_init",
+              "input_vars": [
+                "target_harness",
+                "target_identity",
+                "n_inner_cycles"
+              ],
+              "output_vars": [
+                "current_strategy",
+                "meta_report"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "run_old_strategy"
+                }
+              ]
+            },
+            "run_old_strategy": {
+              "id": "run_old_strategy",
+              "op": "子流程",
+              "harness": "evolution_cycle",
+              "identity_map": {
+                "evolver": "${ctx.target_identity}"
+              },
+              "initial_message": "Run evolution cycle with current strategy",
+              "output_var": "_old_result",
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "collect_old_performance"
+                }
+              ]
+            },
+            "collect_old_performance": {
+              "id": "collect_old_performance",
+              "op": "脚本",
+              "script": "collect_performance",
+              "input_vars": [
+                "_old_result",
+                "target_harness",
+                "target_identity",
+                "n_inner_cycles"
+              ],
+              "output_vars": [
+                "old_performance"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "analyze_history"
+                }
+              ]
+            },
+            "analyze_history": {
+              "id": "analyze_history",
+              "op": "脚本",
+              "script": "analyze_history",
+              "input_vars": [
+                "old_performance"
+              ],
+              "output_vars": [
+                "history_analysis"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "compute_meta_gradient"
+                }
+              ]
+            },
+            "compute_meta_gradient": {
+              "id": "compute_meta_gradient",
+              "op": "llm_call",
+              "prompt": "meta_gradient_prompt",
+              "input_vars": [
+                "current_strategy",
+                "history_analysis"
+              ],
+              "output_var": "meta_gradient",
+              "parse_as": "json",
+              "edges": [
+                {
+                  "condition": "expr:not ctx.get('meta_gradient')",
+                  "to": "final_report"
+                },
+                {
+                  "condition": "default",
+                  "to": "create_snapshot"
+                }
+              ]
+            },
+            "create_snapshot": {
+              "id": "create_snapshot",
+              "op": "脚本",
+              "script": "create_snapshot",
+              "input_vars": [
+                "current_strategy"
+              ],
+              "output_vars": [
+                "snapshot_id"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "apply_meta_gradient"
+                }
+              ]
+            },
+            "apply_meta_gradient": {
+              "id": "apply_meta_gradient",
+              "op": "脚本",
+              "script": "apply_meta_gradient",
+              "input_vars": [
+                "meta_gradient",
+                "current_strategy"
+              ],
+              "output_vars": [
+                "new_strategy"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "run_new_strategy"
+                }
+              ]
+            },
+            "run_new_strategy": {
+              "id": "run_new_strategy",
+              "op": "子流程",
+              "harness": "evolution_cycle",
+              "identity_map": {
+                "evolver": "${ctx.target_identity}"
+              },
+              "initial_message": "Run evolution cycle with updated strategy",
+              "output_var": "_new_result",
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "collect_new_performance"
+                }
+              ]
+            },
+            "collect_new_performance": {
+              "id": "collect_new_performance",
+              "op": "脚本",
+              "script": "collect_performance",
+              "input_vars": [
+                "_new_result",
+                "target_harness",
+                "target_identity",
+                "n_inner_cycles"
+              ],
+              "output_vars": [
+                "new_performance"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "meta_gate"
+                }
+              ]
+            },
+            "meta_gate": {
+              "id": "meta_gate",
+              "op": "脚本",
+              "script": "meta_gate",
+              "input_vars": [
+                "current_strategy",
+                "new_strategy",
+                "old_performance",
+                "new_performance",
+                "snapshot_id"
+              ],
+              "output_vars": [
+                "meta_decision",
+                "current_strategy"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "final_report"
+                }
+              ]
+            },
+            "final_report": {
+              "id": "final_report",
+              "op": "脚本",
+              "script": "meta_final_report",
+              "input_vars": [
+                "meta_report",
+                "old_performance",
+                "new_performance",
+                "meta_gradient",
+                "meta_decision",
+                "current_strategy"
+              ],
+              "output_vars": [
+                "meta_report"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": null
+                }
+              ]
+            }
+          }
+        },
+        "prompts": {
+          "meta_gradient_prompt": "You are a meta-optimization expert. Given the current evolution strategy and history analysis, suggest parameter changes.\n\nCurrent strategy: {current_strategy}\nHistory analysis: {history_analysis}\n\nRules:\n1. Change at most 2 parameters.\n2. Valid parameters: gradient_temperature (0.1-1.5), frontier_range ([low,high]), gate_threshold (1.0-20.0), distill_strategy (aggressive/conservative/adaptive), max_eval_tasks (2-20), loop_iterations (1-10).\n\nReturn ONLY a JSON object with parameters to change. Example: {{\"gradient_temperature\": 0.7}}\nOutput ONLY valid JSON:"
+        }
+      },
+      "fitness": 0.83,
+      "generation": 0,
+      "eval_history": [
+        0.83
+      ],
+      "parent_ids": [],
+      "mutation_log": []
+    },
+    {
+      "id": "51e81785",
+      "config": {
+        "name": "dual_guardian",
+        "description": "双 Guardian 审查：worker 推理 → 工具审查 → 文字审查 → 执行工具 → 循环。工具和文本都经过独立审查。",
+        "slots": {
+          "worker": {
+            "description": "主 agent，执行推理和工具调用",
+            "required": true
+          },
+          "tool_guardian": {
+            "description": "工具审查 agent，审查工具调用是否安全",
+            "required": true
+          },
+          "text_guardian": {
+            "description": "文字审查 agent，审查文本输出是否合规",
+            "required": true
+          }
+        },
+        "prompts": {
+          "tool_review": {
+            "description": "审查工具调用时使用的 prompt 模板",
+            "default": "审查以下工具调用，判断是否涉及隐私泄露或危险操作。\n\n{tool_calls}\n\n返回你允许执行的工具调用列表（JSON 数组）。不允许的直接删除。"
+          },
+          "text_review": {
+            "description": "审查文本输出时使用的 prompt 模板",
+            "default": "审查以下文本，检查是否包含不当内容。\n\n{text}\n\n输出修改后的安全版本。"
+          }
+        },
+        "return_mode": "all",
+        "pipeline": {
+          "start": "wait_input",
+          "max_steps": 100,
+          "workspace_preview": false,
+          "nodes": {
+            "wait_input": {
+              "op": "等待输入",
+              "edges": [
+                {
+                  "condition": "input",
+                  "to": "worker_infer"
+                }
+              ]
+            },
+            "worker_infer": {
+              "op": "推理",
+              "agent": "worker",
+              "edges": [
+                {
+                  "condition": "has_tool_calls",
+                  "to": "review_tools"
+                },
+                {
+                  "condition": "has_text",
+                  "to": "review_text"
+                }
+              ]
+            },
+            "review_tools": {
+              "op": "处理工具",
+              "agent": "tool_guardian",
+              "prompt": "tool_review",
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "exec_tools"
+                }
+              ]
+            },
+            "exec_tools": {
+              "op": "执行工具",
+              "agent": "worker",
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "worker_infer"
+                }
+              ]
+            },
+            "review_text": {
+              "op": "处理文字",
+              "agent": "text_guardian",
+              "prompt": "text_review",
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "wait_input"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "fitness": 0.81,
+      "generation": 0,
+      "eval_history": [
+        0.81
+      ],
+      "parent_ids": [],
+      "mutation_log": []
+    },
+    {
+      "id": "c46ce793",
+      "config": {
+        "name": "creative_roundtable",
+        "description": "创意圆桌：用户提一个话题 → 创意家脑暴 → 批评家挑刺 → 创意家改进 → 批评家最终评价 → 循环。两个 agent 交替发言，模拟真实的头脑风暴+评审流程。",
+        "slots": {
+          "创意家": {
+            "description": "天马行空的创意者，负责提出和 refine 想法",
+            "required": true,
+            "identity": "creative_brain"
+          },
+          "批评家": {
+            "description": "犀利的评审者，负责挑刺和给出改进建议",
+            "required": true,
+            "identity": "sharp_critic"
+          }
+        },
+        "prompts": {},
+        "return_mode": "all",
+        "pipeline": {
+          "start": "wait_input",
+          "max_steps": 50,
+          "workspace_preview": false,
+          "nodes": {
+            "wait_input": {
+              "id": "wait_input",
+              "op": "等待输入",
+              "edges": [
+                {
+                  "condition": "input",
+                  "to": "brainstorm"
+                }
+              ]
+            },
+            "brainstorm": {
+              "id": "brainstorm",
+              "op": "推理",
+              "agent": "创意家",
+              "edges": [
+                {
+                  "condition": "has_text",
+                  "to": "critique"
+                }
+              ]
+            },
+            "critique": {
+              "id": "critique",
+              "op": "推理",
+              "agent": "批评家",
+              "edges": [
+                {
+                  "condition": "has_text",
+                  "to": "refine"
+                }
+              ]
+            },
+            "refine": {
+              "id": "refine",
+              "op": "推理",
+              "agent": "创意家",
+              "edges": [
+                {
+                  "condition": "has_text",
+                  "to": "final_eval"
+                }
+              ]
+            },
+            "final_eval": {
+              "id": "final_eval",
+              "op": "推理",
+              "agent": "批评家",
+              "edges": [
+                {
+                  "condition": "has_text",
+                  "to": "wait_input"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "fitness": 0.81,
+      "generation": 0,
+      "eval_history": [
+        0.81
+      ],
+      "parent_ids": [],
+      "mutation_log": []
+    },
+    {
+      "id": "24fd8b14",
+      "config": {
+        "name": "meta_evolution_cycle_mutated",
+        "description": "Meta-Evolution Cycle: 元进化闭环。外层循环调用内层 evolution_cycle 作为子流程，分析进化历史，计算元梯度，调整进化策略参数，并通过元门控决策是否接受新策略。",
+        "slots": {
+          "evolver": {
+            "description": "The meta-evolution orchestrator agent (provides LLM access for analysis)",
+            "required": true
+          }
+        },
+        "return_mode": "last",
+        "pipeline": {
+          "start": "init",
+          "max_steps": 200,
+          "context": {
+            "target_harness": "react_single",
+            "target_identity": "dante",
+            "n_inner_cycles": 2,
+            "current_strategy": {},
+            "old_performance": {},
+            "new_performance": {},
+            "history_analysis": {},
+            "meta_gradient": {},
+            "snapshot_id": "",
+            "new_strategy": {},
+            "meta_decision": "",
+            "meta_report": {},
+            "_loop_stack": []
+          },
+          "nodes": {
+            "init": {
+              "id": "init",
+              "op": "脚本",
+              "script": "meta_init",
+              "input_vars": [
+                "target_harness",
+                "target_identity",
+                "n_inner_cycles"
+              ],
+              "output_vars": [
+                "current_strategy",
+                "meta_report"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "run_old_strategy"
+                }
+              ]
+            },
+            "run_old_strategy": {
+              "id": "run_old_strategy",
+              "op": "子流程",
+              "harness": "evolution_cycle",
+              "identity_map": {
+                "evolver": "${ctx.target_identity}"
+              },
+              "initial_message": "Run evolution cycle with current strategy",
+              "output_var": "_old_result",
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "collect_old_performance"
+                }
+              ]
+            },
+            "collect_old_performance": {
+              "id": "collect_old_performance",
+              "op": "脚本",
+              "script": "collect_performance",
+              "input_vars": [
+                "_old_result",
+                "target_harness",
+                "target_identity",
+                "n_inner_cycles"
+              ],
+              "output_vars": [
+                "old_performance"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "analyze_history"
+                }
+              ]
+            },
+            "analyze_history": {
+              "id": "analyze_history",
+              "op": "脚本",
+              "script": "analyze_history",
+              "input_vars": [
+                "old_performance"
+              ],
+              "output_vars": [
+                "history_analysis"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "compute_meta_gradient"
+                }
+              ]
+            },
+            "compute_meta_gradient": {
+              "id": "compute_meta_gradient",
+              "op": "llm_call",
+              "prompt": "meta_gradient_prompt",
+              "input_vars": [
+                "current_strategy",
+                "history_analysis"
+              ],
+              "output_var": "meta_gradient",
+              "parse_as": "json",
+              "edges": [
+                {
+                  "condition": "expr:not ctx.get('meta_gradient')",
+                  "to": "final_report"
+                },
+                {
+                  "condition": "default",
+                  "to": "create_snapshot"
+                }
+              ]
+            },
+            "create_snapshot": {
+              "id": "create_snapshot",
+              "op": "脚本",
+              "script": "create_snapshot",
+              "input_vars": [
+                "current_strategy"
+              ],
+              "output_vars": [
+                "snapshot_id"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "apply_meta_gradient"
+                }
+              ]
+            },
+            "apply_meta_gradient": {
+              "id": "apply_meta_gradient",
+              "op": "脚本",
+              "script": "apply_meta_gradient",
+              "input_vars": [
+                "meta_gradient",
+                "current_strategy"
+              ],
+              "output_vars": [
+                "new_strategy"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "run_new_strategy"
+                }
+              ]
+            },
+            "run_new_strategy": {
+              "id": "run_new_strategy",
+              "op": "子流程",
+              "harness": "evolution_cycle",
+              "identity_map": {
+                "evolver": "${ctx.target_identity}"
+              },
+              "initial_message": "Run evolution cycle with updated strategy",
+              "output_var": "_new_result",
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "precheck"
+                }
+              ]
+            },
+            "precheck": {
+              "id": "precheck",
+              "op": "llm_call",
+              "prompt": "Evaluate if new strategy shows significant improvement",
+              "input_vars": [
+                "new_strategy",
+                "current_strategy",
+                "old_performance"
+              ],
+              "output_var": "meta_decision",
+              "parse_as": "json",
+              "edges": [
+                {
+                  "condition": "expr:ctx.meta_decision == 'continue'",
+                  "to": "collect_new_performance"
+                },
+                {
+                  "condition": "default",
+                  "to": "meta_gate"
+                }
+              ]
+            },
+            "collect_new_performance": {
+              "id": "collect_new_performance",
+              "op": "脚本",
+              "script": "collect_performance",
+              "input_vars": [
+                "_new_result",
+                "target_harness",
+                "target_identity",
+                "n_inner_cycles"
+              ],
+              "output_vars": [
+                "new_performance"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "meta_gate"
+                }
+              ]
+            },
+            "meta_gate": {
+              "id": "meta_gate",
+              "op": "脚本",
+              "script": "meta_gate",
+              "input_vars": [
+                "current_strategy",
+                "new_strategy",
+                "old_performance",
+                "new_performance",
+                "snapshot_id"
+              ],
+              "output_vars": [
+                "meta_decision",
+                "current_strategy"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "final_report"
+                }
+              ]
+            },
+            "final_report": {
+              "id": "final_report",
+              "op": "脚本",
+              "script": "meta_final_report",
+              "input_vars": [
+                "meta_report",
+                "old_performance",
+                "new_performance",
+                "meta_gradient",
+                "meta_decision",
+                "current_strategy"
+              ],
+              "output_vars": [
+                "meta_report"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": null
+                }
+              ]
+            }
+          }
+        },
+        "prompts": {
+          "meta_gradient_prompt": "You are a meta-optimization expert. Given the current evolution strategy and history analysis, suggest parameter changes.\n\nCurrent strategy: {current_strategy}\nHistory analysis: {history_analysis}\n\nRules:\n1. Change at most 2 parameters.\n2. Valid parameters: gradient_temperature (0.1-1.5), frontier_range ([low,high]), gate_threshold (1.0-20.0), distill_strategy (aggressive/conservative/adaptive), max_eval_tasks (2-20), loop_iterations (1-10).\n\nReturn ONLY a JSON object with parameters to change. Example: {{\"gradient_temperature\": 0.7}}\nOutput ONLY valid JSON:"
+        }
+      },
+      "fitness": 0.8099999999999999,
+      "generation": 2,
+      "eval_history": [
+        0.8099999999999999
+      ],
+      "parent_ids": [
+        "a18cb2b9"
+      ],
+      "mutation_log": [
+        "llm_mutation"
+      ]
+    },
+    {
+      "id": "5851b8d0",
+      "config": {
+        "name": "meta_evolution_cycle_mutated",
+        "description": "Meta-Evolution Cycle: 元进化闭环。外层循环调用内层 evolution_cycle 作为子流程，分析进化历史，计算元梯度，调整进化策略参数，并通过元门控决策是否接受新策略。",
+        "slots": {
+          "evolver": {
+            "description": "The meta-evolution orchestrator agent (provides LLM access for analysis)",
+            "required": true
+          }
+        },
+        "return_mode": "last",
+        "pipeline": {
+          "start": "init",
+          "max_steps": 200,
+          "context": {
+            "target_harness": "react_single",
+            "target_identity": "dante",
+            "n_inner_cycles": 2,
+            "current_strategy": {},
+            "old_performance": {},
+            "new_performance": {},
+            "history_analysis": {},
+            "meta_gradient": {},
+            "snapshot_id": "",
+            "new_strategy": {},
+            "meta_decision": "",
+            "meta_report": {},
+            "_loop_stack": []
+          },
+          "nodes": {
+            "init": {
+              "id": "init",
+              "op": "脚本",
+              "script": "meta_init",
+              "input_vars": [
+                "target_harness",
+                "target_identity",
+                "n_inner_cycles"
+              ],
+              "output_vars": [
+                "current_strategy",
+                "meta_report"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "run_old_strategy"
+                }
+              ]
+            },
+            "run_old_strategy": {
+              "id": "run_old_strategy",
+              "op": "子流程",
+              "harness": "evolution_cycle",
+              "identity_map": {
+                "evolver": "${ctx.target_identity}"
+              },
+              "initial_message": "Run evolution cycle with current strategy",
+              "output_var": "_old_result",
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "collect_old_performance"
+                }
+              ]
+            },
+            "collect_old_performance": {
+              "id": "collect_old_performance",
+              "op": "脚本",
+              "script": "collect_performance",
+              "input_vars": [
+                "_old_result",
+                "target_harness",
+                "target_identity",
+                "n_inner_cycles"
+              ],
+              "output_vars": [
+                "old_performance"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "analyze_history"
+                }
+              ]
+            },
+            "analyze_history": {
+              "id": "analyze_history",
+              "op": "脚本",
+              "script": "analyze_history",
+              "input_vars": [
+                "old_performance"
+              ],
+              "output_vars": [
+                "history_analysis"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "compute_meta_gradient"
+                }
+              ]
+            },
+            "compute_meta_gradient": {
+              "id": "compute_meta_gradient",
+              "op": "llm_call",
+              "prompt": "meta_gradient_prompt",
+              "input_vars": [
+                "current_strategy",
+                "history_analysis"
+              ],
+              "output_var": "meta_gradient",
+              "parse_as": "json",
+              "edges": [
+                {
+                  "condition": "expr:not ctx.get('meta_gradient')",
+                  "to": "final_report"
+                },
+                {
+                  "condition": "default",
+                  "to": "create_snapshot"
+                }
+              ]
+            },
+            "create_snapshot": {
+              "id": "create_snapshot",
+              "op": "脚本",
+              "script": "create_snapshot",
+              "input_vars": [
+                "current_strategy"
+              ],
+              "output_vars": [
+                "snapshot_id"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "apply_meta_gradient"
+                }
+              ]
+            },
+            "apply_meta_gradient": {
+              "id": "apply_meta_gradient",
+              "op": "脚本",
+              "script": "apply_meta_gradient",
+              "input_vars": [
+                "meta_gradient",
+                "current_strategy"
+              ],
+              "output_vars": [
+                "new_strategy"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "run_new_strategy"
+                }
+              ]
+            },
+            "run_new_strategy": {
+              "id": "run_new_strategy",
+              "op": "子流程",
+              "harness": "evolution_cycle",
+              "identity_map": {
+                "evolver": "${ctx.target_identity}"
+              },
+              "initial_message": "Run evolution cycle with updated strategy",
+              "output_var": "_new_result",
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "collect_new_performance"
+                }
+              ]
+            },
+            "collect_new_performance": {
+              "id": "collect_new_performance",
+              "op": "脚本",
+              "script": "collect_performance",
+              "input_vars": [
+                "_new_result",
+                "target_harness",
+                "target_identity",
+                "n_inner_cycles"
+              ],
+              "output_vars": [
+                "new_performance"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "compare_performance"
+                }
+              ]
+            },
+            "compare_performance": {
+              "id": "compare_performance",
+              "op": "脚本",
+              "script": "compare_performance",
+              "input_vars": [
+                "old_performance",
+                "new_performance"
+              ],
+              "output_vars": [
+                "meta_decision"
+              ],
+              "edges": [
+                {
+                  "condition": "expr:ctx.get('meta_decision') == 'no_improvement'",
+                  "to": "final_report"
+                },
+                {
+                  "condition": "default",
+                  "to": "meta_gate"
+                }
+              ]
+            },
+            "meta_gate": {
+              "id": "meta_gate",
+              "op": "脚本",
+              "script": "meta_gate",
+              "input_vars": [
+                "current_strategy",
+                "new_strategy",
+                "old_performance",
+                "new_performance",
+                "snapshot_id"
+              ],
+              "output_vars": [
+                "meta_decision",
+                "current_strategy"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": "final_report"
+                }
+              ]
+            },
+            "final_report": {
+              "id": "final_report",
+              "op": "脚本",
+              "script": "meta_final_report",
+              "input_vars": [
+                "meta_report",
+                "old_performance",
+                "new_performance",
+                "meta_gradient",
+                "meta_decision",
+                "current_strategy"
+              ],
+              "output_vars": [
+                "meta_report"
+              ],
+              "edges": [
+                {
+                  "condition": "default",
+                  "to": null
+                }
+              ]
+            }
+          }
+        },
+        "prompts": {
+          "meta_gradient_prompt": "You are a meta-optimization expert. Given the current evolution strategy and history analysis, suggest parameter changes.\n\nCurrent strategy: {current_strategy}\nHistory analysis: {history_analysis}\n\nRules:\n1. Change at most 2 parameters.\n2. Valid parameters: gradient_temperature (0.1-1.5), frontier_range ([low,high]), gate_threshold (1.0-20.0), distill_strategy (aggressive/conservative/adaptive), max_eval_tasks (2-20), loop_iterations (1-10).\n\nReturn ONLY a JSON object with parameters to change. Example: {{\"gradient_temperature\": 0.7}}\nOutput ONLY valid JSON:"
+        }
+      },
+      "fitness": 0.8099999999999999,
+      "generation": 2,
+      "eval_history": [
+        0.8099999999999999
+      ],
+      "parent_ids": [
+        "a18cb2b9"
+      ],
+      "mutation_log": [
+        "llm_mutation"
+      ]
+    }
+  ],
+  "config": {
+    "search_strategy": "mutation",
+    "population_size": 5,
+    "max_generations": 2,
+    "eval_tasks": [
+      "完成一个多步骤编程任务",
+      "分析文本并提取关键信息",
+      "解决一个需要工具使用的问题"
+    ],
+    "mutation_rate": 0.7,
+    "crossover_rate": 0.3,
+    "harness_dir": "/home/tiger/egoagent/harness",
+    "output_dir": "/home/tiger/egoagent/experiments/results/pipeline_search",
+    "elite_ratio": 0.2
+  }
+}

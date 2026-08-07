@@ -1,0 +1,22 @@
+{
+  "name": "python_data_analysis_agent",
+  "template": "coding",
+  "traits": [
+    "efficient",
+    "pragmatic",
+    "test_driven"
+  ],
+  "tools": [
+    "read_file",
+    "write_file",
+    "patch_file",
+    "search_files",
+    "run_command",
+    "pytest"
+  ],
+  "temperature": 0.5,
+  "tech_stack": [
+    "python"
+  ],
+  "created_at": 1785989055.1379762
+}

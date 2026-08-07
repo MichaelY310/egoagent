@@ -116,7 +116,7 @@ class Agent:
             else:
                 self.load_environment(self.workspace)
 
-    def build_system_prompt(self):
+    def build_system_prompt(self, has_tools=True):
         """从 ID（性格）和 SEGO（任务/约束）组装 system prompt"""
         parts = []
 
@@ -139,10 +139,15 @@ class Agent:
                 parts.append(f"\n{sego_config['task_prompt']}")
 
         # 通用行为约束
-        parts.append("\nRules:")
-        parts.append("- Only use the tools provided via function calling. Do not invent tool names.")
-        parts.append("- After a tool succeeds, respond to the user. Do not re-call the same tool with same arguments.")
-        parts.append("- If a tool errors, try a different approach or explain the issue to the user.")
+        if has_tools:
+            parts.append("\nRules:")
+            parts.append("- Only use the tools provided via function calling. Do not invent tool names.")
+            parts.append("- After a tool succeeds, respond to the user. Do not re-call the same tool with same arguments.")
+            parts.append("- If a tool errors, try a different approach or explain the issue to the user.")
+        else:
+            parts.append("\nRules:")
+            parts.append("- Respond directly to the user with text. Do NOT output any tool calls or XML tags.")
+            parts.append("- Be concise and helpful in your response.")
 
         return "\n".join(parts)
 
@@ -405,7 +410,7 @@ class Agent:
         llm_messages = self._convert_messages_for_llm(messages)
 
         # 插入 system prompt 作为第一条 system message
-        system_prompt = self.build_system_prompt()
+        system_prompt = self.build_system_prompt(has_tools=bool(tools_desc))
         if system_prompt:
             system_msg = {"role": "system", "content": system_prompt}
             full_messages = [system_msg] + llm_messages
@@ -602,9 +607,36 @@ class Agent:
                 old_cwd = os.getcwd()
                 if self.workspace:
                     os.chdir(str(self.workspace))
+                
+                # 变更追踪: 在文件修改工具执行前读取旧内容
+                _track_file_path = None
+                _track_old_content = None
+                if tool_name in ('patch_file', 'write_file', 'multi_edit'):
+                    _fp = arguments.get('file_path', '')
+                    if _fp:
+                        _track_file_path = os.path.abspath(_fp)
+                        try:
+                            with open(_track_file_path, 'r', encoding='utf-8') as _f:
+                                _track_old_content = _f.read()
+                        except (FileNotFoundError, OSError):
+                            _track_old_content = None  # 新建文件
+                
                 try:
                     result = tool.func(**arguments)
                 finally:
+                    # 变更追踪: 执行后记录变更
+                    if _track_file_path is not None:
+                        try:
+                            from harness_editor.change_tracker import record_change
+                            try:
+                                with open(_track_file_path, 'r', encoding='utf-8') as _f:
+                                    _track_new_content = _f.read()
+                            except (FileNotFoundError, OSError):
+                                _track_new_content = None
+                            if _track_old_content != _track_new_content:
+                                record_change(_track_file_path, _track_old_content, _track_new_content, tool_name)
+                        except ImportError:
+                            pass  # change_tracker not available
                     os.chdir(old_cwd)
             except EndSession:
                 raise

@@ -143,11 +143,17 @@ def run_pipeline(harness):
             agent = harness.agents[node["agent"]]
             agent_label = _agent_label(agent)
             print(f"\n{agent_label} ", end="", flush=True)
-            text, tool_calls = agent.step(harness.session.messages)
+            # Check if this node has a has_tool_calls edge
+            has_tc_edge = any(e.get("condition") == "has_tool_calls" for e in node.get("edges", []))
+            # If no tool_calls edge, don't pass tools to prevent model from calling tools
+            if has_tc_edge:
+                text, tool_calls = agent.step(harness.session.messages)
+            else:
+                text, tool_calls = agent.step(harness.session.messages, tools_desc="")
             step_count += 1
 
             # Loop detection: if same tool_calls as last time, inject error
-            if tool_calls:
+            if tool_calls and has_tc_edge:
                 sig = _json.dumps([(tc["function"]["name"], tc["function"]["arguments"]) for tc in tool_calls], sort_keys=True)
                 if sig == _last_tool_signature:
                     print(f"  [loop-detect] Repeated tool call, injecting error.")
@@ -164,7 +170,8 @@ def run_pipeline(harness):
                 else:
                     _last_tool_signature = sig
                     current = _follow_edge(node, "has_tool_calls", "default", context=context)
-            elif text:
+            elif text or (tool_calls and not has_tc_edge):
+                # If node has no tool_calls edge, treat any output (even tool_calls) as text
                 _last_tool_signature = None
                 current = _follow_edge(node, "has_text", "default", context=context)
             else:
@@ -480,7 +487,9 @@ def run_pipeline_stream(harness, on_output, get_input, is_running):
             step_count += 1
 
             # Loop detection
-            if tool_calls:
+            # Check if this node has a has_tool_calls edge; if not, ignore tool_calls
+            has_tc_edge = any(e.get("condition") == "has_tool_calls" for e in node.get("edges", []))
+            if tool_calls and has_tc_edge:
                 sig = _json.dumps([(tc["function"]["name"], tc["function"]["arguments"]) for tc in tool_calls], sort_keys=True)
                 if sig == _last_tool_signature:
                     for tc in tool_calls:
@@ -496,7 +505,8 @@ def run_pipeline_stream(harness, on_output, get_input, is_running):
                 else:
                     _last_tool_signature = sig
                     current = _follow_edge(node, "has_tool_calls", "default", context=context)
-            elif text:
+            elif text or (tool_calls and not has_tc_edge):
+                # If node has no tool_calls edge, treat any output (even tool_calls) as text
                 _last_tool_signature = None
                 current = _follow_edge(node, "has_text", "default", context=context)
             else:

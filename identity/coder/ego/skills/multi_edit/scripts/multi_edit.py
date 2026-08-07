@@ -19,6 +19,7 @@ def multi_edit(file_path: str, edits: list):
     except UnicodeDecodeError:
         return json.dumps({"error": f"Cannot read '{file_path}': file appears to be binary."})
 
+    old_content = content
     results = []
     for i, edit in enumerate(edits):
         old_string = edit.get("old_string", "")
@@ -34,6 +35,17 @@ def multi_edit(file_path: str, edits: list):
             f.write(content)
     except Exception as e:
         return json.dumps({"error": f"Failed to write '{file_path}': {str(e)}"})
+
+    # Record change for tracking
+    try:
+        import sys as _sys
+        _ct_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "..", "..", "harness_editor")
+        if os.path.isdir(_ct_path) and _ct_path not in _sys.path:
+            _sys.path.insert(0, _ct_path)
+        from change_tracker import record_change
+        record_change(file_path, old_content, content, "multi_edit")
+    except Exception:
+        pass
 
     failed = [r for r in results if r["status"] != "ok"]
     return json.dumps({

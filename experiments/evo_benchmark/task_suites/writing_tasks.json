@@ -1,0 +1,51 @@
+[
+  {
+    "id": "write_01",
+    "description": "Write a professional email to a client explaining a 2-week delay in project delivery due to unexpected technical challenges. Maintain a positive tone while being honest about the situation.",
+    "category": "writing",
+    "difficulty": "easy",
+    "expected_behavior": "Professional tone, acknowledges the issue, provides timeline, offers mitigation, maintains client relationship."
+  },
+  {
+    "id": "write_02",
+    "description": "Summarize the concept of 'machine learning' in exactly 3 sentences suitable for a non-technical audience. Each sentence should build on the previous one.",
+    "category": "writing",
+    "difficulty": "easy",
+    "expected_behavior": "Exactly 3 sentences, accessible language, progressive complexity, accurate content, no jargon."
+  },
+  {
+    "id": "write_03",
+    "description": "Write a persuasive argument (200-300 words) for why companies should adopt a 4-day work week. Include at least 3 distinct supporting points with evidence or reasoning.",
+    "category": "writing",
+    "difficulty": "medium",
+    "expected_behavior": "Clear thesis, 3+ distinct arguments, logical structure, appropriate length, persuasive language, mentions productivity/wellbeing/retention."
+  },
+  {
+    "id": "write_04",
+    "description": "Rewrite the following text to be more concise while preserving all key information: 'In the event that the system encounters an error condition during the process of attempting to establish a connection to the remote database server, it should proceed to implement a retry mechanism that will attempt to reconnect up to a maximum of three additional times before ultimately reporting the failure to the end user.'",
+    "category": "writing",
+    "difficulty": "medium",
+    "expected_behavior": "Significantly shorter (< 40 words), retains: error handling, retry up to 3 times, report failure to user. Clear and direct."
+  },
+  {
+    "id": "write_05",
+    "description": "Write a technical documentation section explaining how to use a REST API endpoint for user authentication. Include: endpoint URL format, HTTP method, request headers, request body, success response, and error response.",
+    "category": "writing",
+    "difficulty": "medium",
+    "expected_behavior": "Well-structured, includes all 6 required sections, uses code examples, follows documentation conventions, accurate HTTP semantics."
+  },
+  {
+    "id": "write_06",
+    "description": "Write a short story (150-250 words) that contains a plot twist in the last paragraph. The story should be about an ordinary daily routine that reveals something unexpected.",
+    "category": "writing",
+    "difficulty": "hard",
+    "expected_behavior": "Engaging narrative, appropriate length, effective twist that recontextualizes earlier content, good pacing, creative."
+  },
+  {
+    "id": "write_07",
+    "description": "Create a balanced analysis (200-300 words) comparing remote work vs office work. Present exactly 2 advantages and 2 disadvantages of each, then provide a nuanced conclusion that avoids binary thinking.",
+    "category": "writing",
+    "difficulty": "hard",
+    "expected_behavior": "Exactly 2 pros and 2 cons for each, balanced perspective, nuanced conclusion, well-organized structure, avoids bias."
+  }
+]
