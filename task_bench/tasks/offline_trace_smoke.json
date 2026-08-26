@@ -1,0 +1,33 @@
+{
+  "version": "ego.task.v1",
+  "id": "offline_trace_smoke",
+  "title": "离线 DAG / Tool Trace 自检",
+  "description": "使用 test_bot 的显式 scripted DummyLLM，不调用 API；用于检查模型、工具、循环、实时卡片与评分链路。",
+  "category": "system-smoke",
+  "difficulty": "starter",
+  "tags": ["offline", "scripted", "trace", "tool-loop"],
+  "prompt": "检查工作区里的 Python 文件，读取 agent.py，并概括 Agent 类的核心方法。",
+  "workspace": {
+    "files": {
+      "agent.py": "class Agent:\n    def step(self):\n        pass\n\n    def process_text(self):\n        pass\n\n    def process_tool_calls(self):\n        pass\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "aider_review_worker",
+    "recommended_identity": "test_bot",
+    "compatible_harnesses": ["aider_review_worker", "bounded_action_worker"],
+    "compatible_identities": ["test_bot"]
+  },
+  "environment": { "backend": "local", "network": "disabled" },
+  "execution": { "timeout_seconds": 120 },
+  "evolution": { "allowed": false },
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      { "id": "model_loop", "type": "op_visited", "op": "Agent", "minimum": 3, "weight": 1 },
+      { "id": "searched", "type": "tool_called", "name": "glob_search", "weight": 1 },
+      { "id": "read", "type": "tool_called", "name": "read_file", "weight": 1 },
+      { "id": "answer", "type": "response_contains", "value": "process_tool_calls", "weight": 1 }
+    ]
+  }
+}

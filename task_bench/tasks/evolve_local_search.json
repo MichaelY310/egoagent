@@ -1,0 +1,28 @@
+{
+  "version": "ego.task.v1",
+  "id": "evolve_local_search",
+  "title": "将重复检索沉淀为能力",
+  "description": "能力进化题：观察 Agent 是否把重复本地资料检索沉淀为 Skill 或 Knowledge。",
+  "category": "self-evolution",
+  "difficulty": "research",
+  "tags": ["skill", "knowledge", "self-evolution"],
+  "prompt": "工作区 docs 中有多份研究笔记。先回答它们共同讨论的主题；然后判断这种检索是否会反复发生。如果会，请把可复用的本地研究资料检索能力安装到当前 Identity，并在最终回复里说明新增了什么能力。",
+  "workspace": {
+    "files": {
+      "docs/alpha.txt": "Alpha note: retrieval agents should return compact evidence and hide noisy search traces.",
+      "docs/beta.txt": "Beta note: persistent local knowledge tools reduce repeated browsing and context waste.",
+      "docs/gamma.txt": "Gamma note: self-evolution should be evidence-driven, reversible, and scoped."
+    }
+  },
+  "selection": { "recommended_harness": "react_single", "recommended_identity": "dante" },
+  "environment": { "backend": "local", "network": "disabled" },
+  "execution": { "timeout_seconds": 600 },
+  "evolution": { "allowed": true, "targets": ["skill", "knowledge", "identity"] },
+  "evaluation": {
+    "pass_score": 0.75,
+    "checks": [
+      { "type": "capability_added", "weight": 3 },
+      { "type": "event_emitted", "event": "identity_evolution", "weight": 1 }
+    ]
+  }
+}

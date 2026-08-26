@@ -1,0 +1,94 @@
+{
+  "name": "component_capability_evolver",
+  "description": "Reusable periodic evolution review. A normal Model judges whether repeated work deserves a reusable artifact, then a bounded Agent searches before proposing or creating it.",
+  "component": {
+    "name": "capability_evolver",
+    "display_name": "Capability Evolution Review",
+    "category": "Evolution",
+    "icon": "↗",
+    "description": "Turn repeated failures or repeated work into a Skill, Tool, Knowledge or SubDAG without keyword hardcoding.",
+    "share_session": true,
+    "inputs": {
+      "require_approval": {"default": true, "schema": {"type": "boolean"}},
+      "protect_recent_turns": {"default": 2, "schema": {"type": "integer", "minimum": 1}}
+    },
+    "outputs": {
+      "decision": {"path": "evolution_decision", "default": {}},
+      "result": {"path": "evolution_result", "default": ""},
+      "evolved": {"path": "evolved", "default": false}
+    }
+  },
+  "slots": {"evolver": {"description": "Identity that evaluates and implements reusable capabilities", "required": true, "identity": "dante"}},
+  "prompts": {
+    "judge_reuse": {
+      "description": "Editable, non-keyword evolution policy",
+      "default": "Review this conversation metadata for repeated work, repeated search failures, expensive recurring tool traces, durable domain knowledge, or a workflow that would be cheaper and more reliable as a reusable capability. Do not evolve for a one-off task. Prefer knowledge for stable facts, a skill/tool for a repeatable operation, and a Harness/SubDAG for an isolated multi-step workflow. The new capability must have a clear trigger, bounded interface and evidence of expected reuse.\n\nMetadata:\n{conversation_payload}\n\nReturn ONLY JSON: {{\"should_evolve\":true|false,\"reason\":\"...\",\"search_query\":\"...\",\"artifact_type\":\"knowledge|skill|tool|harness\",\"name\":\"snake_case_name\",\"spec\":{{\"purpose\":\"...\",\"inputs\":{{}},\"outputs\":{{}},\"acceptance_test\":\"...\"}}}}"
+    },
+    "judge_verification": {
+      "description": "Require evidence before an evolution is marked successful",
+      "default": "Judge whether the attempted capability evolution is installed/reused and verified by concrete evidence. A proposal, successful write alone, or self-claim is insufficient. For executable Skills require a successful creation/activation result AND a passing runnable acceptance check against the persisted artifact itself; testing copied or equivalent inline code is insufficient. For Knowledge require inspection of the persisted artifact; for a Harness require validation or a runnable smoke test; for activation require a catalog result confirming the selected capability. The runtime has already rejected failed verification-tool evidence before this call. Base the answer on all raw evidence as well as the report.\n\nInitial mutation evidence:\n{mutation_evidence}\n\nMutation repair evidence (possibly empty):\n{repair_evidence}\n\nInitial verification evidence:\n{verification_evidence}\n\nVerification retry evidence (possibly empty):\n{verification_repair_evidence}\n\nVerification report:\n{verification_report}\n\nReturn ONLY JSON: {{\"verified\":true|false,\"reason\":\"...\"}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "conversation_in", "max_steps": 26,
+    "budget": {"max_model_calls": 8, "max_tool_calls": 6, "max_tokens": 60000},
+    "context": {"evolved": false, "evolution_result": "", "mutation_evidence": [], "mutation_evidence_ok": false, "repair_evidence": [], "repair_evidence_ok": false, "verification_report": "", "verification_evidence": [], "verification_evidence_ok": false, "verification_repair_evidence": [], "verification_repair_evidence_ok": false, "verification_decision": {"verified": false, "reason": "verification not run"}, "require_approval": true, "protect_recent_turns": 2},
+    "nodes": {
+      "conversation_in": {"id": "conversation_in", "op": "上下文", "action": "snapshot", "protect_recent_turns": "$ctx.protect_recent_turns", "output_var": "conversation_snapshot", "outputs": {"model_payload": "conversation_payload"}, "edges": [{"condition": "conversation_ready", "to": "judge"}]},
+      "judge": {"id": "judge", "op": "模型", "agent": "evolver", "prompt": "judge_reuse", "parse_as": "json_object", "json_fallback": {"should_evolve": false, "reason": "invalid proposal"}, "temperature": 0.2, "max_tokens": 1800, "outputs": {"structured": "evolution_decision"}, "edges": [{"condition": "has_text", "to": "needed"}, {"condition": "json_fallback", "to": "needed"}]},
+      "needed": {"id": "needed", "op": "条件", "condition": "ctx.evolution_decision.should_evolve == true", "edges": [{"condition": "true", "to": "approval_policy"}, {"condition": "false", "to": "done"}]},
+      "approval_policy": {"id": "approval_policy", "op": "条件", "condition": "ctx.require_approval == true", "edges": [{"condition": "true", "to": "approve"}, {"condition": "false", "to": "evolve"}]},
+      "approve": {"id": "approve", "op": "人工审批", "prompt_text": "允许 Agent 搜索并在确实没有重复能力时实现以下进化候选吗？\n${ctx.evolution_decision}", "data": "$ctx.evolution_decision", "default": "rejected", "edges": [{"condition": "approved", "to": "evolve"}, {"condition": "rejected", "to": "done"}]},
+      "evolve": {
+        "id": "evolve", "op": "Agent", "agent": "evolver", "tools": "all", "visible_tools": ["search_capabilities"], "max_tool_calls_per_turn": 1,
+        "instructions": "Search exactly once before changing anything for this approved proposal: ${ctx.evolution_decision}\nCall search_capabilities with the proposed search_query and relevant kinds. Do not create or activate in this node.",
+        "edges": [{"condition": "has_tool_calls", "to": "search_tools"}, {"condition": "has_text", "to": "implement"}]
+      },
+      "search_tools": {"id": "search_tools", "op": "工具", "agent": "evolver", "edges": [{"condition": "default", "to": "implement"}]},
+      "implement": {
+        "id": "implement", "op": "Agent", "agent": "evolver", "tools": "all", "max_tool_calls_per_turn": 1,
+        "visible_tools": ["activate_capability", "create_knowledge", "create_skill", "create_agent_system", "manage_harness"],
+        "instructions": "Review the immediately preceding search result and this approved proposal: ${ctx.evolution_decision}\nPerform exactly one action. If an adequate capability exists, activate it. Otherwise create the smallest proposed artifact. For create_skill, pass parameters_schema as an actual JSON object (not a JSON-encoded string); its public properties must exactly match the Python function signature and must omit runtime-only _context. A workspace-aware function itself should accept optional _context=None and resolve the workspace from (_context or {}).get('workspace') or os.getcwd(). Code must use the exact filenames, units, note grammar and every example in the task evidence; do not hardcode an evidence mapping as a fallback when the task requires reading notes. For a Harness, publish typed component inputs/outputs. Do not search again. A write is not yet success; the following nodes verify it.",
+        "outputs": {"text": "evolution_result"},
+        "edges": [{"condition": "has_tool_calls", "to": "mutation_tools"}, {"condition": "has_text", "to": "done"}]
+      },
+      "mutation_tools": {"id": "mutation_tools", "op": "工具", "agent": "evolver", "outputs": {"results": "mutation_evidence", "succeeded": "mutation_evidence_ok"}, "edges": [{"condition": "default", "to": "mutation_gate"}]},
+      "mutation_gate": {"id": "mutation_gate", "op": "条件", "condition": "ctx.mutation_evidence_ok == true", "edges": [{"condition": "true", "to": "verify"}, {"condition": "false", "to": "repair"}]},
+      "repair": {
+        "id": "repair", "op": "Agent", "agent": "evolver", "tools": "all", "max_tool_calls_per_turn": 1,
+        "visible_tools": ["activate_capability", "create_knowledge", "create_skill", "create_agent_system", "manage_harness"],
+        "instructions": "The single mutation attempt failed with this exact evidence: ${ctx.mutation_evidence}\nCorrect only the reported interface/validation problem and retry the same approved action exactly once. Do not search, propose a different capability, test copied code, or claim success without a successful tool result.",
+        "edges": [{"condition": "has_tool_calls", "to": "repair_tools"}, {"condition": "has_text", "to": "done"}]
+      },
+      "repair_tools": {"id": "repair_tools", "op": "工具", "agent": "evolver", "outputs": {"results": "repair_evidence", "succeeded": "repair_evidence_ok"}, "edges": [{"condition": "default", "to": "repair_gate"}]},
+      "repair_gate": {"id": "repair_gate", "op": "条件", "condition": "ctx.repair_evidence_ok == true", "edges": [{"condition": "true", "to": "verify"}, {"condition": "false", "to": "done"}]},
+      "verify": {
+        "id": "verify", "op": "Agent", "agent": "evolver", "tools": "all", "max_tool_calls_per_turn": 1,
+        "visible_tools": ["run_command", "read_file", "search_capabilities"],
+        "instructions": "Verify the successful persisted activation or mutation against the proposal acceptance_test. Perform exactly one highest-value check: for a Skill, import the function from the absolute scripts/<skill_name>.py path returned by create_skill and run every acceptance assertion including the error case; never test copied/equivalent inline code. The process already runs in the Task workspace: do not use cd and do not pass cwd. If the Skill reads workspace files, call it with _context={'workspace': os.getcwd()}. For Knowledge/Harness inspect or run the persisted artifact; for activation query the catalog. Ensure the command prints an explicit PASS marker. Do not mutate and do not perform multiple searches.",
+        "edges": [{"condition": "has_tool_calls", "to": "verification_tools"}, {"condition": "has_text", "to": "verification_judge"}]
+      },
+      "verification_tools": {"id": "verification_tools", "op": "工具", "agent": "evolver", "outputs": {"results": "verification_evidence", "succeeded": "verification_evidence_ok"}, "edges": [{"condition": "default", "to": "verification_evidence_gate"}]},
+      "verification_evidence_gate": {"id": "verification_evidence_gate", "op": "条件", "condition": "ctx.verification_evidence_ok == true", "edges": [{"condition": "true", "to": "verification_report"}, {"condition": "false", "to": "verification_repair"}]},
+      "verification_repair": {
+        "id": "verification_repair", "op": "Agent", "agent": "evolver", "tools": "all", "max_tool_calls_per_turn": 1,
+        "visible_tools": ["run_command", "read_file", "search_capabilities"],
+        "instructions": "The first verification call failed or was blocked: ${ctx.verification_evidence}\nRetry the same persisted-artifact acceptance check exactly once. For run_command, do not use cd and omit cwd; the process already starts in the Task workspace. Import the persisted Skill by its absolute scripts path, pass _context={'workspace': os.getcwd()}, execute every assertion, and print PASS. Do not mutate or test copied inline code.",
+        "edges": [{"condition": "has_tool_calls", "to": "verification_repair_tools"}, {"condition": "has_text", "to": "verification_failed"}]
+      },
+      "verification_repair_tools": {"id": "verification_repair_tools", "op": "工具", "agent": "evolver", "outputs": {"results": "verification_repair_evidence", "succeeded": "verification_repair_evidence_ok"}, "edges": [{"condition": "default", "to": "verification_repair_gate"}]},
+      "verification_repair_gate": {"id": "verification_repair_gate", "op": "条件", "condition": "ctx.verification_repair_evidence_ok == true", "edges": [{"condition": "true", "to": "verification_report"}, {"condition": "false", "to": "verification_failed"}]},
+      "verification_failed": {"id": "verification_failed", "op": "数据", "action": "set", "key": "verification_decision", "value": {"verified": false, "reason": "The deterministic verification tool failed; model self-report was not accepted."}, "edges": [{"condition": "default", "to": "done"}]},
+      "verification_report": {
+        "id": "verification_report", "op": "Agent", "agent": "evolver", "tools": "all", "visible_tools": [],
+        "instructions": "Report the evolution action and its concrete verification result. Include capability name/path, the exact check, exit status or catalog evidence, and any failure. Do not call tools.",
+        "outputs": {"text": "verification_report"}, "edges": [{"condition": "has_text", "to": "verification_judge"}]
+      },
+      "verification_judge": {"id": "verification_judge", "op": "模型", "agent": "evolver", "prompt": "judge_verification", "parse_as": "json_object", "json_fallback": {"verified": false, "reason": "invalid verification"}, "temperature": 0.1, "max_tokens": 600, "outputs": {"structured": "verification_decision"}, "edges": [{"condition": "has_text", "to": "verification_gate"}, {"condition": "json_fallback", "to": "verification_gate"}]},
+      "verification_gate": {"id": "verification_gate", "op": "条件", "condition": "ctx.verification_decision.verified == true", "edges": [{"condition": "true", "to": "mark_evolved"}, {"condition": "false", "to": "done"}]},
+      "mark_evolved": {"id": "mark_evolved", "op": "数据", "action": "set", "key": "evolved", "value": true, "edges": [{"condition": "default", "to": "done"}]},
+      "done": {"id": "done", "op": "结束", "value": {"evolved": "$ctx.evolved", "decision": "$ctx.evolution_decision", "result": "$ctx.evolution_result", "verification": "$ctx.verification_report", "verification_decision": "$ctx.verification_decision"}, "edges": []}
+    }
+  }
+}

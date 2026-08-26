@@ -1,0 +1,84 @@
+{
+  "name": "context_curator",
+  "description": "Long-running Agent assembled from explicit Context Curator and Token Pressure Compactor SubDAG components; the runtime performs no hidden model call.",
+  "slots": {
+    "agent": {
+      "description": "Primary worker and conservative context curator",
+      "required": true,
+      "identity": "dante"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "wait_input",
+    "max_steps": 80,
+    "max_node_steps": 320,
+    "workspace_preview": true,
+    "budget": {
+      "max_model_calls": 80,
+      "max_tool_calls": 200,
+      "max_tokens": 600000
+    },
+    "context": {
+      "context_messages": [],
+      "context_stats": {}
+    },
+    "nodes": {
+      "wait_input": {
+        "id": "wait_input",
+        "op": "等待输入",
+        "edges": [
+          {"condition": "input", "to": "curate_history"}
+        ]
+      },
+      "curate_history": {
+        "id": "curate_history",
+        "op": "子流程",
+        "harness": "component_context_curator",
+        "share_session": true,
+        "agent_map": {"curator": "agent"},
+        "component_inputs": {"review_interval": 5, "protect_recent_turns": 2, "max_tool_chars": 0},
+        "component_outputs": {"stats": "context_stats"},
+        "result_mode": "data",
+        "edges": [
+          {"condition": "subflow_done", "to": "pressure_compaction"}
+        ]
+      },
+      "pressure_compaction": {
+        "id": "pressure_compaction",
+        "op": "子流程",
+        "harness": "component_context_compactor",
+        "share_session": true,
+        "agent_map": {"compactor": "agent"},
+        "component_inputs": {"context_limit_tokens": 128000, "high_watermark": 0.82, "target_ratio": 0.62, "reserved_output_tokens": 4096, "protect_recent_turns": 2},
+        "component_outputs": {"stats": "pressure_stats"},
+        "result_mode": "data",
+        "edges": [{"condition": "subflow_done", "to": "infer"}]
+      },
+      "infer": {
+        "id": "infer",
+        "op": "推理",
+        "agent": "agent",
+        "tools": "all",
+        "instructions": "Continue the user's current workspace task. Reuse capability-library results before creating duplicate skills, tools, knowledge or harnesses. Treat context summaries as continuation state, and inspect source files again whenever an exact fact is uncertain.",
+        "require_tool_for_mutations": true,
+        "required_tool_patterns": ["write_file", "patch_file", "multi_edit"],
+        "max_required_tool_retries": 2,
+        "max_tool_rounds": 10,
+        "edges": [
+          {"condition": "has_tool_calls", "to": "exec_tools"},
+          {"condition": "has_text", "to": "wait_input"}
+        ]
+      },
+      "exec_tools": {
+        "id": "exec_tools",
+        "op": "执行工具",
+        "agent": "agent",
+        "edges": [
+          {"condition": "default", "to": "infer"}
+        ]
+      }
+    }
+  },
+  "prompts": {}
+}

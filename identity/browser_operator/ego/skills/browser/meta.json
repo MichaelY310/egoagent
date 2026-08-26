@@ -1,0 +1,34 @@
+{
+  "type": "function",
+  "title": "Browser",
+  "name": "browser",
+  "description": "Control a persistent Chrome session through typed CDP observations and input events. Supports grounded element/coordinate actions, screenshots, downloads, JavaScript dialogs and explicit human handoff for CAPTCHA or uncertain states.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {"type": "string", "enum": ["start", "navigate", "observe", "click", "click_at", "move", "drag", "type", "press", "scroll", "extract", "screenshot", "accept_dialog", "dismiss_dialog", "downloads", "wait_download", "handoff", "back", "tabs", "new_tab", "switch_tab", "wait", "close"], "description": "Browser operation."},
+      "url": {"type": "string", "description": "URL for navigate or new_tab."},
+      "index": {"type": "integer", "description": "Element index from the latest observe result."},
+      "selector": {"type": "string", "description": "CSS selector fallback when no observed index is available."},
+      "text": {"type": "string", "description": "Text for type, or key name for press."},
+      "clear": {"type": "boolean", "description": "Clear an input before typing; defaults true."},
+      "x": {"type": "number", "description": "Viewport X coordinate, drag start X, or horizontal scroll delta."},
+      "y": {"type": "number", "description": "Viewport Y coordinate, drag start Y, or vertical scroll delta."},
+      "end_x": {"type": "number", "description": "Drag destination X coordinate."},
+      "end_y": {"type": "number", "description": "Drag destination Y coordinate."},
+      "button": {"type": "string", "enum": ["left", "right", "middle"], "description": "Mouse button."},
+      "click_count": {"type": "integer", "minimum": 1, "maximum": 3, "description": "Single, double or triple click."},
+      "modifiers": {"type": "array", "items": {"type": "string", "enum": ["alt", "ctrl", "meta", "shift"]}, "description": "Keyboard/mouse modifiers."},
+      "target_id": {"type": "string", "description": "Target id from tabs for switch_tab."},
+      "seconds": {"type": "number", "description": "Wait duration, capped at 30 seconds."},
+      "timeout": {"type": "number", "description": "Navigation or download timeout, capped at 120 seconds."},
+      "max_chars": {"type": "integer", "description": "Maximum page text returned by observe/extract."},
+      "include_screenshot": {"type": "boolean", "description": "Attach a Workspace screenshot path to an observation."},
+      "download_guid": {"type": "string", "description": "Optional download id returned by a download event."},
+      "prompt_text": {"type": "string", "description": "Text supplied when accepting a JavaScript prompt."},
+      "reason": {"type": "string", "description": "Reason for explicit human handoff."},
+      "headless": {"type": "boolean", "description": "Choose headless or visible Chrome when starting a new session; defaults true."}
+    },
+    "required": ["action"]
+  }
+}

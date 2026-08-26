@@ -1,0 +1,28 @@
+{
+  "version": "ego.task.v1",
+  "id": "python_sum_fix",
+  "title": "修复订单总价计算",
+  "description": "一个小型代码修复题，验证 Agent 是否真的读取、修改并测试隔离工作区。",
+  "category": "coding",
+  "difficulty": "easy",
+  "tags": ["python", "bugfix", "deterministic-eval"],
+  "prompt": "请修复当前工作区中的 pricing.py。total_price 应返回每一项 price * quantity 的总和，并保留现有函数签名。完成后运行测试，简要说明修改。",
+  "workspace": {
+    "files": {
+      "pricing.py": "def total_price(items):\n    \"\"\"Return the total price for cart items.\"\"\"\n    return sum(item[\"price\"] for item in items)\n",
+      "test_pricing.py": "import unittest\nfrom pricing import total_price\n\nclass PricingTests(unittest.TestCase):\n    def test_total_price_uses_quantity(self):\n        self.assertEqual(total_price([{\"price\": 4, \"quantity\": 3}, {\"price\": 2, \"quantity\": 2}]), 16)\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+    }
+  },
+  "selection": { "recommended_harness": "aider_replica", "recommended_identity": "dante" },
+  "environment": { "backend": "local", "network": "disabled" },
+  "execution": { "timeout_seconds": 300 },
+  "evolution": { "allowed": false },
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      { "id": "tests", "type": "command", "command": ["python", "-m", "unittest", "discover", "-v"], "timeout_seconds": 30, "weight": 3 },
+      { "id": "implementation", "type": "file_regex", "path": "pricing.py", "pattern": "price.{0,30}quantity|quantity.{0,30}price", "weight": 1 },
+      { "id": "dag_used", "type": "op_visited", "op": "Agent", "minimum": 1, "weight": 1 }
+    ]
+  }
+}

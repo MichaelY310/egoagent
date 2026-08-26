@@ -1,0 +1,453 @@
+{
+  "name": "arc_scientific_search_candidate_g008_c001",
+  "description": "AVO-inspired ARC solver with a typed belief ledger, deterministic experiment ranking, persistent evidence, passive compaction and independent stagnation supervision.",
+  "slots": {
+    "explorer": {
+      "description": "Acts on the selected experiment",
+      "required": true,
+      "identity": "arc_explorer"
+    },
+    "scientist": {
+      "description": "Proposes hypotheses and falsifiable experiments",
+      "required": true,
+      "identity": "arc_supervisor"
+    },
+    "supervisor": {
+      "description": "Non-acting stagnation reviewer",
+      "required": true,
+      "identity": "arc_supervisor"
+    },
+    "compactor": {
+      "description": "Pressure-triggered conversation compactor",
+      "required": true,
+      "identity": "arc_supervisor"
+    }
+  },
+  "prompts": {
+    "supervise": {
+      "default": "Review this unknown-environment search without taking an action. Use the typed ledger as authoritative: preserve counterexamples, identify unsupported confidence, detect ignored selected experiments and distinguish lack of progress from lack of information. Recommend 2-4 changes to experimental strategy, never a hidden task answer.\n\nRecent trajectory: {trajectory}\nBelief ledger: {ledger}\nDurable memory: {memory}\n\nReturn ONLY JSON: {{\"text\":\"compact diagnosis\",\"type\":\"supervision\",\"importance\":8,\"keywords\":[\"belief\",\"experiment\"],\"evidence\":[\"exact step/hash ref\"]}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "mode": "agent",
+    "max_steps": 1600,
+    "max_node_steps": 7000,
+    "timeout_seconds": 14400,
+    "workspace_preview": false,
+    "permissions": {
+      "defaults": {
+        "network": "allow",
+        "read": "allow",
+        "write": "allow",
+        "process": "deny",
+        "mutation": "deny",
+        "secret": "deny"
+      }
+    },
+    "budget_exceeded_to": "budget_finish",
+    "limit_finalizer_max_steps": 4,
+    "budget": {
+      "max_model_calls": 640,
+      "max_tool_calls": 300,
+      "max_tokens": 2200000
+    },
+    "context": {
+      "request": "",
+      "action_batches": 0,
+      "no_action_streak": 0,
+      "supervision": {},
+      "arc_memory": [],
+      "compaction_stats": {},
+      "memory_namespace": "arc_scientific_unset",
+      "belief_ledger": {
+        "version": 1,
+        "revision": 0,
+        "hypotheses": [],
+        "experiments": [],
+        "selected_experiment_id": null
+      },
+      "selected_experiment": null,
+      "controller_audit": [],
+      "controller_errors": []
+    },
+    "nodes": {
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "outputs": {
+          "text": "request"
+        },
+        "edges": [
+          {
+            "condition": "input",
+            "to": "memory"
+          }
+        ]
+      },
+      "memory": {
+        "id": "memory",
+        "op": "记忆",
+        "action": "list",
+        "namespace": "$ctx.memory_namespace",
+        "top_k": 12,
+        "output_var": "arc_memory",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "compact"
+          }
+        ]
+      },
+      "compact": {
+        "id": "compact",
+        "op": "子流程",
+        "harness": "component_context_compactor",
+        "share_session": true,
+        "agent_map": {
+          "compactor": "compactor"
+        },
+        "component_inputs": {
+          "context_limit_tokens": 120000,
+          "high_watermark": 0.78,
+          "target_ratio": 0.56,
+          "reserved_output_tokens": 8000,
+          "protect_recent_turns": 3
+        },
+        "component_outputs": {
+          "stats": "compaction_stats"
+        },
+        "result_mode": "data",
+        "output_var": "compaction_result",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "working_context"
+          }
+        ]
+      },
+      "working_context": {
+        "id": "working_context",
+        "op": "上下文",
+        "action": "select",
+        "source": "$session.messages",
+        "last_n": 5,
+        "max_chars": 42000,
+        "output_var": "working_messages",
+        "edges": [
+          {
+            "condition": "context_ready",
+            "to": "controller_due"
+          }
+        ]
+      },
+      "controller_due": {
+        "id": "controller_due",
+        "op": "条件",
+        "condition": "ctx.action_batches > 0",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "scientific_controller"
+          },
+          {
+            "condition": "false",
+            "to": "act"
+          }
+        ]
+      },
+      "scientific_controller": {
+        "id": "scientific_controller",
+        "op": "子流程",
+        "harness": "component_scientific_search_controller",
+        "share_session": false,
+        "agent_map": {
+          "scientist": "scientist"
+        },
+        "component_inputs": {
+          "context_messages": "$ctx.working_messages",
+          "memory": "$ctx.arc_memory",
+          "ledger": "$ctx.belief_ledger",
+          "trajectory": "$ctx._trajectory",
+          "allowed_actions": []
+        },
+        "component_outputs": {
+          "ledger": "belief_ledger",
+          "selected": "selected_experiment",
+          "audit": "controller_audit",
+          "errors": "controller_errors"
+        },
+        "result_mode": "data",
+        "output_var": "controller_result",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "act"
+          }
+        ]
+      },
+      "act": {
+        "id": "act",
+        "op": "Agent",
+        "agent": "explorer",
+        "tools": "all",
+        "visible_tools": [
+          "arc_start",
+          "arc_act",
+          "arc_status",
+          "arc_finish"
+        ],
+        "max_tool_rounds": 300,
+        "max_tool_calls_per_turn": 1,
+        "max_tokens": 2048,
+        "repetition_ngram_size": 8,
+        "repetition_ratio_threshold": 0.18,
+        "repetition_min_tokens": 120,
+        "inputs": {
+          "messages": "$ctx.working_messages"
+        },
+        "instructions": "Original task: ${ctx.request}\nDurable evidence: ${ctx.arc_memory}\nTyped belief ledger: ${ctx.belief_ledger}\nSelected highest-value experiment: ${ctx.selected_experiment}\nSupervisor intervention: ${ctx.supervision}\nIf no ARC session exists, call arc_start. Otherwise execute the selected experiment with exactly one ARC tool call. Treat its predicted outcomes as tests, not facts. Do not reopen falsified beliefs without a new exact evidence ref. Do not narrate the grid or continue analysis after choosing an action. If the selected experiment is invalid, call arc_status once or state the precise validation defect in under 80 words.",
+        "retry": {
+          "max_attempts": 3,
+          "delay_seconds": 1,
+          "backoff": 2
+        },
+        "timeout_seconds": 240,
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "permissions"
+          },
+          {
+            "condition": "output_truncated",
+            "to": "supervisor_context"
+          },
+          {
+            "condition": "has_text",
+            "to": "no_action"
+          },
+          {
+            "condition": "stuck",
+            "to": "supervisor_context"
+          }
+        ]
+      },
+      "no_action": {
+        "id": "no_action",
+        "op": "数据",
+        "action": "increment",
+        "key": "no_action_streak",
+        "default": 0,
+        "delta": 1,
+        "output_var": "no_action_streak",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "no_action_due"
+          }
+        ]
+      },
+      "no_action_due": {
+        "id": "no_action_due",
+        "op": "条件",
+        "condition": "ctx.no_action_streak <= 2",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "act"
+          },
+          {
+            "condition": "false",
+            "to": "supervisor_context"
+          }
+        ]
+      },
+      "permissions": {
+        "id": "permissions",
+        "op": "工具审查",
+        "agent": "explorer",
+        "review_mode": "policy",
+        "default_permission": "deny",
+        "policies": [
+          {
+            "tool": "arc_*",
+            "permission": "allow"
+          }
+        ],
+        "edges": [
+          {
+            "condition": "default",
+            "to": "tools"
+          }
+        ]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "explorer",
+        "parallel": false,
+        "truncate_after_tools": [
+          "arc_finish"
+        ],
+        "terminal_tools_to": "result",
+        "stuck_threshold": 3,
+        "error_stuck_threshold": 3,
+        "stuck_ignore_arguments": [
+          "prediction",
+          "reasoning"
+        ],
+        "stuck_include_observation": false,
+        "stuck_prompt": "The action trajectory is repeating. Preserve counterexamples, discard the current theory and request a qualitatively different experiment.",
+        "edges": [
+          {
+            "condition": "stuck",
+            "to": "supervisor_context"
+          },
+          {
+            "condition": "tools_executed",
+            "to": "reset_no_action"
+          }
+        ]
+      },
+      "reset_no_action": {
+        "id": "reset_no_action",
+        "op": "数据",
+        "action": "set",
+        "key": "no_action_streak",
+        "value": 0,
+        "edges": [
+          {
+            "condition": "default",
+            "to": "count"
+          }
+        ]
+      },
+      "count": {
+        "id": "count",
+        "op": "数据",
+        "action": "increment",
+        "key": "action_batches",
+        "default": 0,
+        "delta": 1,
+        "output_var": "action_batches",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "supervision_due"
+          }
+        ]
+      },
+      "supervision_due": {
+        "id": "supervision_due",
+        "op": "条件",
+        "condition": "ctx.action_batches % 4 == 0",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "supervisor_context"
+          },
+          {
+            "condition": "false",
+            "to": "memory"
+          }
+        ]
+      },
+      "supervisor_context": {
+        "id": "supervisor_context",
+        "op": "上下文",
+        "action": "select",
+        "source": "$session.messages",
+        "last_n": 5,
+        "max_chars": 42000,
+        "output_var": "supervisor_messages",
+        "edges": [
+          {
+            "condition": "context_ready",
+            "to": "supervise"
+          }
+        ]
+      },
+      "supervise": {
+        "id": "supervise",
+        "op": "模型",
+        "agent": "supervisor",
+        "prompt": "supervise",
+        "parse_as": "json_object",
+        "json_fallback": {
+          "text": "Use only direct observations; execute a novel falsifiable experiment.",
+          "type": "supervision",
+          "importance": 5,
+          "keywords": [
+            "recovery"
+          ],
+          "evidence": []
+        },
+        "inputs": {
+          "trajectory": "$ctx.supervisor_messages",
+          "ledger": "$ctx.belief_ledger",
+          "memory": "$ctx.arc_memory"
+        },
+        "temperature": 0.1,
+        "max_tokens": 1200,
+        "outputs": {
+          "structured": "supervision"
+        },
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "store_supervision"
+          },
+          {
+            "condition": "json_fallback",
+            "to": "store_supervision"
+          }
+        ]
+      },
+      "store_supervision": {
+        "id": "store_supervision",
+        "op": "记忆",
+        "action": "add_unique",
+        "namespace": "$ctx.memory_namespace",
+        "memory_type": "supervision",
+        "inputs": {
+          "value": "$ctx.supervision"
+        },
+        "dedupe_key": "text",
+        "retention": 12,
+        "output_var": "stored_supervision",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "memory"
+          }
+        ]
+      },
+      "result": {
+        "id": "result",
+        "op": "结束",
+        "value": {
+          "status": "finished",
+          "result": "$node.tools.results",
+          "actions": "$ctx.action_batches",
+          "ledger": "$ctx.belief_ledger",
+          "memory": "$ctx.arc_memory",
+          "trajectory": "$ctx._trajectory"
+        },
+        "edges": []
+      },
+      "budget_finish": {
+        "id": "budget_finish",
+        "op": "结束",
+        "value": {
+          "status": "budget_exceeded",
+          "reason": "$ctx._termination.message",
+          "actions": "$ctx.action_batches",
+          "ledger": "$ctx.belief_ledger",
+          "trajectory": "$ctx._trajectory"
+        },
+        "edges": []
+      }
+    }
+  }
+}

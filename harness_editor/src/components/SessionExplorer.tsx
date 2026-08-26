@@ -1,9 +1,48 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { API_BASE as BASE } from '../api/runtime';
+import TrajectoryReplay from "./TrajectoryReplay";
+import SessionBranchDialog from "./SessionBranchDialog";
+import { annotationKey, TrainingDataPanel, TrainingFeedback, useSessionAnnotations } from "./TrainingDataControls";
+import {
+  getTrainingAnnotations,
+  listProjects,
+  listProjectSessions,
+  updatePortfolioSession,
+  updateProject,
+  type ProjectPortfolioItem,
+  type TrainingAnnotation,
+} from "../api/client";
+import { WORKSPACE } from "../api/runtime";
 
 interface SessionInfo {
   name: string;
+  title?: string;
   path: string;
   message_count: number;
+  has_trajectory?: boolean;
+  trajectory_events?: number;
+  trajectory_agents?: string[];
+  trajectory_valid?: boolean;
+  health?: {
+    status: 'healthy' | 'degraded' | 'incomplete' | 'invalid' | 'empty' | string;
+    replayable?: boolean;
+    training_ready?: boolean;
+    blockers?: string[];
+    warnings?: string[];
+  } | null;
+  lineage?: {
+    operation?: 'fork' | 'merge';
+    merge_mode?: 'direct' | 'summary' | 'dialogue';
+    parents?: string[];
+    created_at?: number;
+  } | null;
+  workspace?: string;
+  project_id?: string;
+  project_title?: string;
+  timestamp?: number;
+  summary?: string;
+  pinned?: boolean;
+  archived?: boolean;
 }
 
 interface EvalReport {
@@ -17,33 +56,69 @@ interface AnalyzeMessage {
   name?: string;
 }
 
-const BASE = `http://${window.location.hostname}:8765`;
-
 export default function SessionExplorer() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [projects, setProjects] = useState<ProjectPortfolioItem[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string>('');
   const [selected, setSelected] = useState<string>("");
+  const [openSessions, setOpenSessions] = useState<string[]>(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem(`egoagent.session-tabs:${WORKSPACE || 'global'}`) || '[]');
+      return Array.isArray(value) ? value.filter((item) => typeof item === 'string').slice(0, 12) : [];
+    } catch { return []; }
+  });
   const [evalReport, setEvalReport] = useState<EvalReport | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("");
+  const [sessionAnnotations, setSessionAnnotations] = useState<TrainingAnnotation[]>([]);
+  const [detailMode, setDetailMode] = useState<"replay" | "messages" | "training">("replay");
   const [analyzeStatus, setAnalyzeStatus] = useState<string>("");
   const [analyzeResult, setAnalyzeResult] = useState<any>(null);
+  const [branchAction, setBranchAction] = useState<'fork' | 'merge' | null>(null);
   // 气泡聊天面板状态
   const [showAnalyzeChat, setShowAnalyzeChat] = useState(false);
   const [analyzeChatMessages, setAnalyzeChatMessages] = useState<AnalyzeMessage[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const annotationState = useSessionAnnotations(selected);
 
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await fetch(`${BASE}/api/sessions`);
-      const data = await res.json();
-      setSessions(data);
+      const [projectData, sessionData] = await Promise.all([
+        listProjects(),
+        listProjectSessions({ limit: 1000 }),
+      ]);
+      const projectById = new Map(projectData.map((project) => [project.id, project]));
+      setProjects(projectData);
+      setSessions(sessionData.map((session) => ({
+        ...session,
+        project_title: projectById.get(session.project_id)?.title || 'Unassigned',
+      })) as SessionInfo[]);
+      setSelectedProject((current) => current || projectData.find((project) => project.current)?.id || 'all');
+      try {
+        const marked = await getTrainingAnnotations({ target_type: "session" });
+        setSessionAnnotations(marked.annotations);
+      } catch (reason) {
+        console.warn("Failed to fetch session annotations:", reason);
+      }
     } catch (e) {
       console.error("Failed to fetch sessions:", e);
     }
   }, []);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
+  useEffect(() => {
+    localStorage.setItem(`egoagent.session-tabs:${WORKSPACE || 'global'}`, JSON.stringify(openSessions.slice(0, 12)));
+  }, [openSessions]);
+
+  const onAnnotationSaved = useCallback((annotation: TrainingAnnotation) => {
+    annotationState.onSaved(annotation);
+    if (annotation.target_type === "session") {
+      setSessionAnnotations((current) => [...current.filter((item) => item.id !== annotation.id), annotation]);
+    }
+  }, [annotationState.onSaved]);
+
+  const sessionAnnotationByName = new Map(sessionAnnotations.map((item) => [item.target_id, item]));
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -53,6 +128,9 @@ export default function SessionExplorer() {
 
   const selectSession = async (name: string) => {
     setSelected(name);
+    setOpenSessions((current) => [...current.filter((item) => item !== name), name].slice(-12));
+    void updatePortfolioSession(name, { last_opened_at: Date.now() / 1000 }).catch(() => undefined);
+    setDetailMode(sessions.find((item) => item.name === name)?.has_trajectory ? "replay" : "messages");
     setEvalReport(null);
     setMessages([]);
     setLoading(true);
@@ -61,7 +139,7 @@ export default function SessionExplorer() {
       const msgsRes = await fetch(`${BASE}/api/session/${encodeURIComponent(name)}/messages`);
       if (msgsRes.ok) {
         const msgsData = await msgsRes.json();
-        setMessages(msgsData);
+        setMessages(Array.isArray(msgsData) ? msgsData : (msgsData.messages || []));
       }
       // 尝试加载缓存的评估报告（如果之前 analyze 过）
       const cachedRes = await fetch(`${BASE}/api/session/${encodeURIComponent(name)}/cached-report`);
@@ -130,9 +208,38 @@ export default function SessionExplorer() {
     }
   };
 
-  const filteredSessions = sessions.filter(
-    (s) => !filter || s.name.toLowerCase().includes(filter.toLowerCase())
-  );
+  const filteredSessions = sessions.filter((s) => (
+    (selectedProject === 'all' || !selectedProject || s.project_id === selectedProject)
+    && (!filter || `${s.name} ${s.summary || ''} ${s.project_title || ''}`.toLowerCase().includes(filter.toLowerCase()))
+  ));
+  const selectedInfo = sessions.find((session) => session.name === selected);
+  const selectedProjectInfo = projects.find((project) => project.id === selectedInfo?.project_id);
+
+  const closeSessionTab = (name: string) => {
+    setOpenSessions((current) => current.filter((item) => item !== name));
+    if (selected === name) {
+      const remaining = openSessions.filter((item) => item !== name);
+      const next = remaining.length ? remaining[remaining.length - 1] : '';
+      setSelected(next);
+      if (next) void selectSession(next);
+    }
+  };
+
+  const toggleProjectPin = async (project: ProjectPortfolioItem) => {
+    await updateProject(project.id, { pinned: !project.pinned });
+    await fetchSessions();
+  };
+
+  const toggleSessionPin = async (session: SessionInfo) => {
+    await updatePortfolioSession(session.name, { pinned: !session.pinned });
+    await fetchSessions();
+  };
+
+  const handleSessionCreated = async (name: string) => {
+    setBranchAction(null);
+    await fetchSessions();
+    await selectSession(name);
+  };
 
   const getEfficiency = (report: string): number | null => {
     const match = report.match(/Efficiency score: (\d+)\/100/);
@@ -174,9 +281,9 @@ export default function SessionExplorer() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100%", background: "#0d1b2a" }}>
+    <div className="session-explorer" style={{ display: "flex", height: "100%", background: "#0d1b2a", position: "relative" }}>
       {/* Left: Session List */}
-      <div style={{
+      <div className="session-explorer-list" style={{
         width: 320,
         borderRight: "1px solid #1e3a5f",
         display: "flex",
@@ -184,7 +291,8 @@ export default function SessionExplorer() {
         overflow: "hidden",
       }}>
         <div style={{ padding: "12px 16px", borderBottom: "1px solid #1e3a5f" }}>
-          <h3 style={{ margin: 0, color: "#7ecfff", fontSize: 14 }}>📊 Session Explorer</h3>
+          <h3 style={{ margin: 0, color: "#7ecfff", fontSize: 14 }}>Project &amp; Session Portfolio</h3>
+          <div style={{ marginTop: 3, color: '#718096', fontSize: 10 }}>一个项目可同时打开多个 Session；跨项目合并会保留来源。</div>
           <input
             type="text"
             placeholder="Filter sessions..."
@@ -192,6 +300,7 @@ export default function SessionExplorer() {
             onChange={(e) => setFilter(e.target.value)}
             style={{
               width: "100%",
+              boxSizing: "border-box",
               marginTop: 8,
               padding: "6px 10px",
               background: "#16213e",
@@ -202,8 +311,29 @@ export default function SessionExplorer() {
             }}
           />
         </div>
+        <div style={{ maxHeight: 190, overflow: 'auto', padding: '7px 8px', borderBottom: '1px solid #1e3a5f', background: '#0a1628' }}>
+          <button
+            type="button"
+            onClick={() => setSelectedProject('all')}
+            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '6px 8px', color: selectedProject === 'all' ? '#fff' : '#a8b3c7', background: selectedProject === 'all' ? '#1e3a5f' : 'transparent', border: 0, borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+          ><span>全部项目</span><small>{sessions.length}</small></button>
+          {projects.map((project) => <div key={project.id} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <button
+              type="button"
+              onClick={() => setSelectedProject(project.id)}
+              title={`${project.workspace || '无法归属'}\n${project.running_count || 0} running · ${project.session_count} Sessions`}
+              style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 7, padding: '6px 8px', color: selectedProject === project.id ? '#fff' : '#a8b3c7', background: selectedProject === project.id ? '#1e3a5f' : 'transparent', border: 0, borderRadius: 4, cursor: 'pointer', textAlign: 'left', fontSize: 11 }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.current ? '● ' : ''}{project.title}</span>
+              <small style={{ color: project.running_count ? '#4ade80' : '#718096' }}>{project.running_count ? `${project.running_count} live` : project.session_count}</small>
+            </button>
+            {project.id !== 'unknown' && <button type="button" title={project.pinned ? '取消项目置顶' : '置顶项目'} onClick={() => void toggleProjectPin(project)} style={{ padding: '4px', border: 0, color: project.pinned ? '#e2c08d' : '#53657a', background: 'transparent', cursor: 'pointer' }}>{project.pinned ? '★' : '☆'}</button>}
+          </div>)}
+        </div>
         <div style={{ flex: 1, overflow: "auto", padding: "8px 0" }}>
-          {filteredSessions.map((s) => (
+          {filteredSessions.map((s) => {
+            const mark = sessionAnnotationByName.get(s.name);
+            return (
             <div
               key={s.name}
               onClick={() => selectSession(s.name)}
@@ -217,14 +347,29 @@ export default function SessionExplorer() {
               onMouseEnter={(e) => { if (selected !== s.name) e.currentTarget.style.background = "#0f2744"; }}
               onMouseLeave={(e) => { if (selected !== s.name) e.currentTarget.style.background = "transparent"; }}
             >
-              <div style={{ fontSize: 12, color: "#ddd", fontFamily: "monospace" }}>
-                {s.name}
+              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#ddd", fontFamily: "monospace" }}>
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</span>
+                <button type="button" title={s.pinned ? '取消 Session 置顶' : '置顶 Session'} onClick={(event) => { event.stopPropagation(); void toggleSessionPin(s); }} style={{ marginLeft: 'auto', padding: 0, border: 0, color: s.pinned ? '#e2c08d' : '#53657a', background: 'transparent', cursor: 'pointer', flexShrink: 0 }}>{s.pinned ? '★' : '☆'}</button>
+                {mark?.rating === "up" && <span title="已点赞" style={{ color: "#89d185", flexShrink: 0 }}>👍</span>}
+                {mark?.rating === "down" && <span title="已点踩" style={{ color: "#f48771", flexShrink: 0 }}>👎</span>}
+                {mark?.important && <span title="重要 Session" style={{ color: "#e2c08d", flexShrink: 0 }}>★</span>}
+                {mark?.include_in_training && <span title="已加入训练集" style={{ color: "#4fc1ff", flexShrink: 0 }}>◆</span>}
               </div>
               <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
                 {s.message_count} messages
+                {s.has_trajectory && <span
+                  title={s.health ? `${s.health.status}${s.health.training_ready ? ' · training ready' : ''}${s.health.blockers?.length ? ` · ${s.health.blockers.join('; ')}` : ''}` : 'Health is calculated when the session is saved or opened'}
+                  style={{ marginLeft: 7, color: s.health?.status === 'invalid' ? "#f48771" : s.health?.status === 'incomplete' ? '#e2c08d' : s.health?.status === 'healthy' ? "#89d185" : "#858585" }}
+                >● {s.trajectory_events || "…"} events{s.health ? ` · ${s.health.status}` : ''}</span>}
               </div>
+              {selectedProject === 'all' && <div style={{ marginTop: 3, color: '#569cd6', fontSize: 10 }}>{s.project_title}</div>}
+              {s.summary && <div style={{ marginTop: 3, color: '#6f7f91', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.summary}</div>}
+              {s.lineage && <div title={`Parents: ${(s.lineage.parents || []).join(', ')}`} style={{ marginTop: 4, color: '#c586c0', fontSize: 10 }}>
+                {s.lineage.operation === 'fork' ? '⑂ fork' : `⇄ ${s.lineage.merge_mode || 'merge'}`} · {(s.lineage.parents || []).join(' + ')}
+              </div>}
             </div>
-          ))}
+            );
+          })}
           {filteredSessions.length === 0 && (
             <div style={{ padding: 16, color: "#666", fontSize: 12, textAlign: "center" }}>
               No sessions found
@@ -251,7 +396,18 @@ export default function SessionExplorer() {
       </div>
 
       {/* Middle: Detail Panel */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div className="session-explorer-detail" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ minHeight: 35, display: 'flex', alignItems: 'end', gap: 3, padding: '5px 8px 0', overflowX: 'auto', borderBottom: '1px solid #1e3a5f', background: '#0a1628' }}>
+          {openSessions.map((name) => {
+            const info = sessions.find((item) => item.name === name);
+            if (!info) return null;
+            return <div key={name} title={`${info.project_title || ''}\n${name}`} style={{ display: 'flex', alignItems: 'center', minWidth: 110, maxWidth: 230, height: 29, padding: '0 5px 0 9px', border: `1px solid ${selected === name ? '#365f85' : '#24364a'}`, borderBottom: selected === name ? '1px solid #0d1b2a' : undefined, borderRadius: '5px 5px 0 0', background: selected === name ? '#0d1b2a' : '#101f30', color: selected === name ? '#fff' : '#8ea0b7', fontSize: 10 }}>
+              <button type="button" onClick={() => void selectSession(name)} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: 0, border: 0, color: 'inherit', background: 'transparent', textAlign: 'left', cursor: 'pointer' }}>{info.title || name}</button>
+              <button type="button" onClick={() => closeSessionTab(name)} title="关闭标签（不会删除 Session）" style={{ padding: '1px 3px', border: 0, color: '#718096', background: 'transparent', cursor: 'pointer' }}>×</button>
+            </div>;
+          })}
+          {!openSessions.length && <span style={{ alignSelf: 'center', padding: '0 8px 6px', color: '#53657a', fontSize: 10 }}>从左侧打开一个或多个 Session</span>}
+        </div>
         {!selected ? (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" }}>
             Select a session to view details
@@ -268,12 +424,29 @@ export default function SessionExplorer() {
               borderBottom: "1px solid #1e3a5f",
               display: "flex",
               alignItems: "center",
+              flexWrap: "wrap",
               gap: 12,
             }}>
-              <h3 style={{ margin: 0, color: "#fff", fontSize: 14, flex: 1 }}>
-                {selected}
+              <h3 title={selected} style={{ margin: 0, color: "#fff", fontSize: 14, flex: "1 1 220px", minWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {selectedProjectInfo?.title ? `${selectedProjectInfo.title} / ` : ''}{selected}
               </h3>
+              <TrainingFeedback
+                session={selected}
+                targetType="session"
+                targetId={selected}
+                annotation={annotationState.byTarget.get(annotationKey("session", selected))}
+                onSaved={onAnnotationSaved}
+                compact
+              />
+              {!selected.includes('/') && <button type="button" onClick={() => setBranchAction('fork')} title="复制完整上下文到一个独立分支" style={{ padding: '5px 9px', border: '1px solid #454545', borderRadius: 4, cursor: 'pointer', color: '#ddd', background: '#252526', fontSize: 10, flexShrink: 0 }}>⑂ Fork</button>}
+              {!selected.includes('/') && sessions.some((session) => session.name !== selected && !session.name.includes('/')) && <button type="button" onClick={() => setBranchAction('merge')} title="合并两个 Session 的分支新增内容" style={{ padding: '5px 9px', border: '1px solid #454545', borderRadius: 4, cursor: 'pointer', color: '#ddd', background: '#252526', fontSize: 10, flexShrink: 0 }}>⇄ Merge</button>}
+              <div style={{ display: "flex", flexShrink: 0, background: "#181818", border: "1px solid #3c3c3c", borderRadius: 4, overflow: "hidden" }}>
+                {selectedInfo?.has_trajectory && <button type="button" onClick={() => setDetailMode("replay")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "replay" ? "white" : "#999", background: detailMode === "replay" ? "#0e639c" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>精确回放</button>}
+                <button type="button" onClick={() => setDetailMode("messages")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "messages" ? "white" : "#999", background: detailMode === "messages" ? "#0e639c" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>审计聊天</button>
+                <button type="button" onClick={() => setDetailMode("training")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "training" ? "white" : "#999", background: detailMode === "training" ? "#0e639c" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>训练数据</button>
+              </div>
               <button
+                type="button"
                 onClick={triggerAnalyze}
                 style={{
                   padding: "6px 14px",
@@ -284,6 +457,7 @@ export default function SessionExplorer() {
                   cursor: "pointer",
                   fontSize: 12,
                   fontWeight: "bold",
+                  flexShrink: 0,
                 }}
               >
                 🔍 Analyze
@@ -391,13 +565,19 @@ export default function SessionExplorer() {
             )}
 
             {/* Messages / Trajectory */}
-            <div style={{ flex: 1, overflow: "auto", padding: "12px 20px" }}>
+            {detailMode === "training" ? (
+              <div style={{ flex: 1, minHeight: 0 }}><TrainingDataPanel session={selected} availableSessions={sessions.map((item) => item.name)} annotations={annotationState.annotations} onSaved={onAnnotationSaved} /></div>
+            ) : detailMode === "replay" && selectedInfo?.has_trajectory ? (
+              <div style={{ flex: 1, minHeight: 0 }}><TrajectoryReplay session={selected} /></div>
+            ) : <div style={{ flex: 1, overflow: "auto", padding: "12px 20px" }}>
               <h4 style={{ margin: "0 0 8px", color: "#7ecfff", fontSize: 13 }}>
                 Trajectory ({messages.length} messages)
               </h4>
               {messages.map((msg, i) => {
                 const role = msg.role || "?";
                 const content = msg.content || "";
+                const contextStatus = msg._context?.status as string | undefined;
+                const contextReason = msg._context?.reason as string | undefined;
                 const isToolCall = role === "assistant" && content.includes("<tool_call>");
                 const isToolResponse = role === "user" && content.includes("<tool_response>");
 
@@ -441,18 +621,44 @@ export default function SessionExplorer() {
                       borderLeft: `3px solid ${borderColor}`,
                       borderRadius: 4,
                       fontSize: 12,
+                      opacity: contextStatus === "elided" || contextStatus === "summarized" ? 0.64 : 1,
                     }}
                   >
-                    <span style={{ color: borderColor, fontWeight: "bold", marginRight: 8, fontSize: 11 }}>
-                      [{label}]
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+                      <span style={{ color: borderColor, fontWeight: "bold", fontSize: 11 }}>[{label}]</span>
+                      {msg._training?.target_id && <span style={{ marginLeft: "auto" }}><TrainingFeedback
+                        session={selected}
+                        targetType="message"
+                        targetId={msg._training.target_id}
+                        sourceHash={msg._training.source_hash}
+                        annotation={annotationState.byTarget.get(annotationKey("message", msg._training.target_id))}
+                        onSaved={annotationState.onSaved}
+                        compact
+                      /></span>}
+                    </div>
+                    {contextStatus && contextStatus !== "active" && (
+                      <span
+                        title={contextReason || contextStatus}
+                        style={{
+                          display: "inline-block",
+                          marginRight: 8,
+                          border: `1px solid ${contextStatus === "compressed" ? "#d29922" : "#6e7681"}`,
+                          borderRadius: 8,
+                          padding: "1px 6px",
+                          color: contextStatus === "compressed" ? "#e3b341" : "#a5a5a5",
+                          fontSize: 8,
+                        }}
+                      >
+                        {contextStatus === "elided" ? "已从模型上下文移除" : contextStatus === "summarized" ? "已由摘要替代" : "工具输出已压缩"}
+                      </span>
+                    )}
                     <span style={{ color: "#ccc", fontFamily: "monospace", whiteSpace: "pre-wrap" }}>
                       {displayContent}
                     </span>
                   </div>
                 );
               })}
-            </div>
+            </div>}
           </>
         )}
       </div>
@@ -641,6 +847,21 @@ export default function SessionExplorer() {
           </div>
         </div>
       )}
+      {branchAction && selected && <SessionBranchDialog
+        action={branchAction}
+        source={selected}
+        sourceProjectId={selectedInfo?.project_id}
+        sourceWorkspace={selectedInfo?.workspace}
+        sessions={sessions.map((session) => ({
+          name: session.name,
+          message_count: session.message_count,
+          project_id: session.project_id,
+          project_title: session.project_title,
+          workspace: session.workspace,
+        }))}
+        onClose={() => setBranchAction(null)}
+        onCreated={handleSessionCreated}
+      />}
     </div>
   );
 }

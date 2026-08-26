@@ -1,0 +1,731 @@
+{
+  "format": "ego.flow-evolution.v2",
+  "created_at": 1787440336.1857371,
+  "source_result": "C:\\Users\\aa310\\Desktop\\egoagent\\experiments\\arc_agi3\\results\\1787437842-arc_scientific_search-vc33-50001d.json",
+  "base_flow": "arc_scientific_search",
+  "base_digest": "5102bc60faa232afea7d11136245aa087b20c5730acdaa8a26f64fc70d2c8b2a",
+  "generation": 8,
+  "evidence": {
+    "source_kind": "official unknown interactive environment",
+    "budget": {
+      "environment_actions": 8
+    },
+    "official_outcome": {
+      "score": 0.0,
+      "total_levels_completed": 0,
+      "total_actions": 8,
+      "state": "NOT_FINISHED"
+    },
+    "runtime": {
+      "model_calls": 26,
+      "tool_calls": 10,
+      "input_tokens_actual": 189137,
+      "output_tokens_actual": 24411
+    },
+    "behavioral_aggregates": {
+      "environment_actions_attempted": 8,
+      "environment_action_budget": 8,
+      "action_budget_completed": true,
+      "premature_termination_observed": false,
+      "invalid_action_calls": 0,
+      "distinct_action_classes": 1,
+      "longest_identical_action_class_streak": 8,
+      "longest_identical_action_signature_streak": 4,
+      "unique_observed_states": 8,
+      "revisited_state_actions": 0,
+      "no_change_actions": 0,
+      "levels_completed": 0,
+      "score": 0.0,
+      "action_histogram": {
+        "ACTION6": 8
+      },
+      "supervision_events": 3,
+      "supervisor_keyword_sets": [
+        [
+          "belief",
+          "experiment"
+        ],
+        [
+          "belief",
+          "experiment"
+        ],
+        [
+          "belief",
+          "experiment"
+        ]
+      ],
+      "final_belief_ledger": {
+        "version": 1,
+        "revision": 9,
+        "hypotheses": [
+          {
+            "id": "h_action6_edge_recolor",
+            "claim": "ACTION6 converts the rightmost cell(s) of the 7-color horizontal bar (row 0) from 7 to 4, eroding the bar from the right edge, regardless of x,y arguments.",
+            "status": "supported",
+            "confidence": 0.9,
+            "evidence": [
+              {
+                "kind": "observation",
+                "ref": "step:1",
+                "summary": "Changed cell (0,63) from 7 to 4; 7 component size dropped 64->63."
+              },
+              {
+                "kind": "observation",
+                "ref": "step:2",
+                "summary": "Changed cells (0,61) and (0,62) from 7 to 4 despite x=44,y=46; 7 component size dropped 63->61."
+              },
+              {
+                "kind": "observation",
+                "ref": "step:3",
+                "summary": "Changed cell (0,60) from 7 to 4 with y=5; 7 component size dropped 61->60."
+              },
+              {
+                "kind": "observation",
+                "ref": "step:4",
+                "summary": "Changed cell (0,59) from 7 to 4 despite x=28,y=40 inside the 5-block; 5-block untouched, 7 component size dropped 60->59."
+              }
+            ]
+          },
+          {
+            "id": "h_action6_repeat_erodes",
+            "claim": "Repeated ACTION6 continues converting 7->4 leftward along row 0 until the 7 bar is fully converted or a level completes.",
+            "status": "supported",
+            "confidence": 0.75,
+            "evidence": [
+              {
+                "kind": "observation",
+                "ref": "step:1",
+                "summary": "Single action converted the rightmost 7 to 4."
+              },
+              {
+                "kind": "observation",
+                "ref": "step:2",
+                "summary": "Next action converted the next two rightmost 7 cells (0,61) and (0,62) to 4."
+              },
+              {
+                "kind": "observation",
+                "ref": "step:3",
+                "summary": "Next action converted (0,60) to 4; erosion continues leftward."
+              },
+              {
+                "kind": "observation",
+                "ref": "step:4",
+                "summary": "Next action converted (0,59) to 4; erosion continues leftward."
+              }
+            ]
+          },
+          {
+            "id": "h_action6_batch_size",
+            "claim": "ACTION6 converts a variable number of 7 cells per call (1,2,1,1 observed), possibly depending on remaining bar length or a hidden rule.",
+            "status": "candidate",
+            "confidence": 0.5,
+            "evidence": [
+              {
+                "kind": "observation",
+                "ref": "step:1",
+                "summary": "1 cell changed (0,63)."
+              },
+              {
+                "kind": "observation",
+                "ref": "step:2",
+                "summary": "2 cells changed (0,61) and (0,62)."
+              },
+              {
+                "kind": "observation",
+                "ref": "step:3",
+                "summary": "1 cell changed (0,60); sequence 1,2,1 rules out fixed batch size."
+              },
+              {
+                "kind": "observation",
+                "ref": "step:4",
+                "summary": "1 cell changed (0,59); sequence 1,2,1,1 rules out simple alternation 1,2."
+              }
+            ]
+          },
+          {
+            "id": "h_action6_progress",
+            "claim": "ACTION6 advances a level or toggles between two states; repeated use may be required or may be harmful (e.g., undo).",
+            "status": "candidate",
+            "confidence": 0.2,
+            "evidence": [
+              {
+                "kind": "observation",
+                "ref": "step:0",
+                "summary": "progress=true and state_visit_count=1; no prior action to compare, so effect direction unknown."
+              }
+            ]
+          },
+          {
+            "id": "h_action6_global",
+            "claim": "ACTION6 is a global transformation affecting the whole 64x64 grid.",
+            "status": "falsified",
+            "confidence": 0.0,
+            "evidence": [
+              {
+                "kind": "counterexample",
+                "ref": "step:1",
+                "summary": "Only one cell changed (0,63) 7->4; all other components and color counts unchanged."
+              }
+            ]
+          },
+          {
+            "id": "h_action6_local",
+            "claim": "ACTION6 targets a specific region/component (e.g., the 4/11 cluster or 9 blocks).",
+            "status": "falsified",
+            "confidence": 0.0,
+            "evidence": [
+              {
+                "kind": "counterexample",
+                "ref": "step:1",
+                "summary": "Change was at (0,63) on the 7 bar, not at the 4/11 cluster or 9 blocks."
+              },
+              {
+                "kind": "counterexample",
+                "ref": "step:2",
+                "summary": "Even with coordinates inside the 4/11 cluster, changes remained on the 7 bar."
+              },
+              {
+                "kind": "counterexample",
+                "ref": "step:4",
+                "summary": "Even with coordinates inside the 5-block, changes remained on the 7 bar."
+              }
+            ]
+          },
+          {
+            "id": "h_action6_position_dependent",
+            "claim": "The x,y arguments to ACTION6 select a target cell/position.",
+            "status": "falsified",
+            "confidence": 0.0,
+            "evidence": [
+              {
+                "kind": "counterexample",
+                "ref": "step:2",
+                "summary": "Called with x=44,y=46 (inside the 4/11 cluster) but changes occurred at (0,61) and (0,62) on the 7 bar."
+              },
+              {
+                "kind": "counterexample",
+                "ref": "step:3",
+                "summary": "Called with y=5 but change occurred at (0,60) on row 0."
+              },
+              {
+                "kind": "counterexample",
+                "ref": "step:4",
+                "summary": "Called with x=28,y=40 (inside the 5-block) but change occurred at (0,59) on row 0."
+              }
+            ]
+          }
+        ],
+        "experiments": [],
+        "selected_experiment_id": null,
+        "update_reason": "invalid model output"
+      }
+    },
+    "measured_failure": {
+      "environment_actions_attempted": 8,
+      "environment_action_budget": 8,
+      "action_budget_completed": true,
+      "premature_termination_observed": false,
+      "invalid_action_calls": 0,
+      "distinct_action_classes": 1,
+      "longest_identical_action_class_streak": 8,
+      "longest_identical_action_signature_streak": 4,
+      "unique_observed_states": 8,
+      "revisited_state_actions": 0,
+      "no_change_actions": 0,
+      "levels_completed": 0,
+      "score": 0.0
+    },
+    "optimization_order": [
+      "increase official score or completed levels",
+      "when the primary outcome ties, reduce actual model input/output tokens or model calls"
+    ],
+    "constraints": [
+      "No game ID, coordinate, action sequence, discovered rule or environment-specific tool may enter the candidate Flow.",
+      "Official outcome is the primary promotion metric.",
+      "Use paired validation and at least two independent held-out cases before promotion.",
+      "No no-op mutation may consume evaluation budget."
+    ]
+  },
+  "requested_population": 2,
+  "attempts": [
+    {
+      "attempt": 1,
+      "proposal": {
+        "hypothesis": "The agent exhausts its action budget because it spends too many steps on low-value exploration or redundant actions before converging, and a tighter per-step reasoning budget (context window) forces more decisive action selection.",
+        "failure_mechanism": "With an unbounded or large context, the agent accumulates excessive intermediate observations and self-generated reasoning, leading to verbose, repetitive decision loops that consume the action budget without improving the outcome. Truncating the context per step reduces token overhead and compels the model to act on the most salient recent state, improving efficiency without changing action-class diversity.",
+        "evidence_refs": [
+          {
+            "path": "behavioral_aggregates.action_budget_completed",
+            "operator": "eq",
+            "value": true
+          },
+          {
+            "path": "behavioral_aggregates.premature_termination_observed",
+            "operator": "eq",
+            "value": false
+          },
+          {
+            "path": "runtime.model_calls",
+            "operator": "gt",
+            "value": 10
+          }
+        ],
+        "operations": [
+          {
+            "op": "set_field",
+            "path": "pipeline.nodes.act.max_tokens",
+            "value": 2048
+          }
+        ],
+        "expected_effect": "Reducing per-step context tokens from the current value (e.g., 8192) to 2048 forces the agent to prioritize recent observations and avoid over-analyzing stale history, reducing redundant model calls and token usage while preserving or improving the final outcome score.",
+        "risk": "If the task requires long-horizon memory, truncating context could cause the agent to forget critical early state, degrading outcome. The paired validation will detect this before promotion.",
+        "evaluation_plan": {
+          "validation_cases": 2,
+          "heldout_cases": 2,
+          "ablation": "Compare against a variant with the original context size but the same action budget to isolate whether the improvement comes from context reduction rather than other changes.",
+          "promotion_rule": "paired official outcome first; no held-out regressions"
+        }
+      },
+      "component_variant": {
+        "base_digest": "5102bc60faa232afea7d11136245aa087b20c5730acdaa8a26f64fc70d2c8b2a",
+        "candidate_digest": "cc1a20b0bd61f98c3389b224f95b19b06f69c76544f702eecb7f05cc1f0a5999",
+        "operations": [
+          {
+            "op": "set_field",
+            "path": "pipeline.nodes.act.max_tokens",
+            "before": 900,
+            "after": 2048
+          }
+        ],
+        "proposal": {
+          "hypothesis": "The agent exhausts its action budget because it spends too many steps on low-value exploration or redundant actions before converging, and a tighter per-step reasoning budget (context window) forces more decisive action selection.",
+          "failure_mechanism": "With an unbounded or large context, the agent accumulates excessive intermediate observations and self-generated reasoning, leading to verbose, repetitive decision loops that consume the action budget without improving the outcome. Truncating the context per step reduces token overhead and compels the model to act on the most salient recent state, improving efficiency without changing action-class diversity.",
+          "evidence_refs": [
+            {
+              "path": "behavioral_aggregates.action_budget_completed",
+              "operator": "eq",
+              "value": true
+            },
+            {
+              "path": "behavioral_aggregates.premature_termination_observed",
+              "operator": "eq",
+              "value": false
+            },
+            {
+              "path": "runtime.model_calls",
+              "operator": "gt",
+              "value": 10
+            }
+          ],
+          "operations": [
+            {
+              "op": "set_field",
+              "path": "pipeline.nodes.act.max_tokens",
+              "value": 2048
+            }
+          ],
+          "expected_effect": "Reducing per-step context tokens from the current value (e.g., 8192) to 2048 forces the agent to prioritize recent observations and avoid over-analyzing stale history, reducing redundant model calls and token usage while preserving or improving the final outcome score.",
+          "risk": "If the task requires long-horizon memory, truncating context could cause the agent to forget critical early state, degrading outcome. The paired validation will detect this before promotion.",
+          "evaluation_plan": {
+            "validation_cases": 2,
+            "heldout_cases": 2,
+            "ablation": "Compare against a variant with the original context size but the same action budget to isolate whether the improvement comes from context reduction rather than other changes.",
+            "promotion_rule": "paired official outcome first; no held-out regressions"
+          }
+        },
+        "verified_evidence": [
+          {
+            "path": "behavioral_aggregates.action_budget_completed",
+            "operator": "eq",
+            "value": true,
+            "actual": true
+          },
+          {
+            "path": "behavioral_aggregates.premature_termination_observed",
+            "operator": "eq",
+            "value": false,
+            "actual": false
+          },
+          {
+            "path": "runtime.model_calls",
+            "operator": "gt",
+            "value": 10,
+            "actual": 26
+          }
+        ],
+        "ok": true
+      }
+    },
+    {
+      "attempt": 2,
+      "proposal": {
+        "hypothesis": "The agent is exhausting its action budget because it spends too many turns on low-value exploration or redundant tool calls before committing to a final action, and a larger context window would let it consolidate reasoning and act sooner.",
+        "failure_mechanism": "With the current context size, the agent cannot retain enough intermediate state to make a decisive action, so it repeatedly re-observes or re-queries the environment, consuming the action budget before a successful outcome is reached. Increasing context size allows the agent to hold more history and produce a final action earlier.",
+        "evidence_refs": [
+          {
+            "path": "behavioral_aggregates.action_budget_completed",
+            "operator": "eq",
+            "value": true
+          },
+          {
+            "path": "behavioral_aggregates.premature_termination_observed",
+            "operator": "eq",
+            "value": false
+          },
+          {
+            "path": "runtime.model_calls",
+            "operator": "gt",
+            "value": 10
+          }
+        ],
+        "operations": [
+          {
+            "op": "set_field",
+            "path": "pipeline.nodes.act.max_tokens",
+            "value": 8192
+          }
+        ],
+        "expected_effect": "With a larger context window, the agent can retain more observations and reasoning steps, reducing redundant re-querying and enabling it to reach a final action within the same action budget, improving the official outcome.",
+        "risk": "Larger context may increase per-call latency or cost, but the primary metric is outcome; if the agent already has enough context, this change may not help and could slightly degrade efficiency.",
+        "evaluation_plan": {
+          "validation_cases": 2,
+          "heldout_cases": 2,
+          "ablation": "Compare against a variant with the original context size but an added 'summarize' node to test whether the bottleneck is context retention vs. reasoning structure.",
+          "promotion_rule": "paired official outcome first; no held-out regressions"
+        }
+      },
+      "component_variant": {
+        "base_digest": "5102bc60faa232afea7d11136245aa087b20c5730acdaa8a26f64fc70d2c8b2a",
+        "candidate_digest": "df9fcfaa679758f2e334ebe507aae218491ca7b5bf25c87fa03c8376eff03eee",
+        "operations": [
+          {
+            "op": "set_field",
+            "path": "pipeline.nodes.act.max_tokens",
+            "before": 900,
+            "after": 8192
+          }
+        ],
+        "proposal": {
+          "hypothesis": "The agent is exhausting its action budget because it spends too many turns on low-value exploration or redundant tool calls before committing to a final action, and a larger context window would let it consolidate reasoning and act sooner.",
+          "failure_mechanism": "With the current context size, the agent cannot retain enough intermediate state to make a decisive action, so it repeatedly re-observes or re-queries the environment, consuming the action budget before a successful outcome is reached. Increasing context size allows the agent to hold more history and produce a final action earlier.",
+          "evidence_refs": [
+            {
+              "path": "behavioral_aggregates.action_budget_completed",
+              "operator": "eq",
+              "value": true
+            },
+            {
+              "path": "behavioral_aggregates.premature_termination_observed",
+              "operator": "eq",
+              "value": false
+            },
+            {
+              "path": "runtime.model_calls",
+              "operator": "gt",
+              "value": 10
+            }
+          ],
+          "operations": [
+            {
+              "op": "set_field",
+              "path": "pipeline.nodes.act.max_tokens",
+              "value": 8192
+            }
+          ],
+          "expected_effect": "With a larger context window, the agent can retain more observations and reasoning steps, reducing redundant re-querying and enabling it to reach a final action within the same action budget, improving the official outcome.",
+          "risk": "Larger context may increase per-call latency or cost, but the primary metric is outcome; if the agent already has enough context, this change may not help and could slightly degrade efficiency.",
+          "evaluation_plan": {
+            "validation_cases": 2,
+            "heldout_cases": 2,
+            "ablation": "Compare against a variant with the original context size but an added 'summarize' node to test whether the bottleneck is context retention vs. reasoning structure.",
+            "promotion_rule": "paired official outcome first; no held-out regressions"
+          }
+        },
+        "verified_evidence": [
+          {
+            "path": "behavioral_aggregates.action_budget_completed",
+            "operator": "eq",
+            "value": true,
+            "actual": true
+          },
+          {
+            "path": "behavioral_aggregates.premature_termination_observed",
+            "operator": "eq",
+            "value": false,
+            "actual": false
+          },
+          {
+            "path": "runtime.model_calls",
+            "operator": "gt",
+            "value": 10,
+            "actual": 26
+          }
+        ],
+        "ok": true
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "candidate_id": "g008_c001",
+      "path": "C:\\Users\\aa310\\Desktop\\egoagent\\experiments\\arc_agi3\\candidates\\generation_008\\config.json",
+      "candidate_digest": "cc1a20b0bd61f98c3389b224f95b19b06f69c76544f702eecb7f05cc1f0a5999",
+      "proposal_signature": "98dfeb9ae95c9f6bcb7174e0fbdcfafaf107b80ca32be957b8ac636749a77e5f",
+      "novelty": 1.0,
+      "verified_evidence": [
+        {
+          "path": "behavioral_aggregates.action_budget_completed",
+          "operator": "eq",
+          "value": true,
+          "actual": true
+        },
+        {
+          "path": "behavioral_aggregates.premature_termination_observed",
+          "operator": "eq",
+          "value": false,
+          "actual": false
+        },
+        {
+          "path": "runtime.model_calls",
+          "operator": "gt",
+          "value": 10,
+          "actual": 26
+        }
+      ],
+      "operations": [
+        {
+          "op": "set_field",
+          "path": "pipeline.nodes.act.max_tokens",
+          "before": 900,
+          "after": 2048
+        }
+      ],
+      "proposal": {
+        "hypothesis": "The agent exhausts its action budget because it spends too many steps on low-value exploration or redundant actions before converging, and a tighter per-step reasoning budget (context window) forces more decisive action selection.",
+        "failure_mechanism": "With an unbounded or large context, the agent accumulates excessive intermediate observations and self-generated reasoning, leading to verbose, repetitive decision loops that consume the action budget without improving the outcome. Truncating the context per step reduces token overhead and compels the model to act on the most salient recent state, improving efficiency without changing action-class diversity.",
+        "evidence_refs": [
+          {
+            "path": "behavioral_aggregates.action_budget_completed",
+            "operator": "eq",
+            "value": true
+          },
+          {
+            "path": "behavioral_aggregates.premature_termination_observed",
+            "operator": "eq",
+            "value": false
+          },
+          {
+            "path": "runtime.model_calls",
+            "operator": "gt",
+            "value": 10
+          }
+        ],
+        "operations": [
+          {
+            "op": "set_field",
+            "path": "pipeline.nodes.act.max_tokens",
+            "value": 2048
+          }
+        ],
+        "expected_effect": "Reducing per-step context tokens from the current value (e.g., 8192) to 2048 forces the agent to prioritize recent observations and avoid over-analyzing stale history, reducing redundant model calls and token usage while preserving or improving the final outcome score.",
+        "risk": "If the task requires long-horizon memory, truncating context could cause the agent to forget critical early state, degrading outcome. The paired validation will detect this before promotion.",
+        "evaluation_plan": {
+          "validation_cases": 2,
+          "heldout_cases": 2,
+          "ablation": "Compare against a variant with the original context size but the same action budget to isolate whether the improvement comes from context reduction rather than other changes.",
+          "promotion_rule": "paired official outcome first; no held-out regressions"
+        }
+      },
+      "evaluation_status": "unevaluated"
+    },
+    {
+      "candidate_id": "g008_c002",
+      "path": "C:\\Users\\aa310\\Desktop\\egoagent\\experiments\\arc_agi3\\candidates\\generation_008\\candidate_002\\config.json",
+      "candidate_digest": "df9fcfaa679758f2e334ebe507aae218491ca7b5bf25c87fa03c8376eff03eee",
+      "proposal_signature": "01f8dac9ac9aa678a377dc5d290fae0c71f78c32cdce6b344bc927616eb27662",
+      "novelty": 0.5,
+      "verified_evidence": [
+        {
+          "path": "behavioral_aggregates.action_budget_completed",
+          "operator": "eq",
+          "value": true,
+          "actual": true
+        },
+        {
+          "path": "behavioral_aggregates.premature_termination_observed",
+          "operator": "eq",
+          "value": false,
+          "actual": false
+        },
+        {
+          "path": "runtime.model_calls",
+          "operator": "gt",
+          "value": 10,
+          "actual": 26
+        }
+      ],
+      "operations": [
+        {
+          "op": "set_field",
+          "path": "pipeline.nodes.act.max_tokens",
+          "before": 900,
+          "after": 8192
+        }
+      ],
+      "proposal": {
+        "hypothesis": "The agent is exhausting its action budget because it spends too many turns on low-value exploration or redundant tool calls before committing to a final action, and a larger context window would let it consolidate reasoning and act sooner.",
+        "failure_mechanism": "With the current context size, the agent cannot retain enough intermediate state to make a decisive action, so it repeatedly re-observes or re-queries the environment, consuming the action budget before a successful outcome is reached. Increasing context size allows the agent to hold more history and produce a final action earlier.",
+        "evidence_refs": [
+          {
+            "path": "behavioral_aggregates.action_budget_completed",
+            "operator": "eq",
+            "value": true
+          },
+          {
+            "path": "behavioral_aggregates.premature_termination_observed",
+            "operator": "eq",
+            "value": false
+          },
+          {
+            "path": "runtime.model_calls",
+            "operator": "gt",
+            "value": 10
+          }
+        ],
+        "operations": [
+          {
+            "op": "set_field",
+            "path": "pipeline.nodes.act.max_tokens",
+            "value": 8192
+          }
+        ],
+        "expected_effect": "With a larger context window, the agent can retain more observations and reasoning steps, reducing redundant re-querying and enabling it to reach a final action within the same action budget, improving the official outcome.",
+        "risk": "Larger context may increase per-call latency or cost, but the primary metric is outcome; if the agent already has enough context, this change may not help and could slightly degrade efficiency.",
+        "evaluation_plan": {
+          "validation_cases": 2,
+          "heldout_cases": 2,
+          "ablation": "Compare against a variant with the original context size but an added 'summarize' node to test whether the bottleneck is context retention vs. reasoning structure.",
+          "promotion_rule": "paired official outcome first; no held-out regressions"
+        }
+      },
+      "evaluation_status": "unevaluated"
+    }
+  ],
+  "population_rejections": [],
+  "proposal": {
+    "hypothesis": "The agent exhausts its action budget because it spends too many steps on low-value exploration or redundant actions before converging, and a tighter per-step reasoning budget (context window) forces more decisive action selection.",
+    "failure_mechanism": "With an unbounded or large context, the agent accumulates excessive intermediate observations and self-generated reasoning, leading to verbose, repetitive decision loops that consume the action budget without improving the outcome. Truncating the context per step reduces token overhead and compels the model to act on the most salient recent state, improving efficiency without changing action-class diversity.",
+    "evidence_refs": [
+      {
+        "path": "behavioral_aggregates.action_budget_completed",
+        "operator": "eq",
+        "value": true
+      },
+      {
+        "path": "behavioral_aggregates.premature_termination_observed",
+        "operator": "eq",
+        "value": false
+      },
+      {
+        "path": "runtime.model_calls",
+        "operator": "gt",
+        "value": 10
+      }
+    ],
+    "operations": [
+      {
+        "op": "set_field",
+        "path": "pipeline.nodes.act.max_tokens",
+        "value": 2048
+      }
+    ],
+    "expected_effect": "Reducing per-step context tokens from the current value (e.g., 8192) to 2048 forces the agent to prioritize recent observations and avoid over-analyzing stale history, reducing redundant model calls and token usage while preserving or improving the final outcome score.",
+    "risk": "If the task requires long-horizon memory, truncating context could cause the agent to forget critical early state, degrading outcome. The paired validation will detect this before promotion.",
+    "evaluation_plan": {
+      "validation_cases": 2,
+      "heldout_cases": 2,
+      "ablation": "Compare against a variant with the original context size but the same action budget to isolate whether the improvement comes from context reduction rather than other changes.",
+      "promotion_rule": "paired official outcome first; no held-out regressions"
+    }
+  },
+  "candidate_path": "C:\\Users\\aa310\\Desktop\\egoagent\\experiments\\arc_agi3\\candidates\\generation_008\\config.json",
+  "promoted": false,
+  "promotion_reason": "candidate passed validation comparison but lacks independent heldout evidence",
+  "runtime_stats": [
+    {
+      "started_at": 643153.829045,
+      "node_steps": 5,
+      "model_calls": 2,
+      "tool_calls": 0,
+      "process_calls": 0,
+      "retries": 0,
+      "input_tokens_estimated": 7359,
+      "output_tokens_estimated": 964,
+      "cost_estimated": 0.0,
+      "provider_requests": 2,
+      "provider_retries": 0,
+      "input_tokens_actual": 8624,
+      "output_tokens_actual": 854,
+      "cached_input_tokens_actual": 256,
+      "cost_actual": 0.0,
+      "provider_request_ids": [
+        "a10aabd2-ac5d-4d2d-bc1a-1ac53b70cabc",
+        "44169a3d-052b-4469-a02b-a38b99f027f8"
+      ]
+    },
+    {
+      "started_at": 643161.9802401,
+      "node_steps": 5,
+      "model_calls": 2,
+      "tool_calls": 0,
+      "process_calls": 0,
+      "retries": 0,
+      "input_tokens_estimated": 7326,
+      "output_tokens_estimated": 904,
+      "cost_estimated": 0.0,
+      "provider_requests": 2,
+      "provider_retries": 0,
+      "input_tokens_actual": 8610,
+      "output_tokens_actual": 832,
+      "cached_input_tokens_actual": 768,
+      "cost_actual": 0.0,
+      "provider_request_ids": [
+        "a9d8e170-e2c8-415f-8baa-fbc0fa69e133",
+        "e0704f08-c679-48fc-852e-872c92372cf4"
+      ]
+    }
+  ],
+  "evaluation": {
+    "baseline": {
+      "levels_completed": 0,
+      "score": 0.0,
+      "actions": 8,
+      "tokens": 213548,
+      "elapsed_seconds": 182.647,
+      "run_id": "1787437842-arc_scientific_search-vc33-50001d"
+    },
+    "candidate": {
+      "levels_completed": 0,
+      "score": 0.0,
+      "actions": 8,
+      "tokens": 213542,
+      "elapsed_seconds": 170.489,
+      "run_id": "1787440539-arc_scientific_search_candidate_g008_c001-vc33-85991b"
+    },
+    "decision": {
+      "status": "needs_heldout",
+      "promoted": false,
+      "reason": "candidate passed validation comparison but lacks independent heldout evidence",
+      "baseline_primary": {
+        "levels_completed": 0.0,
+        "score": 0.0
+      },
+      "candidate_primary": {
+        "levels_completed": 0.0,
+        "score": 0.0
+      },
+      "cost_regressions": [],
+      "heldout_verified": false
+    }
+  }
+}

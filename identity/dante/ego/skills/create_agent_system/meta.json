@@ -1,0 +1,30 @@
+{
+  "type": "tool",
+  "name": "create_agent_system",
+  "description": "Materialize a complete Agent system from an explicit Agent Spec: valid Identity + SEGO, selected existing Skills, Knowledge placeholders and a visual/runnable Harness. Prefer the structured spec authored by a Model/SubDAG; description-only mode remains for compatibility.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "description": {"type": "string", "description": "What the new Agent should do; required by compatibility mode"},
+      "name": {"type": "string", "description": "Optional short ASCII snake_case name; generated when omitted"},
+      "spec": {
+        "type": "object",
+        "description": "Inspectable Agent Spec authored by an ordinary Model node",
+        "properties": {
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "role": {"type": "string"},
+          "traits": {"type": "array", "items": {"type": "string"}},
+          "tone": {"type": "string"},
+          "language": {"type": "string"},
+          "temperature": {"type": "number"},
+          "system_prompt": {"type": "string"},
+          "skills": {"type": "array", "items": {"type": "string"}},
+          "knowledge_topics": {"type": "array", "items": {"type": "string"}},
+          "allow_self_evolution": {"type": "boolean"}
+        }
+      }
+    },
+    "required": []
+  }
+}

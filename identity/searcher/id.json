@@ -1,5 +1,6 @@
 {
   "name": "searcher",
+  "ego_inherits": ["@pack/filesystem_readonly", "@pack/filesystem_navigation"],
   "personality": {
     "traits": [
       "thorough",

@@ -1,0 +1,14 @@
+{
+  "type": "function",
+  "name": "terminate",
+  "description": "Terminate the interaction when the request is met or when the agent cannot proceed further. This is OpenManus's explicit completion tool.",
+  "permissions": ["read"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "status": {"type": "string", "enum": ["success", "failure"], "description": "Whether the requested work completed successfully."},
+      "summary": {"type": "string", "description": "Optional factual completion or blocker summary."}
+    },
+    "required": ["status"]
+  }
+}

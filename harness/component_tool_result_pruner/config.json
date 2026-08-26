@@ -1,0 +1,50 @@
+{
+  "name": "component_tool_result_pruner",
+  "description": "Reusable deterministic context view transformer. Oversized tool observations keep their head and tail in model context while the full transcript remains lossless.",
+  "component": {
+    "name": "tool_result_pruner",
+    "display_name": "Tool Result Pruner",
+    "category": "Conversation",
+    "icon": "剪",
+    "description": "Prune only the model-facing copy of large tool results; preserve exact output for replay, audit, and training export.",
+    "share_session": true,
+    "inputs": {
+      "threshold_chars": {"default": 8192, "schema": {"type": "integer", "minimum": 1}},
+      "head_chars": {"default": 4096, "schema": {"type": "integer", "minimum": 0}},
+      "tail_chars": {"default": 1024, "schema": {"type": "integer", "minimum": 0}}
+    },
+    "outputs": {
+      "stats": {"path": "prune_result.stats", "default": {}},
+      "pruned": {"path": "prune_result.stats.pruned_tool_results", "default": 0}
+    }
+  },
+  "slots": {},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "prune",
+    "max_steps": 2,
+    "context": {"prune_result": {"stats": {}}},
+    "nodes": {
+      "prune": {
+        "id": "prune",
+        "op": "上下文",
+        "action": "apply",
+        "apply_mode": "tool_prune",
+        "threshold_chars": "$ctx.threshold_chars",
+        "head_chars": "$ctx.head_chars",
+        "tail_chars": "$ctx.tail_chars",
+        "source": "$session.messages",
+        "full_source": "$session.full_messages",
+        "output_var": "prune_result",
+        "edges": [{"condition": "tool_results_pruned", "to": "done"}]
+      },
+      "done": {
+        "id": "done",
+        "op": "结束",
+        "value": {"stats": "$ctx.prune_result.stats", "pruned": "$ctx.prune_result.stats.pruned_tool_results"},
+        "edges": []
+      }
+    }
+  }
+}

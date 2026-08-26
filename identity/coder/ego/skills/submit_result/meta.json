@@ -1,0 +1,12 @@
+{
+  "type": "function",
+  "name": "submit_result",
+  "description": "Finish the current coding task after the requested change has been implemented and verified. Provide a concise final result. This is the explicit submission command used by bounded coding harnesses.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "summary": {"type": "string", "description": "What changed and how it was verified"}
+    },
+    "required": ["summary"]
+  }
+}

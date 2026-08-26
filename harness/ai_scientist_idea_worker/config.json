@@ -1,0 +1,250 @@
+{
+  "name": "ai_scientist_idea_worker",
+  "description": "AI Scientist-style project worker: plan and run bounded experiments, write a paper draft, ensemble-review it, and perform one evidence-driven improvement round.",
+  "slots": {
+    "scientist": {"description": "Turns a novel idea into a falsifiable experiment plan", "required": true, "identity": "dante"},
+    "experimenter": {"description": "Coding Identity/EGO that implements, repairs and runs experiments", "required": true, "identity": "coder"},
+    "writer": {"description": "Scientific writer that turns real artifacts into a draft", "required": true, "identity": "dante"},
+    "citation_researcher": {"description": "Research Identity/EGO for the bounded citation loop", "required": true, "identity": "researcher"},
+    "reviewer_a": {"description": "Independent scientific reviewer A", "required": true, "identity": "dante"},
+    "reviewer_b": {"description": "Independent scientific reviewer B", "required": true, "identity": "dante"},
+    "reviewer_c": {"description": "Independent scientific reviewer C", "required": true, "identity": "dante"},
+    "reviewer_d": {"description": "Independent scientific reviewer D", "required": true, "identity": "dante"},
+    "reviewer_e": {"description": "Independent scientific reviewer E", "required": true, "identity": "dante"},
+    "meta_reviewer": {"description": "Aggregates independent reviews without majority-by-assertion", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "experiment_plan": {
+      "description": "Create an AI Scientist-style bounded experiment plan",
+      "default": "Design a falsifiable, resource-bounded experiment for the novelty-reviewed idea below. Reuse the existing repository or template when present. Include a baseline, ablation or comparison, measurable success criteria, expected artifacts, and no more than five runs. Every run must separate the executable from its argument list and must be non-interactive. Use an idea-specific artifact directory under .egoagent/ai-scientist to avoid collisions. cwd is relative to the Workspace. resources may request gpu/cpu capacity.\n\nNovelty-reviewed idea:\n{idea}\n\nReturn ONLY JSON: {{\"name\":\"short_slug\",\"hypothesis\":\"...\",\"artifact_dir\":\".egoagent/ai-scientist/...\",\"runs\":[{{\"id\":\"run_1\",\"purpose\":\"...\",\"command\":\"python\",\"args\":[\"experiment.py\",\"--out_dir\",\"run_1\"],\"cwd\":\".egoagent/ai-scientist/...\",\"resources\":{{\"gpu\":1}},\"success_criteria\":[\"...\"]}}],\"required_artifacts\":[\"notes.txt\",\"results.json\",\"plot\"]}}"
+    },
+    "write": {
+      "description": "Write only from executed experiment evidence",
+      "default": "Write a concise scientific-paper draft in Markdown from the candidate, plan, and actual experiment report below. Include Abstract, Introduction, Related Work, Method, Experimental Setup, Results, Limitations, Ethics, and Conclusion. Never invent a metric, run, citation, or figure. Mark missing evidence explicitly and preserve artifact paths and source URLs.\n\nCandidate:\n{idea}\n\nExperiment plan:\n{experiment_plan}\n\nActual experiment report:\n{experiment_report}"
+    },
+    "review": {
+      "description": "Independent AI Scientist-style paper review",
+      "default": "Independently review this paper as a critical and cautious NeurIPS reviewer. If the evidence is bad or uncertain, score it poorly and reject it. Check the draft against the actual experiment report.\n\nCandidate: {idea}\nExperiment report: {experiment_report}\nPaper: {draft}\nReview pass: {review_round}\n\nReason briefly, then return a JSON object with exactly these fields: {{\"Summary\":\"...\",\"Strengths\":[\"...\"],\"Weaknesses\":[\"...\"],\"Originality\":1,\"Quality\":1,\"Clarity\":1,\"Significance\":1,\"Questions\":[\"...\"],\"Limitations\":[\"...\"],\"Ethical Concerns\":false,\"Soundness\":1,\"Presentation\":1,\"Contribution\":1,\"Overall\":1,\"Confidence\":1,\"Decision\":\"Accept|Reject\"}}. Originality/Quality/Clarity/Significance/Soundness/Presentation/Contribution are 1-4, Overall is 1-10, Confidence is 1-5."
+    },
+    "meta_review": {
+      "description": "Evidence-aware ensemble aggregation",
+      "default": "You are an Area Chair aggregating five independent reviews into one cautious meta-review. Find consensus and respect all reviewers. Check the paper and experiment evidence. Return the same exact JSON review schema as an individual reviewer, including Summary, Strengths, Weaknesses, Originality, Quality, Clarity, Significance, Questions, Limitations, Ethical Concerns, Soundness, Presentation, Contribution, Overall, Confidence and Decision (Accept or Reject). The DAG will deterministically replace all nine numeric scores with the valid ensemble means.\n\nReviews: {valid_reviews}\nExperiment report: {experiment_report}\nPaper: {draft}"
+    },
+    "citation_query": {
+      "description": "AI Scientist citation need/query turn",
+      "default": "Round {citation_round}/20. Inspect the current paper and identify the single most important missing citation and a precise scholarly query. Do not request a paper already cited. If no more citations are needed, include exactly `No more citations needed` in the reasoning. End with JSON {{\"Query\":\"...\",\"Description\":\"where and why this evidence should be cited\"}}; Query may be empty only when done.\n\nPaper:\n{draft}"
+    },
+    "citation_integrate": {
+      "description": "Integrate only retrieved citation evidence",
+      "default": "Revise the complete paper to integrate only the genuinely relevant retrieved citation evidence below. Add a stable source URL or citation identifier, explain the exact relationship, avoid duplicates, and do not invent BibTeX metadata. If no result is appropriate, return the paper unchanged.\n\nRequested edit: {citation_step}\nRetrieved evidence: {citation_evidence}\nCurrent paper: {draft}"
+    },
+    "review_reflection": {
+      "description": "AI Scientist reviewer self-reflection",
+      "default": "Round {review_reflection_round}/5. Carefully reconsider the accuracy and soundness of the aggregated review below. Keep its exact JSON schema, correct any material error, and stay specific to this paper. If nothing should change, include `I am done` in the reasoning and repeat the JSON exactly.\n\nPaper: {draft}\nExperiment evidence: {experiment_report}\nCurrent review: {current_review}"
+    },
+    "rewrite": {
+      "description": "Revise the paper after an evidence-producing repair",
+      "default": "Improve the paper text using the final review, matching AI Scientist's optional improvement pass. Do not change code, rerun experiments, or invent evidence. Keep supported content, remove unsupported claims, address clarity and limitation issues, and return the complete revised paper.\n\nPrior paper: {draft}\nReview: {current_review}\nExperiment evidence: {experiment_report}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 100,
+    "max_node_steps": 700,
+    "timeout_seconds": 3600,
+    "workspace_preview": true,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "event_log": {"path": ".egoagent/events/{run_id}.jsonl"},
+    "budget": {"max_model_calls": 90, "max_tool_calls": 260, "max_process_calls": 10, "max_tokens": 800000},
+    "resource_limits": {"gpu": 1, "cpu": 4},
+    "context": {
+      "idea": "", "template_dir": "", "baseline_results": {}, "experiment_plan": {}, "preparation_report": "", "run_branches": [], "run_results": [], "experiment_report": {}, "artifact_snapshot": {}, "draft": "", "reviews": [],
+      "valid_reviews": [], "score_averages": {}, "meta_review": {}, "current_review": {}, "accepted": false,
+      "review_rounds": [1, 2], "review_round": 0, "improvement_enabled": false,
+      "review_reflection_rounds": [2, 3, 4, 5], "review_reflection_round": 2,
+      "review_response": "", "review_converged": false, "review_history": []
+      ,"citation_rounds": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20], "citation_round": 1,
+      "citation_done": false, "citation_response": "", "citation_step": {}, "citation_evidence": "", "citation_history": []
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "idea"}, "edges": [{"condition": "input", "to": "plan"}]},
+      "plan": {
+        "id": "plan", "op": "模型", "agent": "scientist", "prompt": "experiment_plan", "parse_as": "json", "temperature": 0.2,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["name", "hypothesis", "artifact_dir", "runs", "required_artifacts"], "properties": {"runs": {"type": "array", "items": {"type": "object", "required": ["id", "purpose", "command", "args", "cwd", "resources", "success_criteria"]}}}},
+        "outputs": {"structured": "experiment_plan"}, "edges": [{"condition": "has_text", "to": "prepare_workspace"}]
+      },
+      "prepare_workspace": {
+        "id": "prepare_workspace", "op": "工作区", "action": "mkdir", "target": "$ctx.experiment_plan.artifact_dir",
+        "output_var": "study_workspace", "edges": [{"condition": "workspace_ready", "to": "has_template_dir"}]
+      },
+      "has_template_dir": {"id": "has_template_dir", "op": "条件", "condition": "not empty(ctx.template_dir)", "edges": [{"condition": "true", "to": "copy_template"}, {"condition": "false", "to": "read_baseline"}]},
+      "copy_template": {
+        "id": "copy_template", "op": "工作区", "action": "copy", "source": "$ctx.template_dir", "target": "$ctx.experiment_plan.artifact_dir", "overwrite": true,
+        "output_var": "template_copy", "edges": [{"condition": "workspace_copied", "to": "read_baseline"}]
+      },
+      "read_baseline": {
+        "id": "read_baseline", "op": "工作区", "action": "read_json", "path": "${ctx.experiment_plan.artifact_dir}/run_0/final_info.json",
+        "allow_missing": true, "default": {}, "max_bytes": 1000000, "outputs": {"structured": "baseline_results"},
+        "edges": [{"condition": "default", "to": "prepare"}]
+      },
+      "prepare": {
+        "id": "prepare", "op": "子流程", "harness": "bounded_coder_worker", "agent_map": {"coder": "experimenter"},
+        "inputs": {"message": "Prepare this scientific experiment in the current workspace. Inspect the copied template first. Work only inside the specified artifact directory for generated outputs. Implement the experiment code and validate that each planned non-interactive command is runnable, but do not fabricate execution output; the parent DAG will execute every command itself. The vanilla baseline is already available below and must not be rerun. Create initial notes and report changed files plus static checks.\n\nCandidate: ${ctx.idea}\nExperiment plan: ${ctx.experiment_plan}\nBaseline results: ${ctx.baseline_results}"},
+        "output_var": "preparation_report", "edges": [{"condition": "subflow_done", "to": "run_map"}]
+      },
+      "run_map": {
+        "id": "run_map", "op": "映射", "source": "$ctx.experiment_plan.runs", "item_var": "experiment_run", "counter_var": "run_index",
+        "body_start": "execute_run", "join": "collect_runs", "max_count": 5, "max_workers": 1, "fail_fast": false, "output_var": "run_branches", "edges": []
+      },
+      "execute_run": {
+        "id": "execute_run", "op": "子流程", "harness": "ai_scientist_experiment_run_worker", "result_mode": "result",
+        "agent_map": {"coder": "experimenter"},
+        "inputs": {
+          "message": "Execute and repair one bounded AI Scientist run.",
+          "data": {"idea": "$ctx.idea", "experiment_plan": "$ctx.experiment_plan", "experiment_run": "$ctx.experiment_run", "baseline_results": "$ctx.baseline_results"}
+        },
+        "output_var": "current_run_result", "edges": [{"condition": "subflow_done", "to": "collect_runs"}]
+      },
+      "collect_runs": {"id": "collect_runs", "op": "合并", "source": "$ctx.run_branches", "strategy": "values", "output_var": "run_results", "edges": [{"condition": "joined", "to": "record_experiment"}]},
+      "record_experiment": {
+        "id": "record_experiment", "op": "数据", "action": "set", "key": "experiment_report",
+        "value": {"baseline": "$ctx.baseline_results", "preparation": "$ctx.preparation_report", "runs": "$ctx.run_results"}, "output_var": "experiment_report",
+        "edges": [{"condition": "default", "to": "check_plot_file"}]
+      },
+      "check_plot_file": {
+        "id": "check_plot_file", "op": "工作区", "action": "read_text", "path": "${ctx.experiment_plan.artifact_dir}/plot.py",
+        "allow_missing": true, "default": "", "max_bytes": 200000, "truncate": true, "output_var": "plot_probe",
+        "edges": [{"condition": "default", "to": "has_plot_file"}]
+      },
+      "has_plot_file": {"id": "has_plot_file", "op": "条件", "condition": "ctx.plot_probe.exists", "edges": [{"condition": "true", "to": "plot_worker"}, {"condition": "false", "to": "plot_skipped"}]},
+      "plot_worker": {
+        "id": "plot_worker", "op": "子流程", "harness": "ai_scientist_experiment_run_worker", "result_mode": "result", "agent_map": {"coder": "experimenter"},
+        "inputs": {
+          "message": "Generate the most relevant plots for the final writeup and repair plot.py on concrete failures. Include every relevant run in its labels mapping.",
+          "data": {
+            "idea": "$ctx.idea", "experiment_plan": "$ctx.experiment_plan",
+            "experiment_run": {"id": "plot", "purpose": "generate final paper plots", "command": "python", "args": ["plot.py"], "cwd": "$ctx.experiment_plan.artifact_dir", "resources": {"cpu": 1}}
+          }
+        },
+        "output_var": "plot_result", "edges": [{"condition": "subflow_done", "to": "update_notes"}]
+      },
+      "plot_skipped": {"id": "plot_skipped", "op": "数据", "action": "set", "key": "plot_result", "value": {"success": false, "status": "skipped", "reason": "No plot.py exists in the study artifact directory."}, "edges": [{"condition": "default", "to": "update_notes"}]},
+      "update_notes": {
+        "id": "update_notes", "op": "子流程", "harness": "bounded_coder_worker", "agent_map": {"coder": "experimenter"},
+        "inputs": {"message": "Update notes.txt for the future paper writer. Describe every executed run and each generated plot in depth, including run number, measured result, plot filename, what it shows, and failures. Use only the process evidence below; do not fabricate.\n\nPlan: ${ctx.experiment_plan}\nRun results: ${ctx.run_results}\nPlot result: ${ctx.plot_result}"},
+        "output_var": "notes_report", "edges": [{"condition": "subflow_done", "to": "finalize_experiment_report"}]
+      },
+      "finalize_experiment_report": {
+        "id": "finalize_experiment_report", "op": "数据", "action": "merge", "key": "experiment_report",
+        "value": {"plot": "$ctx.plot_result", "notes": "$ctx.notes_report"}, "output_var": "experiment_report",
+        "edges": [{"condition": "default", "to": "snapshot_artifacts"}]
+      },
+      "snapshot_artifacts": {
+        "id": "snapshot_artifacts", "op": "工作区", "action": "snapshot", "paths": ["$ctx.experiment_plan.artifact_dir"],
+        "label": "ai-scientist-artifacts", "output_var": "artifact_snapshot",
+        "edges": [{"condition": "workspace_snapshotted", "to": "checkpoint"}]
+      },
+      "checkpoint": {"id": "checkpoint", "op": "检查点", "action": "save", "label": "ai-scientist-experiment", "edges": [{"condition": "checkpoint_saved", "to": "write"}]},
+      "write": {"id": "write", "op": "模型", "agent": "writer", "prompt": "write", "temperature": 0.2, "max_tokens": 7000, "output_var": "draft", "edges": [{"condition": "has_text", "to": "citation_loop"}]},
+      "citation_loop": {
+        "id": "citation_loop", "op": "循环", "list_var": "citation_rounds", "item_var": "citation_round", "counter_var": "citation_index",
+        "body_start": "citation_query", "break_when": "ctx.citation_done", "result_var": "citation_history", "max_count": 20,
+        "edges": [{"condition": "loop_break", "to": "write_paper"}, {"condition": "loop_done", "to": "write_paper"}]
+      },
+      "citation_query": {
+        "id": "citation_query", "op": "模型", "agent": "writer", "prompt": "citation_query", "parse_as": "json_object",
+        "json_fallback": {}, "temperature": 0.2, "retry": {"max_attempts": 1},
+        "outputs": {"text": "citation_response", "structured": "citation_step"},
+        "edges": [{"condition": "has_text", "to": "citations_complete"}]
+      },
+      "citations_complete": {"id": "citations_complete", "op": "条件", "condition": "contains(lower(ctx.citation_response), 'no more citations needed')", "edges": [{"condition": "true", "to": "mark_citations_done"}, {"condition": "false", "to": "has_citation_query"}]},
+      "mark_citations_done": {"id": "mark_citations_done", "op": "数据", "action": "set", "key": "citation_done", "value": true, "edges": [{"condition": "default", "to": "capture_citation_round"}]},
+      "has_citation_query": {"id": "has_citation_query", "op": "条件", "condition": "exists(ctx.citation_step.Query) and not empty(ctx.citation_step.Query)", "edges": [{"condition": "true", "to": "citation_research"}, {"condition": "false", "to": "capture_citation_round"}]},
+      "citation_research": {
+        "id": "citation_research", "op": "子流程", "harness": "open_deep_research_worker", "agent_map": {"researcher": "citation_researcher"},
+        "inputs": {"message": "Find scholarly sources for this exact citation query: ${ctx.citation_step.Query}\nNeeded relationship: ${ctx.citation_step.Description}\nReturn title, authors, year, stable URL/DOI, contribution, and why it is or is not appropriate. Do not invent a source."},
+        "output_var": "citation_evidence", "edges": [{"condition": "subflow_done", "to": "citation_integrate"}, {"condition": "error", "to": "capture_citation_round"}]
+      },
+      "citation_integrate": {"id": "citation_integrate", "op": "模型", "agent": "writer", "prompt": "citation_integrate", "temperature": 0.15, "max_tokens": 7000, "output_var": "draft", "edges": [{"condition": "has_text", "to": "capture_citation_round"}]},
+      "capture_citation_round": {
+        "id": "capture_citation_round", "op": "数据", "action": "set", "key": "_loop_result",
+        "value": {"round": "$ctx.citation_round", "query": "$ctx.citation_step.Query", "evidence": "$ctx.citation_evidence", "done": "$ctx.citation_done"},
+        "edges": [{"condition": "default", "to": "citation_loop"}]
+      },
+      "write_paper": {
+        "id": "write_paper", "op": "工作区", "action": "write_text", "path": "${ctx.experiment_plan.artifact_dir}/paper.md",
+        "value": "$ctx.draft", "overwrite": true, "max_bytes": 5000000, "track_change": true, "output_var": "paper_artifact",
+        "edges": [{"condition": "workspace_written", "to": "review_loop"}]
+      },
+      "review_loop": {
+        "id": "review_loop", "op": "循环", "list_var": "review_rounds", "item_var": "review_round", "body_start": "reset_review_converged",
+        "break_when": "not ctx.improvement_enabled or ctx.review_round == 2", "result_var": "review_history", "max_count": 2,
+        "edges": [{"condition": "loop_break", "to": "output"}, {"condition": "loop_done", "to": "output"}]
+      },
+      "reset_review_converged": {"id": "reset_review_converged", "op": "数据", "action": "set", "key": "review_converged", "value": false, "edges": [{"condition": "default", "to": "review_parallel"}]},
+      "review_parallel": {
+        "id": "review_parallel", "op": "并行", "branches": [
+          {"name": "reviewer_a", "start": "review_a"}, {"name": "reviewer_b", "start": "review_b"}, {"name": "reviewer_c", "start": "review_c"},
+          {"name": "reviewer_d", "start": "review_d"}, {"name": "reviewer_e", "start": "review_e"}
+        ], "join": "review_join", "max_workers": 5, "fail_fast": false, "output_var": "review_branches", "edges": []
+      },
+      "review_a": {"id": "review_a", "op": "模型", "agent": "reviewer_a", "prompt": "review", "parse_as": "json_object", "json_fallback": {}, "temperature": 0.75, "retry": {"max_attempts": 1}, "edges": [{"condition": "has_text", "to": "review_join"}]},
+      "review_b": {"id": "review_b", "op": "模型", "agent": "reviewer_b", "prompt": "review", "parse_as": "json_object", "json_fallback": {}, "temperature": 0.75, "retry": {"max_attempts": 1}, "edges": [{"condition": "has_text", "to": "review_join"}]},
+      "review_c": {"id": "review_c", "op": "模型", "agent": "reviewer_c", "prompt": "review", "parse_as": "json_object", "json_fallback": {}, "temperature": 0.75, "retry": {"max_attempts": 1}, "edges": [{"condition": "has_text", "to": "review_join"}]},
+      "review_d": {"id": "review_d", "op": "模型", "agent": "reviewer_d", "prompt": "review", "parse_as": "json_object", "json_fallback": {}, "temperature": 0.75, "retry": {"max_attempts": 1}, "edges": [{"condition": "has_text", "to": "review_join"}]},
+      "review_e": {"id": "review_e", "op": "模型", "agent": "reviewer_e", "prompt": "review", "parse_as": "json_object", "json_fallback": {}, "temperature": 0.75, "retry": {"max_attempts": 1}, "edges": [{"condition": "has_text", "to": "review_join"}]},
+      "review_join": {"id": "review_join", "op": "合并", "source": "$ctx.review_branches", "strategy": "values", "output_var": "reviews", "edges": [{"condition": "joined", "to": "filter_valid_reviews"}]},
+      "filter_valid_reviews": {
+        "id": "filter_valid_reviews", "op": "数据", "action": "filter", "key": "valid_reviews", "source": "$ctx.reviews",
+        "condition": "is_object(item) and exists(item.Originality) and exists(item.Quality) and exists(item.Clarity) and exists(item.Significance) and exists(item.Soundness) and exists(item.Presentation) and exists(item.Contribution) and exists(item.Overall) and exists(item.Confidence)",
+        "edges": [{"condition": "default", "to": "has_valid_reviews"}]
+      },
+      "has_valid_reviews": {"id": "has_valid_reviews", "op": "条件", "condition": "len(ctx.valid_reviews) > 0", "edges": [{"condition": "true", "to": "meta_review"}, {"condition": "false", "to": "review_failed"}]},
+      "meta_review": {
+        "id": "meta_review", "op": "模型", "agent": "meta_reviewer", "prompt": "meta_review", "parse_as": "json_object",
+        "json_fallback": "$ctx.valid_reviews.0", "temperature": 0.1, "retry": {"max_attempts": 1},
+        "outputs": {"structured": "meta_review"}, "edges": [{"condition": "has_text", "to": "average_scores"}]
+      },
+      "average_scores": {
+        "id": "average_scores", "op": "数据", "action": "aggregate_fields", "key": "score_averages", "source": "$ctx.valid_reviews",
+        "fields": ["Originality", "Quality", "Clarity", "Significance", "Soundness", "Presentation", "Contribution", "Overall", "Confidence"],
+        "limits": {"Originality": [1,4], "Quality": [1,4], "Clarity": [1,4], "Significance": [1,4], "Soundness": [1,4], "Presentation": [1,4], "Contribution": [1,4], "Overall": [1,10], "Confidence": [1,5]},
+        "round_to_int": true, "edges": [{"condition": "default", "to": "overlay_scores"}]
+      },
+      "overlay_scores": {"id": "overlay_scores", "op": "数据", "action": "merge", "key": "meta_review", "value": "$ctx.score_averages", "output_var": "current_review", "edges": [{"condition": "default", "to": "review_reflection_loop"}]},
+      "review_reflection_loop": {
+        "id": "review_reflection_loop", "op": "循环", "list_var": "review_reflection_rounds", "item_var": "review_reflection_round",
+        "body_start": "review_reflection", "break_when": "ctx.review_converged", "result_var": "reflection_history", "max_count": 4,
+        "edges": [{"condition": "loop_break", "to": "review_decision"}, {"condition": "loop_done", "to": "review_decision"}]
+      },
+      "review_reflection": {
+        "id": "review_reflection", "op": "模型", "agent": "meta_reviewer", "prompt": "review_reflection", "parse_as": "json_object",
+        "json_fallback": "$ctx.current_review", "temperature": 0.1, "retry": {"max_attempts": 1},
+        "outputs": {"text": "review_response", "structured": "current_review"},
+        "edges": [{"condition": "has_text", "to": "reflection_done"}]
+      },
+      "reflection_done": {"id": "reflection_done", "op": "条件", "condition": "contains(lower(ctx.review_response), 'i am done')", "edges": [{"condition": "true", "to": "mark_review_converged"}, {"condition": "false", "to": "capture_reflection"}]},
+      "mark_review_converged": {"id": "mark_review_converged", "op": "数据", "action": "set", "key": "review_converged", "value": true, "edges": [{"condition": "default", "to": "capture_reflection"}]},
+      "capture_reflection": {"id": "capture_reflection", "op": "数据", "action": "set", "key": "_loop_result", "value": "$ctx.current_review", "edges": [{"condition": "default", "to": "review_reflection_loop"}]},
+      "review_failed": {
+        "id": "review_failed", "op": "数据", "action": "set", "key": "current_review",
+        "value": {"Summary": "No valid ensemble review could be parsed.", "Strengths": [], "Weaknesses": ["Review generation failed."], "Originality": 1, "Quality": 1, "Clarity": 1, "Significance": 1, "Questions": [], "Limitations": [], "Ethical Concerns": false, "Soundness": 1, "Presentation": 1, "Contribution": 1, "Overall": 1, "Confidence": 1, "Decision": "Reject"},
+        "edges": [{"condition": "default", "to": "review_decision"}]
+      },
+      "review_decision": {"id": "review_decision", "op": "条件", "condition": "lower(ctx.current_review.Decision) == 'accept'", "edges": [{"condition": "true", "to": "mark_accepted"}, {"condition": "false", "to": "mark_rejected"}]},
+      "mark_accepted": {"id": "mark_accepted", "op": "数据", "action": "set", "key": "accepted", "value": true, "edges": [{"condition": "default", "to": "may_improve"}]},
+      "mark_rejected": {"id": "mark_rejected", "op": "数据", "action": "set", "key": "accepted", "value": false, "edges": [{"condition": "default", "to": "may_improve"}]},
+      "may_improve": {"id": "may_improve", "op": "条件", "condition": "ctx.improvement_enabled and ctx.review_round == 1", "edges": [{"condition": "true", "to": "rewrite"}, {"condition": "false", "to": "capture_review"}]},
+      "rewrite": {"id": "rewrite", "op": "模型", "agent": "writer", "prompt": "rewrite", "temperature": 0.15, "max_tokens": 7000, "output_var": "draft", "edges": [{"condition": "has_text", "to": "write_improved_paper"}]},
+      "write_improved_paper": {
+        "id": "write_improved_paper", "op": "工作区", "action": "write_text", "path": "${ctx.experiment_plan.artifact_dir}/paper.md",
+        "value": "$ctx.draft", "overwrite": true, "max_bytes": 5000000, "track_change": true, "output_var": "paper_artifact",
+        "edges": [{"condition": "workspace_written", "to": "capture_review"}]
+      },
+      "capture_review": {"id": "capture_review", "op": "数据", "action": "set", "key": "_loop_result", "value": "$ctx.current_review", "edges": [{"condition": "default", "to": "review_loop"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": {"idea": "$ctx.idea", "experiment_plan": "$ctx.experiment_plan", "experiment_report": "$ctx.experiment_report", "artifact_snapshot": "$ctx.artifact_snapshot", "draft": "$ctx.draft", "paper_path": "$ctx.paper_artifact.path", "citations": "$ctx.citation_history", "accepted": "$ctx.accepted", "meta_review": "$ctx.current_review", "reviews": "$ctx.valid_reviews", "score_averages": "$ctx.score_averages", "review_history": "$ctx.review_history", "improvement_enabled": "$ctx.improvement_enabled"}}, "edges": []}
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "name": "component_capability_discovery",
+  "description": "Reusable SubDAG that searches the local capability library before a parent Agent spends tokens recreating a skill, tool, knowledge item, Identity or Harness.",
+  "component": {
+    "name": "capability_discovery",
+    "display_name": "Capability Discovery",
+    "category": "Evolution",
+    "icon": "⌕",
+    "description": "A bounded search-and-activate loop that keeps the full catalog out of the main context.",
+    "share_session": false,
+    "inputs": {
+      "query": {"description": "Current task or capability need", "required": true, "schema": {"type": "string", "minLength": 1}},
+      "max_tool_rounds": {"default": 3, "schema": {"type": "integer", "minimum": 1, "maximum": 8}}
+    },
+    "outputs": {
+      "result": {"path": "discovery_result", "default": ""},
+      "searched": {"path": "searched", "default": false}
+    }
+  },
+  "slots": {"searcher": {"description": "Identity that selects concise search terms", "required": true, "identity": "dante"}},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "search", "max_steps": 16,
+    "budget": {"max_model_calls": 5, "max_tool_calls": 4, "max_tokens": 32000},
+    "context": {"searched": false, "discovery_result": ""},
+    "nodes": {
+      "search": {
+        "id": "search", "op": "Agent", "agent": "searcher", "tools": "all",
+        "visible_tools": ["search_capabilities"],
+        "max_tool_calls_per_turn": 1,
+        "max_tool_rounds": "$ctx.max_tool_rounds",
+        "instructions": "Call search_capabilities exactly once for reusable abilities relevant to this need: ${ctx.query}\nUse one concise semantic query. Include kind harness when delegation or a reusable DAG may help. Do not activate or create anything in this node; the next node performs an auditable selection.",
+        "edges": [{"condition": "has_tool_calls", "to": "search_tools"}, {"condition": "has_text", "to": "select"}]
+      },
+      "search_tools": {"id": "search_tools", "op": "工具", "agent": "searcher", "edges": [{"condition": "default", "to": "select"}]},
+      "select": {
+        "id": "select", "op": "Agent", "agent": "searcher", "tools": "all",
+        "visible_tools": ["activate_capability"], "max_tool_calls_per_turn": 1,
+        "instructions": "Inspect the immediately preceding capability search result. Prefer workspace scope, exact documented triggers and proven usage. If one result directly helps the requested need, call activate_capability exactly once with its capability_id; this records usage and loads compact Skill instructions or returns a DAG/Identity reuse contract. Do not activate an adjacent result. If no result is adequate, explain that briefly without calling a tool.",
+        "outputs": {"text": "discovery_result"},
+        "edges": [{"condition": "has_tool_calls", "to": "activation_tools"}, {"condition": "has_text", "to": "mark"}]
+      },
+      "activation_tools": {"id": "activation_tools", "op": "工具", "agent": "searcher", "edges": [{"condition": "default", "to": "summarize"}]},
+      "summarize": {
+        "id": "summarize", "op": "Agent", "agent": "searcher", "tools": "all", "visible_tools": [],
+        "instructions": "Summarize the just-completed activation for the parent. Include the selected capability ID and name, returned activation action, compact instructions or DAG reuse mode, and why it applies. Do not call tools and do not repeat the full search result.",
+        "outputs": {"text": "discovery_result"},
+        "edges": [{"condition": "has_text", "to": "mark"}]
+      },
+      "mark": {"id": "mark", "op": "数据", "action": "set", "key": "searched", "value": true, "edges": [{"condition": "default", "to": "done"}]},
+      "done": {"id": "done", "op": "结束", "value": {"searched": "$ctx.searched", "result": "$ctx.discovery_result"}, "edges": []}
+    }
+  }
+}

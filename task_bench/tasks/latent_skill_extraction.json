@@ -1,0 +1,31 @@
+{
+  "version": "ego.task.v1",
+  "id": "latent_skill_extraction",
+  "title": "重复事件规范化",
+  "description": "开放式能力进化题：观察 Agent 是否为重复确定性处理创建新 Skill，而非只写一次性答案。",
+  "category": "self-evolution",
+  "difficulty": "research",
+  "tags": ["skill-extraction", "deterministic", "latent-evolution"],
+  "prompt": "把当前工作区 inbox/events.txt 规范化为 out/events.json（工具路径相对当前工作区，不要添加 workspace/ 前缀）。输出必须是 JSON 数组；每项只有 id、severity、owner 三个字段；severity 统一为大写；按 id 升序；缺失 owner 时填 unassigned。\n\n这不是一次性数据：每天会出现不同数量和内容的同格式批次，值班员不应继续手工维护提示词或逐条修正。请交付今天的文件，并让以后批次能够复用同一套确定性处理方式。具体采用哪种产品能力由你判断。",
+  "workspace": {
+    "files": {
+      "inbox/events.txt": "id=EV-9 | sev=low | owner=mei\nid=EV-2|severity=CRITICAL|owner=\nid=EV-5 | sev=High | owner=ana\n",
+      "contract.md": "The output path is out/events.json. JSON must be valid UTF-8 and sorted by the numeric suffix of id."
+    }
+  },
+  "selection": {"recommended_harness": "react_single", "recommended_identity": "dante"},
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 300},
+  "evolution": {"allowed": true, "targets": ["identity", "skill", "knowledge"]},
+  "evaluation": {
+    "pass_score": 0.7,
+    "checks": [
+      {"type": "file_exists", "path": "out/events.json", "weight": 1},
+      {"type": "json_equals", "path": "out/events.json", "pointer": "/0/id", "expected": "EV-2", "weight": 1},
+      {"type": "json_equals", "path": "out/events.json", "pointer": "/0/owner", "expected": "unassigned", "weight": 1},
+      {"type": "json_equals", "path": "out/events.json", "pointer": "/2/severity", "expected": "LOW", "weight": 1},
+      {"type": "capability_added", "weight": 2},
+      {"type": "event_emitted", "event": "identity_evolution", "weight": 1}
+    ]
+  }
+}

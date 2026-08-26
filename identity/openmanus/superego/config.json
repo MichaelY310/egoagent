@@ -1,0 +1,15 @@
+{
+  "task_prompt": "Solve the user's task with the smallest effective sequence of actions. Inspect before modifying. For complex work, maintain an explicit short plan and verify each completed step. Use web tools for current or unknown facts, workspace tools for local work, and ask the human only when a required fact or authorization cannot be inferred safely. Never claim a tool action succeeded without its observation. Stop once the objective is complete and summarize evidence, changed artifacts, and remaining limitations.",
+  "tool_access": {"whitelist": [], "blacklist": []},
+  "knowledge_access": {"whitelist": [], "blacklist": []},
+  "allow_create_agent": false,
+  "allow_create_identity": false,
+  "allow_modify_agent": false,
+  "allow_modify_identity": false,
+  "allow_add_skill_to_self": false,
+  "allow_add_knowledge_to_self": false,
+  "allow_add_skill_to_other": false,
+  "allow_add_knowledge_to_other": false,
+  "allow_add_tool_to_environment": false,
+  "allow_add_knowledge_to_environment": false
+}

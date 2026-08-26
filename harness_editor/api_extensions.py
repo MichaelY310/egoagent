@@ -6,6 +6,7 @@ Provides: Experiment Management, Environment Management, Multi-Agent Coordinatio
 
 import json
 import os
+import sqlite3
 import sys
 import time
 import uuid
@@ -14,12 +15,72 @@ import traceback
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
+from task_bench import TaskBenchError, TaskBenchManager
+from task_bench.container_runtime import TaskContainer
+from task_bench.harbor_adapter import detect_task_format, export_harbor_task, import_external_task
+from product_runtime import (
+    ProductRuntimeError,
+    apply_local_update,
+    configure_provider,
+    create_diagnostics_bundle,
+    list_rollbacks,
+    load_product_settings,
+    product_diagnostics,
+    rollback_update,
+    save_product_settings,
+)
+from ego_ir import EgoIRError, EgoIRService, compile_document as compile_egoir, guide as egoir_guide, loads as load_egoir
+from self_evolution.proof_evolution import (
+    EvolutionProofError,
+    ProofEvolutionController,
+    select_empirical_evolution_artifact,
+    select_evolution_artifact,
+    validate_proposal,
+)
+from self_evolution.evolution_certificate import issue_evolution_certificate
+from harness_conformance import ConformanceError, load_manifest as load_conformance_manifest, run_suite as run_conformance_suite
+from harness_translation_benchmark import build_dataset as build_translation_dataset, score_translation, vocabulary_report
+from science_loop import ScienceLoopError, ScienceRepository
+from capability_registry import CapabilityRegistry
+
 # Project paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 HARNESS_DIR = PROJECT_ROOT / "harness"
 IDENTITY_DIR = PROJECT_ROOT / "identity"
 ENVIRONMENT_DIR = PROJECT_ROOT / "environment"
 EXPERIMENTS_DIR = PROJECT_ROOT / "experiments"
+
+_TASK_BENCH = TaskBenchManager(PROJECT_ROOT)
+_EGO_IR = EgoIRService(PROJECT_ROOT)
+_PROOF_EVOLUTION = ProofEvolutionController(PROJECT_ROOT)
+_SCIENCE = ScienceRepository(PROJECT_ROOT)
+
+
+def _capability_registry(workspace: str | None = None) -> CapabilityRegistry:
+    return CapabilityRegistry(PROJECT_ROOT, workspace=workspace or PROJECT_ROOT)
+
+
+def _capability_pins(workspace: str | Path | None) -> tuple[Path, list[str]]:
+    root = Path(str(workspace or PROJECT_ROOT)).expanduser().resolve()
+    path = root / ".egoagent" / "pinned_capabilities.json"
+    if not path.is_file():
+        return path, []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    values = payload.get("capabilities", []) if isinstance(payload, dict) else []
+    return path, [str(value) for value in values] if isinstance(values, list) else []
+
+
+def _save_capability_pins(workspace: str | Path | None, values: list[str]) -> list[str]:
+    path, _ = _capability_pins(workspace)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    unique = list(dict.fromkeys(str(value) for value in values if str(value)))[:100]
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps({"version": 1, "capabilities": unique}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+    return unique
 
 # ==================== Environment Management ====================
 
@@ -30,13 +91,13 @@ def list_environments() -> List[Dict]:
         return envs
     for env_dir in sorted(ENVIRONMENT_DIR.iterdir()):
         if env_dir.is_dir() and (env_dir / "config.json").exists():
-            config = json.loads((env_dir / "config.json").read_text())
+            config = json.loads((env_dir / "config.json").read_text(encoding="utf-8"))
             tools = []
             tools_dir = env_dir / "tools"
             if tools_dir.exists():
                 for tool_dir in tools_dir.iterdir():
                     if tool_dir.is_dir() and (tool_dir / "meta.json").exists():
-                        meta = json.loads((tool_dir / "meta.json").read_text())
+                        meta = json.loads((tool_dir / "meta.json").read_text(encoding="utf-8"))
                         tools.append({
                             "name": meta.get("name", tool_dir.name),
                             "description": meta.get("description", ""),
@@ -65,7 +126,7 @@ def create_environment(name: str, description: str = "", base_env: str = None) -
     if base_env:
         base_dir = ENVIRONMENT_DIR / base_env
         if base_dir.exists() and (base_dir / "config.json").exists():
-            base_config = json.loads((base_dir / "config.json").read_text())
+            base_config = json.loads((base_dir / "config.json").read_text(encoding="utf-8"))
             config["based_on"] = base_env
             # Copy tools from base
             base_tools = base_dir / "tools"
@@ -83,7 +144,7 @@ def get_environment_for_workspace(workspace_path: str) -> Dict:
     env_config_path = ws / ".egoagent" / "environment.json"
     
     if env_config_path.exists():
-        return json.loads(env_config_path.read_text())
+        return json.loads(env_config_path.read_text(encoding="utf-8"))
     
     # Auto-detect based on project files
     detected = {"environments": [], "skills": []}
@@ -135,7 +196,7 @@ def list_identity_skills(identity_name: str) -> Dict:
     if ego_skills.exists():
         for skill_dir in sorted(ego_skills.iterdir()):
             if skill_dir.is_dir() and (skill_dir / "meta.json").exists():
-                meta = json.loads((skill_dir / "meta.json").read_text())
+                meta = json.loads((skill_dir / "meta.json").read_text(encoding="utf-8"))
                 scripts = []
                 scripts_dir = skill_dir / "scripts"
                 if scripts_dir.exists():
@@ -162,7 +223,7 @@ def list_identity_skills(identity_name: str) -> Dict:
     if knowledge_dir.exists():
         for kb_dir in knowledge_dir.iterdir():
             if kb_dir.is_dir() and (kb_dir / "meta.json").exists():
-                meta = json.loads((kb_dir / "meta.json").read_text())
+                meta = json.loads((kb_dir / "meta.json").read_text(encoding="utf-8"))
                 knowledge.append({
                     "name": meta.get("name", kb_dir.name),
                     "description": meta.get("description", ""),
@@ -170,7 +231,7 @@ def list_identity_skills(identity_name: str) -> Dict:
     
     # Identity meta
     id_json = identity_dir / "id.json"
-    meta = json.loads(id_json.read_text()) if id_json.exists() else {}
+    meta = json.loads(id_json.read_text(encoding="utf-8")) if id_json.exists() else {}
     
     return {
         "identity": identity_name,
@@ -192,7 +253,7 @@ def list_all_identities() -> List[Dict]:
     for id_dir in sorted(IDENTITY_DIR.iterdir()):
         if id_dir.is_dir():
             id_json = id_dir / "id.json"
-            meta = json.loads(id_json.read_text()) if id_json.exists() else {}
+            meta = json.loads(id_json.read_text(encoding="utf-8")) if id_json.exists() else {}
             skill_count = 0
             ego_skills = id_dir / "ego" / "skills"
             if ego_skills.exists():
@@ -314,7 +375,7 @@ def list_experiments() -> List[Dict]:
     if results_dir.exists():
         for f in sorted(results_dir.glob("*.json"), reverse=True)[:20]:
             try:
-                data = json.loads(f.read_text())
+                data = json.loads(f.read_text(encoding="utf-8"))
                 results.append({
                     "id": f.stem,
                     "scenario_id": "saved",
@@ -484,7 +545,7 @@ def list_harnesses_with_details() -> List[Dict]:
     for h_dir in sorted(HARNESS_DIR.iterdir()):
         if h_dir.is_dir() and (h_dir / "config.json").exists():
             try:
-                config = json.loads((h_dir / "config.json").read_text())
+                config = json.loads((h_dir / "config.json").read_text(encoding="utf-8"))
                 pipeline = config.get("pipeline", {})
                 nodes = pipeline.get("nodes", {})
                 slots = config.get("slots", {})
@@ -513,6 +574,276 @@ def handle_api_request(method: str, path: str, body: Dict = None) -> tuple:
     Returns (None, None) if the path is not handled by this module.
     """
     body = body or {}
+
+    # Capability Library: a local, progressive-disclosure catalog.  The UI and
+    # Agent use the same ranking and counters, so Workbench behavior is
+    # inspectable instead of hiding retrieval policy in prompts.
+    try:
+        if method == "GET" and path == "/api/capabilities":
+            registry = _capability_registry()
+            return {"items": registry.list(), "stats": registry.stats()}, 200
+        if method == "GET" and path == "/api/capabilities/stats":
+            return _capability_registry().stats(), 200
+        if method == "POST" and path == "/api/capabilities/search":
+            registry = _capability_registry(str(body.get("workspace") or PROJECT_ROOT))
+            return registry.search(
+                str(body.get("query", "")),
+                kinds=body.get("kinds") or None,
+                limit=int(body.get("limit", 12)),
+                mode=str(body.get("mode", "auto")),
+            ), 200
+        if method == "POST" and path == "/api/capabilities/list":
+            registry = _capability_registry(str(body.get("workspace") or PROJECT_ROOT))
+            _, pinned = _capability_pins(body.get("workspace"))
+            return {
+                "items": registry.list(
+                    kind=str(body.get("kind")) if body.get("kind") else None,
+                    limit=int(body.get("limit", 1000)),
+                ),
+                "stats": registry.stats(),
+                "pinned": pinned,
+            }, 200
+        if method == "POST" and path == "/api/capabilities/reindex":
+            return _capability_registry(str(body.get("workspace") or PROJECT_ROOT)).reindex(), 200
+        if method == "POST" and path == "/api/capabilities/event":
+            registry = _capability_registry(str(body.get("workspace") or PROJECT_ROOT))
+            ok = registry.record_event(
+                str(body.get("capability_id", "")),
+                str(body.get("event", "activate")),
+                success=body.get("success"),
+                runtime_ms=body.get("runtime_ms"),
+            )
+            return {"ok": ok}, 200 if ok else 404
+        if method == "POST" and path == "/api/capabilities/pin":
+            workspace = body.get("workspace") or PROJECT_ROOT
+            registry = _capability_registry(str(workspace))
+            capability_id = str(body.get("capability_id", ""))
+            item = registry.get(capability_id)
+            if not item:
+                return {"error": f"Unknown capability: {capability_id}"}, 404
+            if item["kind"] not in {"skill", "tool", "knowledge"}:
+                return {"error": "Only skills, tools, and knowledge can be pinned to an Agent workspace."}, 400
+            _, pinned = _capability_pins(workspace)
+            enabled = body.get("enabled", True) is not False
+            next_pins = [value for value in pinned if value != capability_id]
+            if enabled:
+                next_pins.append(capability_id)
+            saved = _save_capability_pins(workspace, next_pins)
+            if enabled:
+                registry.record_event(capability_id, "activate")
+            return {"ok": True, "pinned": saved}, 200
+    except (OSError, ValueError, sqlite3.Error) as error:
+        return {"error": str(error)}, 400
+
+    # Product setup is deliberately local-first: no endpoint downloads or
+    # uploads anything implicitly, and secrets are only written to .env.local.
+    try:
+        if method == "GET" and path == "/api/product/settings":
+            return load_product_settings(PROJECT_ROOT), 200
+        if method == "GET" and path == "/api/product/diagnostics":
+            return product_diagnostics(PROJECT_ROOT), 200
+        if method == "GET" and path == "/api/product/rollbacks":
+            return list_rollbacks(PROJECT_ROOT), 200
+        if method == "POST" and path == "/api/product/settings":
+            return save_product_settings(PROJECT_ROOT, body), 200
+        if method == "POST" and path == "/api/product/provider":
+            return configure_provider(PROJECT_ROOT, body), 201
+        if method == "POST" and path == "/api/product/diagnostics-bundle":
+            return {"ok": True, "path": str(create_diagnostics_bundle(PROJECT_ROOT))}, 201
+        if method == "POST" and path == "/api/product/update":
+            return apply_local_update(PROJECT_ROOT, str(body.get("archive", ""))), 200
+        if method == "POST" and path == "/api/product/rollback":
+            return rollback_update(PROJECT_ROOT, str(body.get("id", ""))), 200
+    except (ProductRuntimeError, OSError, ValueError, json.JSONDecodeError) as error:
+        return {"error": str(error)}, 400
+
+    try:
+        if method == "GET" and path == "/api/egoir/guide":
+            return egoir_guide(), 200
+        if method == "GET" and path.startswith("/api/egoir/harness/"):
+            name = path.split("/api/egoir/harness/", 1)[1].strip("/")
+            return _EGO_IR.load(name), 200
+        if method == "POST" and path == "/api/egoir/validate":
+            document = load_egoir(str(body.get("text", "")))
+            return {"ok": True, "document": document, "config": compile_egoir(document)}, 200
+        if method == "POST" and path == "/api/egoir/create":
+            return _EGO_IR.create(str(body.get("text", "")), dry_run=bool(body.get("dry_run"))), 201
+        if method == "POST" and path.startswith("/api/egoir/harness/") and path.endswith("/patch"):
+            name = path.split("/api/egoir/harness/", 1)[1].rsplit("/patch", 1)[0].strip("/")
+            return _EGO_IR.patch(
+                name, body.get("operations", []), expected_revision=body.get("expected_revision"),
+                dry_run=bool(body.get("dry_run")), checks=body.get("checks", []),
+                reason=str(body.get("reason", "")), actor=str(body.get("actor", "studio")),
+            ), 200
+        if method == "POST" and path == "/api/egoir/rollback":
+            return _EGO_IR.rollback(str(body.get("transaction_id", "")), expected_revision=body.get("expected_revision")), 200
+    except (EgoIRError, OSError, ValueError, json.JSONDecodeError) as error:
+        return {"error": str(error)}, 400
+
+    try:
+        if method == "GET" and path == "/api/evolution/proposals":
+            return _PROOF_EVOLUTION.repository.list(), 200
+        if method == "POST" and path == "/api/evolution/select-artifact":
+            return select_evolution_artifact(body.get("candidates", []), minimum_utility=float(body.get("minimum_utility", 0.08))), 200
+        if method == "POST" and path == "/api/evolution/select-artifact/empirical":
+            return select_empirical_evolution_artifact(
+                body.get("candidates", []),
+                minimum_gain=float(body.get("minimum_gain", 0)),
+                noninferiority_margin=float(body.get("noninferiority_margin", 0.02)),
+                regression_tolerance=float(body.get("regression_tolerance", 0)),
+                simplicity_epsilon=float(body.get("simplicity_epsilon", 0.02)),
+                bootstrap_samples=int(body.get("bootstrap_samples", 2000)),
+                require_provenance=body.get("require_provenance", True) is not False,
+            ), 200
+        if method == "POST" and path == "/api/evolution/certificates/issue":
+            return issue_evolution_certificate(
+                update_id=str(body.get("update_id", "")),
+                artifacts=body.get("artifacts", []),
+                measurements=body.get("measurements", []),
+                evidence=body.get("evidence", []),
+                activation=body.get("activation", {}),
+                portability=body.get("portability", []),
+                verifier_mutants=body.get("verifier_mutants", []),
+                minimum_total_gain=float(body.get("minimum_total_gain", 0.03)),
+                necessity_margin=float(body.get("necessity_margin", 0.01)),
+                portability_margin=float(body.get("portability_margin", 0.0)),
+                protected_margin=float(body.get("protected_margin", 0.02)),
+                mutation_threshold=float(body.get("mutation_threshold", 0.8)),
+                interaction_threshold=float(body.get("interaction_threshold", 0.03)),
+                bootstrap_samples=int(body.get("bootstrap_samples", 2000)),
+            ), 201
+        if method == "POST" and path == "/api/evolution/proposals":
+            return _PROOF_EVOLUTION.register(body.get("proposal", body), heldout_ids=body.get("heldout_ids", [])), 201
+        if method == "POST" and path.startswith("/api/evolution/proposals/") and path.endswith("/apply"):
+            proposal_id = path.split("/api/evolution/proposals/", 1)[1].rsplit("/apply", 1)[0].strip("/")
+            return _PROOF_EVOLUTION.apply_experimental(proposal_id, human_approved=bool(body.get("human_approved")), dry_run=bool(body.get("dry_run"))), 200
+        if method == "POST" and path.startswith("/api/evolution/proposals/") and path.endswith("/gate"):
+            proposal_id = path.split("/api/evolution/proposals/", 1)[1].rsplit("/gate", 1)[0].strip("/")
+            return _PROOF_EVOLUTION.gate(proposal_id, body.get("baseline", {}), body.get("candidate", {}), human_approved=bool(body.get("human_approved"))), 200
+    except (EvolutionProofError, OSError, ValueError, json.JSONDecodeError) as error:
+        return {"error": str(error)}, 400
+
+    # Reproducible research APIs.  Conformance distinguishes verified offline
+    # core behavior from external adapters; science projects require immutable
+    # evidence and an independent review before they can complete.
+    try:
+        if method == "GET" and path == "/api/research/conformance":
+            manifest = load_conformance_manifest()
+            return {
+                "schema": manifest["schema"],
+                "contracts": manifest["contracts"],
+                "structural_report": run_conformance_suite(behavioral=False),
+            }, 200
+        if method == "POST" and path == "/api/research/conformance/run":
+            return run_conformance_suite(
+                behavioral=bool(body.get("behavioral")),
+                only=body.get("only", []),
+                timeout=float(body.get("timeout", 180)),
+            ), 200
+        if method == "GET" and path == "/api/research/translation-benchmark":
+            dataset = build_translation_dataset()
+            return {"schema": "ego.harness-translation-benchmark.v1", "examples": dataset, "vocabulary": vocabulary_report(dataset)}, 200
+        if method == "POST" and path == "/api/research/translation-benchmark/score":
+            return score_translation(str(body.get("contract_id", "")), str(body.get("candidate", ""))), 200
+
+        if method == "GET" and path == "/api/science/projects":
+            return _SCIENCE.list(), 200
+        if method == "POST" and path == "/api/science/projects":
+            return _SCIENCE.create(
+                str(body.get("objective", "")),
+                creator=str(body.get("creator", "")),
+                project_id=body.get("project_id"),
+            ), 201
+        if method == "GET" and path.startswith("/api/science/projects/") and path.endswith("/audit"):
+            project_id = path.split("/api/science/projects/", 1)[1].rsplit("/audit", 1)[0].strip("/")
+            return _SCIENCE.audit(project_id), 200
+        if method == "POST" and path.startswith("/api/science/projects/") and path.endswith("/artifacts"):
+            project_id = path.split("/api/science/projects/", 1)[1].rsplit("/artifacts", 1)[0].strip("/")
+            return _SCIENCE.add_artifact(project_id, str(body.get("path", "")), kind=str(body.get("kind", "artifact")), actor=str(body.get("actor", "studio"))), 201
+        if method == "POST" and path.startswith("/api/science/projects/") and path.endswith("/sources"):
+            project_id = path.split("/api/science/projects/", 1)[1].rsplit("/sources", 1)[0].strip("/")
+            return _SCIENCE.add_source(project_id, str(body.get("url", "")), title=str(body.get("title", "")), actor=str(body.get("actor", "studio")), snapshot_artifact=body.get("snapshot_artifact")), 201
+        if method == "POST" and path.startswith("/api/science/projects/") and path.endswith("/stages"):
+            project_id = path.split("/api/science/projects/", 1)[1].rsplit("/stages", 1)[0].strip("/")
+            return _SCIENCE.submit_stage(
+                project_id,
+                str(body.get("stage", "")),
+                actor=str(body.get("actor", "")),
+                payload=body.get("payload", {}),
+                expected_revision=body.get("expected_revision"),
+            ), 200
+        if method == "GET" and path.startswith("/api/science/projects/"):
+            project_id = path.split("/api/science/projects/", 1)[1].strip("/")
+            return _SCIENCE.load(project_id), 200
+    except (ConformanceError, ScienceLoopError, OSError, ValueError, json.JSONDecodeError) as error:
+        return {"error": str(error)}, 400
+
+    # Task Bench APIs.  Runs use the real PipelineRunner but own their state,
+    # pause gate and input queue, so a benchmark cannot corrupt the editor's
+    # legacy global execution session.
+    try:
+        if method == "GET" and path == "/api/task-bench/tasks":
+            tasks = []
+            for spec in _TASK_BENCH.tasks():
+                tasks.append({key: value for key, value in spec.items() if key != "source"})
+            return tasks, 200
+
+        if method == "GET" and path == "/api/task-bench/options":
+            return _TASK_BENCH.options(), 200
+
+        if method == "GET" and path == "/api/task-bench/runs":
+            return _TASK_BENCH.list_runs(), 200
+
+        if method == "GET" and path == "/api/task-bench/compatibility":
+            docker_ready, docker_reason = TaskContainer.available()
+            return {
+                "formats": ["ego.task.v1", "Harbor 1.4", "Terminal-Bench legacy"],
+                "docker": {"available": docker_ready, "reason": docker_reason},
+                "multi_step": True,
+                "task_directory": str(_TASK_BENCH.task_dir),
+            }, 200
+
+        if method == "GET" and path.startswith("/api/task-bench/tasks/"):
+            task_id = path.split("/api/task-bench/tasks/", 1)[1].strip("/")
+            spec = _TASK_BENCH.task(task_id)
+            return {key: value for key, value in spec.items() if key != "source"}, 200
+
+        if method == "GET" and path.startswith("/api/task-bench/runs/"):
+            run_id = path.split("/api/task-bench/runs/", 1)[1].strip("/")
+            return _TASK_BENCH.get(run_id), 200
+
+        if method == "POST" and path == "/api/task-bench/runs":
+            return _TASK_BENCH.start(body), 202
+
+        if method == "POST" and path == "/api/task-bench/import":
+            source = Path(str(body.get("source", ""))).expanduser().resolve()
+            task_format = detect_task_format(source)
+            preview = import_external_task(source)
+            destination = _TASK_BENCH.task_dir / f"{preview['id']}.json"
+            if destination.exists() and not body.get("overwrite"):
+                raise TaskBenchError(f"Task already exists: {preview['id']}; set overwrite=true to replace it")
+            spec = import_external_task(source, destination)
+            return {"ok": True, "format": task_format, "path": str(destination), "task": spec}, 201
+
+        if method == "POST" and path == "/api/task-bench/export-harbor":
+            spec = _TASK_BENCH.task(str(body.get("task_id", "")))
+            destination = body.get("destination") or str(
+                PROJECT_ROOT / ".egoagent" / "exports" / f"{spec['id']}-harbor"
+            )
+            exported = export_harbor_task(spec, destination)
+            return {"ok": True, "path": str(exported)}, 201
+
+        if method == "POST" and path.startswith("/api/task-bench/runs/") and path.endswith("/control"):
+            run_id = path.split("/api/task-bench/runs/", 1)[1].rsplit("/control", 1)[0].strip("/")
+            return _TASK_BENCH.control(run_id, str(body.get("action", ""))), 200
+
+        if method == "POST" and path.startswith("/api/task-bench/runs/") and path.endswith("/input"):
+            run_id = path.split("/api/task-bench/runs/", 1)[1].rsplit("/input", 1)[0].strip("/")
+            return _TASK_BENCH.input(run_id, str(body.get("text", ""))), 200
+    except TaskBenchError as error:
+        return {"error": str(error)}, 404 if "not found" in str(error).lower() else 400
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        return {"error": str(error)}, 400
     
     # Environment APIs
     if method == "GET" and path == "/api/environments":

@@ -1,0 +1,78 @@
+{
+  "name": "metagpt_mgx_replica",
+  "description": "Pinned MetaGPT default MGX company path: intent routing, TeamLeader-directed adaptive delegation, RoleZero workers, five environment rounds, durable addressed messages and investment budget.",
+  "slots": {
+    "team_leader": {"description": "TeamLeader Identity/EGO that routes tasks and reports", "required": true, "identity": "dante"},
+    "product": {"description": "Product Manager RoleZero Identity/EGO", "required": true, "identity": "dante"},
+    "architect": {"description": "Architect RoleZero Identity/EGO", "required": true, "identity": "dante"},
+    "engineer": {"description": "Engineer2 RoleZero Identity/EGO with coding tools", "required": true, "identity": "coder"},
+    "data_analyst": {"description": "DataAnalyst RoleZero Identity/EGO", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "intent": {
+      "description": "RoleZero quick-think routing",
+      "default": "Classify the user's request using MetaGPT RoleZero quick-think semantics. QUICK is directly answerable, AMBIGUOUS needs a direct clarifying reply, SEARCH needs research, and TASK needs the team.\n\nRequest: {requirement}\n\nReturn ONLY JSON: {{\"intent\":\"QUICK|AMBIGUOUS|SEARCH|TASK\"}}"
+    },
+    "quick": {
+      "description": "Direct TeamLeader response",
+      "default": "Reply directly and concisely to this QUICK or AMBIGUOUS request in the user's language. If ambiguous, ask one concrete question.\n\nRequest: {requirement}"
+    },
+    "lead": {
+      "description": "MGX TeamLeader adaptive routing decision",
+      "default": "You are the MetaGPT TeamLeader. Manage these members: product, architect, engineer, data_analyst. Review the original request, durable inbox and prior reports. Either finish with a user-facing reply or delegate self-contained work to the best members. Preserve every important path, link, language, framework, requirement and constraint because you are their sole information source. Respect dependencies rather than delegating blocked work.\n\nCompany round: {company_round} of {max_company_rounds}\nInvestment limit USD: {investment_usd}\nRequest: {requirement}\nInbox: {team_inbox}\nPrior reports: {team_reports}\n\nReturn ONLY JSON: {{\"complete\":false,\"reply\":\"\",\"delegations\":[{{\"role\":\"product|architect|engineer|data_analyst\",\"task\":\"full task and context\"}}]}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 180,
+    "max_node_steps": 1800,
+    "timeout_seconds": 14400,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "budget": {"max_model_calls": 420, "max_tool_calls": 1600, "max_tokens": 4000000, "max_cost": 3.0},
+    "context": {
+      "requirement": "",
+      "intent": "TASK",
+      "investment_usd": 3.0,
+      "max_company_rounds": 5,
+      "company_rounds": [1, 2, 3, 4, 5],
+      "company_round": 0,
+      "company_complete": false,
+      "final_reply": "",
+      "delegations": [],
+      "team_inbox": [],
+      "team_reports": [],
+      "current_reports": []
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "requirement"}, "edges": [{"condition": "input", "to": "intent"}]},
+      "intent": {"id": "intent", "op": "模型", "agent": "team_leader", "prompt": "intent", "parse_as": "json", "temperature": 0.1, "retry": {"max_attempts": 3}, "output_schema": {"type": "object", "required": ["intent"]}, "outputs": {"structured.intent": "intent"}, "edges": [{"condition": "has_text", "to": "task_intent"}]},
+      "task_intent": {"id": "task_intent", "op": "条件", "expression": "ctx.intent == 'TASK'", "edges": [{"condition": "true", "to": "register_lead"}, {"condition": "false", "to": "search_intent"}]},
+      "search_intent": {"id": "search_intent", "op": "条件", "expression": "ctx.intent == 'SEARCH'", "edges": [{"condition": "true", "to": "search_worker"}, {"condition": "false", "to": "quick_response"}]},
+      "quick_response": {"id": "quick_response", "op": "模型", "agent": "team_leader", "prompt": "quick", "temperature": 0.3, "retry": {"max_attempts": 3}, "edges": [{"condition": "has_text", "to": "quick_output"}]},
+      "quick_output": {"id": "quick_output", "op": "结束", "inputs": {"value": "$node.quick_response.text"}, "edges": []},
+      "search_worker": {"id": "search_worker", "op": "子流程", "harness": "metagpt_rolezero_worker", "agent_map": {"actor": "data_analyst"}, "result_mode": "result", "inputs": {"message": "$ctx.requirement", "data": {"role_name": "data_analyst", "role_task": "$ctx.requirement", "max_react_loop": 50}}, "output_var": "search_result", "edges": [{"condition": "subflow_done", "to": "search_output"}]},
+      "search_output": {"id": "search_output", "op": "结束", "inputs": {"value": "$ctx.search_result"}, "edges": []},
+      "register_lead": {"id": "register_lead", "op": "数据", "action": "agent_register", "agent_id": "team_leader:${ctx._run_id}", "identity": "dante", "subscriptions": ["metagpt.mgx.${ctx._run_id}.*"], "metadata": {"role": "Team Leader", "max_react_loop": 3}, "edges": [{"condition": "agent_registered", "to": "register_product"}]},
+      "register_product": {"id": "register_product", "op": "数据", "action": "agent_register", "agent_id": "product:${ctx._run_id}", "identity": "dante", "subscriptions": [], "metadata": {"role": "Product Manager", "max_react_loop": 50}, "edges": [{"condition": "agent_registered", "to": "register_architect"}]},
+      "register_architect": {"id": "register_architect", "op": "数据", "action": "agent_register", "agent_id": "architect:${ctx._run_id}", "identity": "dante", "subscriptions": [], "metadata": {"role": "Architect", "max_react_loop": 50}, "edges": [{"condition": "agent_registered", "to": "register_engineer"}]},
+      "register_engineer": {"id": "register_engineer", "op": "数据", "action": "agent_register", "agent_id": "engineer:${ctx._run_id}", "identity": "coder", "subscriptions": [], "metadata": {"role": "Engineer2", "max_react_loop": 40}, "edges": [{"condition": "agent_registered", "to": "register_analyst"}]},
+      "register_analyst": {"id": "register_analyst", "op": "数据", "action": "agent_register", "agent_id": "data_analyst:${ctx._run_id}", "identity": "dante", "subscriptions": [], "metadata": {"role": "DataAnalyst", "max_react_loop": 50}, "edges": [{"condition": "agent_registered", "to": "company"}]},
+      "company": {"id": "company", "op": "循环", "list_var": "company_rounds", "item_var": "company_round", "body_start": "receive_reports", "break_when": "ctx.company_complete", "max_count": "$ctx.max_company_rounds", "edges": [{"condition": "loop_break", "to": "checkpoint"}, {"condition": "loop_done", "to": "checkpoint"}]},
+      "receive_reports": {"id": "receive_reports", "op": "数据", "action": "message_receive", "agent_id": "team_leader:${ctx._run_id}", "topics": ["metagpt.mgx.${ctx._run_id}.*"], "limit": 100, "lease_seconds": 300, "output_var": "team_inbox", "edges": [{"condition": "messages_received", "to": "lead"}, {"condition": "message_empty", "to": "lead"}]},
+      "lead": {"id": "lead", "op": "模型", "agent": "team_leader", "prompt": "lead", "parse_as": "json", "temperature": 0.2, "retry": {"max_attempts": 3}, "output_schema": {"type": "object", "required": ["complete", "reply", "delegations"], "properties": {"delegations": {"type": "array", "items": {"type": "object", "required": ["role", "task"]}}}}, "outputs": {"structured.complete": "company_complete", "structured.reply": "final_reply", "structured.delegations": "delegations"}, "edges": [{"condition": "has_text", "to": "ack_reports"}]},
+      "ack_reports": {"id": "ack_reports", "op": "数据", "action": "message_ack", "receipts": "$ctx.team_inbox", "edges": [{"condition": "messages_acknowledged", "to": "lead_decision"}]},
+      "lead_decision": {"id": "lead_decision", "op": "条件", "condition": "ctx.company_complete", "edges": [{"condition": "true", "to": "company"}, {"condition": "false", "to": "has_delegations"}]},
+      "has_delegations": {"id": "has_delegations", "op": "条件", "expression": "not empty(ctx.delegations)", "edges": [{"condition": "true", "to": "delegate"}, {"condition": "false", "to": "company"}]},
+      "delegate": {"id": "delegate", "op": "映射", "source": "$ctx.delegations", "item_var": "delegation", "body_start": "role_limit", "join": "collect_reports", "max_count": 4, "max_workers": 4, "output_var": "delegation_branches", "edges": []},
+      "role_limit": {"id": "role_limit", "op": "数据", "action": "evaluate", "key": "role_limit", "expression": "40 if ctx.delegation.role == 'engineer' else 50", "edges": [{"condition": "default", "to": "run_delegation"}]},
+      "run_delegation": {"id": "run_delegation", "op": "子流程", "harness": "metagpt_rolezero_worker", "agent_map": {"actor": "$ctx.delegation.role"}, "result_mode": "result", "inputs": {"message": "$ctx.delegation.task", "data": {"role_name": "$ctx.delegation.role", "role_task": "$ctx.delegation.task", "max_react_loop": "$ctx.role_limit"}}, "edges": [{"condition": "subflow_done", "to": "collect_reports"}]},
+      "collect_reports": {"id": "collect_reports", "op": "合并", "source": "$ctx.delegation_branches", "strategy": "values", "output_var": "current_reports", "edges": [{"condition": "joined", "to": "append_reports"}]},
+      "append_reports": {"id": "append_reports", "op": "数据", "action": "extend", "key": "team_reports", "value": "$ctx.current_reports", "edges": [{"condition": "default", "to": "publish_reports"}]},
+      "publish_reports": {"id": "publish_reports", "op": "映射", "source": "$ctx.current_reports", "item_var": "report", "body_start": "publish_report", "join": "company", "max_count": 4, "max_workers": 1, "output_var": "published_reports", "edges": []},
+      "publish_report": {"id": "publish_report", "op": "数据", "action": "message_publish", "topic": "metagpt.mgx.${ctx._run_id}.${ctx.report.role}", "sender": "${ctx.report.role}:${ctx._run_id}", "payload": "$ctx.report", "idempotency_key": "${ctx._run_id}:${ctx.company_round}:${ctx.report.role}", "edges": [{"condition": "message_published", "to": "company"}]},
+      "checkpoint": {"id": "checkpoint", "op": "检查点", "action": "save", "label": "metagpt-mgx-company", "edges": [{"condition": "checkpoint_saved", "to": "output"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": {"complete": "$ctx.company_complete", "reply": "$ctx.final_reply", "round": "$ctx.company_round", "reports": "$ctx.team_reports", "investment_usd": "$ctx.investment_usd"}}, "edges": []}
+    }
+  }
+}

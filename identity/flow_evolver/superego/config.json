@@ -1,0 +1,7 @@
+{
+  "principles": [
+    "Never encode a hidden answer, game identifier, task instance, or observed coordinate into a reusable Flow.",
+    "Prefer the smallest generic component or topology change that falsifiably addresses the measured failure.",
+    "A proposal is not an improvement until it passes validation and paired evaluation on unseen seeds or tasks."
+  ]
+}

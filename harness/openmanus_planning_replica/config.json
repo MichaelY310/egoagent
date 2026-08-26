@@ -1,0 +1,76 @@
+{
+  "name": "openmanus_planning_replica",
+  "description": "Pinned OpenManus PlanningFlow reproduction: concise typed plan with three-step fallback, ordered executor selection, not_started/in_progress/completed/blocked lifecycle, 20-step Manus subruns, durable checkpoints and final summary.",
+  "slots": {
+    "planner": {"description": "Creates and summarizes the plan", "required": true, "identity": "dante"},
+    "executor": {"description": "First/default executor for plan steps", "required": true, "identity": "openmanus"}
+  },
+  "prompts": {
+    "plan": {
+      "description": "OpenManus PlanningFlow initial plan",
+      "default": "You are a planning assistant. Create a concise, actionable plan with clear steps. Focus on key milestones rather than detailed substeps. Optimize for clarity and efficiency. The available executor is named executor; set type to executor. Put steps in execution order and make dependencies explicit.\n\nRequest: {request}\n\nReturn ONLY JSON: {{\"title\":\"...\",\"steps\":[{{\"id\":\"S1\",\"text\":\"...\",\"type\":\"executor\",\"dependencies\":[],\"verification\":\"...\"}}]}}"
+    },
+    "finalize": {
+      "description": "OpenManus PlanningFlow completion summary",
+      "default": "You are a planning assistant summarizing a finished plan run. State what was accomplished, the concrete evidence, every blocked step, and the most useful next action. Do not say all work completed when any step is blocked.\n\nRequest: {request}\nFinal plan state: {plan}\nExecution reports: {step_reports}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 100,
+    "max_node_steps": 800,
+    "timeout_seconds": 14400,
+    "workspace_preview": true,
+    "budget": {"max_model_calls": 1100, "max_tool_calls": 8000, "max_tokens": 9000000},
+    "context": {
+      "request": "",
+      "plan": {},
+      "steps": [],
+      "step_statuses": [],
+      "step_notes": [],
+      "step_reports": [],
+      "current_step": {},
+      "current_step_report": {},
+      "current_status": "not_started"
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "plan"}]},
+      "plan": {
+        "id": "plan", "op": "模型", "agent": "planner", "prompt": "plan", "parse_as": "json", "temperature": 0.15,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "json_fallback": {"title": "Fallback plan", "steps": [
+          {"id": "S1", "text": "Analyze request", "type": "executor", "dependencies": [], "verification": "requirements identified"},
+          {"id": "S2", "text": "Execute task", "type": "executor", "dependencies": ["S1"], "verification": "requested artifact or action exists"},
+          {"id": "S3", "text": "Verify results", "type": "executor", "dependencies": ["S2"], "verification": "evidence confirms the result"}
+        ]},
+        "output_schema": {"type": "object", "required": ["title", "steps"], "properties": {"steps": {"type": "array", "items": {"type": "object", "required": ["id", "text", "type", "dependencies", "verification"]}}}},
+        "outputs": {"structured": "plan", "structured.steps": "steps"},
+        "edges": [{"condition": "has_text", "to": "initialize_statuses"}, {"condition": "json_fallback", "to": "initialize_statuses"}]
+      },
+      "initialize_statuses": {"id": "initialize_statuses", "op": "数据", "action": "evaluate", "key": "step_statuses", "expression": "['not_started'] * len(ctx.steps)", "edges": [{"condition": "default", "to": "initialize_notes"}]},
+      "initialize_notes": {"id": "initialize_notes", "op": "数据", "action": "evaluate", "key": "step_notes", "expression": "[''] * len(ctx.steps)", "edges": [{"condition": "default", "to": "save_initial_plan"}]},
+      "save_initial_plan": {"id": "save_initial_plan", "op": "检查点", "action": "save", "label": "openmanus-plan-created", "edges": [{"condition": "checkpoint_saved", "to": "execute_plan"}]},
+      "execute_plan": {"id": "execute_plan", "op": "循环", "list_var": "steps", "item_var": "current_step", "counter_var": "step_index", "body_start": "mark_in_progress", "result_var": "step_reports", "max_count": 50, "edges": [{"condition": "loop_done", "to": "assemble_plan"}]},
+      "mark_in_progress": {"id": "mark_in_progress", "op": "数据", "action": "set", "key": "step_statuses[${ctx.step_index}]", "value": "in_progress", "edges": [{"condition": "default", "to": "execute_step"}]},
+      "execute_step": {
+        "id": "execute_step", "op": "子流程", "harness": "openmanus_replica", "agent_map": {"manus": "executor"}, "result_mode": "result",
+        "inputs": {"message": "CURRENT PLAN STATUS:\nTitle: ${ctx.plan.title}\nStatuses: ${ctx.step_statuses}\nPrior reports: ${ctx.step_reports}\n\nYOUR CURRENT TASK:\nYou are now working only on step ${ctx.step_index}: ${ctx.current_step}. Honor its dependencies, use appropriate tools, verify the declared outcome, then call terminate with success or failure and a factual summary."},
+        "output_var": "current_step_report", "edges": [{"condition": "subflow_done", "to": "step_failed"}]
+      },
+      "step_failed": {"id": "step_failed", "op": "条件", "expression": "ctx.current_step_report.status in ['failure', 'max_steps', 'human_rejected']", "edges": [{"condition": "true", "to": "mark_blocked"}, {"condition": "false", "to": "mark_completed"}]},
+      "mark_blocked": {"id": "mark_blocked", "op": "数据", "action": "set", "key": "step_statuses[${ctx.step_index}]", "value": "blocked", "edges": [{"condition": "default", "to": "blocked_note"}]},
+      "blocked_note": {"id": "blocked_note", "op": "数据", "action": "set", "key": "step_notes[${ctx.step_index}]", "value": "$ctx.current_step_report.answer", "edges": [{"condition": "default", "to": "set_report_status_blocked"}]},
+      "set_report_status_blocked": {"id": "set_report_status_blocked", "op": "数据", "action": "set", "key": "current_status", "value": "blocked", "edges": [{"condition": "default", "to": "capture_step"}]},
+      "mark_completed": {"id": "mark_completed", "op": "数据", "action": "set", "key": "step_statuses[${ctx.step_index}]", "value": "completed", "edges": [{"condition": "default", "to": "completed_note"}]},
+      "completed_note": {"id": "completed_note", "op": "数据", "action": "set", "key": "step_notes[${ctx.step_index}]", "value": "$ctx.current_step_report.answer", "edges": [{"condition": "default", "to": "set_report_status_completed"}]},
+      "set_report_status_completed": {"id": "set_report_status_completed", "op": "数据", "action": "set", "key": "current_status", "value": "completed", "edges": [{"condition": "default", "to": "capture_step"}]},
+      "capture_step": {"id": "capture_step", "op": "数据", "action": "set", "key": "_loop_result", "value": {"step": "$ctx.current_step", "status": "$ctx.current_status", "result": "$ctx.current_step_report"}, "edges": [{"condition": "default", "to": "step_checkpoint"}]},
+      "step_checkpoint": {"id": "step_checkpoint", "op": "检查点", "action": "save", "label": "openmanus-plan-step", "edges": [{"condition": "checkpoint_saved", "to": "execute_plan"}]},
+      "assemble_plan": {"id": "assemble_plan", "op": "数据", "action": "evaluate", "key": "plan", "expression": "{'title':ctx.plan.title,'steps':ctx.steps,'step_statuses':ctx.step_statuses,'step_notes':ctx.step_notes}", "edges": [{"condition": "default", "to": "finalize"}]},
+      "finalize": {"id": "finalize", "op": "模型", "agent": "planner", "prompt": "finalize", "temperature": 0.2, "retry": {"max_attempts": 2}, "edges": [{"condition": "has_text", "to": "final_checkpoint"}]},
+      "final_checkpoint": {"id": "final_checkpoint", "op": "检查点", "action": "save", "label": "openmanus-plan-complete", "edges": [{"condition": "checkpoint_saved", "to": "output"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$node.finalize.text"}, "record": true, "edges": []}
+    }
+  }
+}

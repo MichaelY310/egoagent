@@ -1,0 +1,78 @@
+{
+  "name": "gpt_researcher_deep_worker",
+  "description": "Recursive GPT Researcher breadth/depth worker: parallel SERP branches, structured learnings, narrower follow-up recursion, cited context tree and bounded descent.",
+  "slots": {
+    "researcher": {"description": "Searches public sources in each branch", "required": true},
+    "strategist": {"description": "Generates queries and extracts research learnings", "required": true}
+  },
+  "prompts": {
+    "queries": {
+      "description": "Generate unique queries with an explicit research goal",
+      "default": "Generate {breadth} unique web-search queries that thoroughly investigate the prompt. Give each query a distinct research goal.\n\nPrompt: {research_request}\n\nReturn ONLY JSON: {{\"queries\":[{{\"query\":\"...\",\"research_goal\":\"...\"}}]}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input", "max_steps": 42, "max_node_steps": 320, "timeout_seconds": 900,
+    "budget": {"max_model_calls": 120, "max_tool_calls": 240, "max_tokens": 600000},
+    "context": {"research_request": "", "depth": 2, "breadth": 4, "queries": [], "level_branches": [], "level_results": [], "next_depth": 1, "next_breadth": 2, "deeper_branches": [], "deeper_results": []},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "research_request"}, "edges": [{"condition": "input", "to": "generate_queries"}]},
+      "generate_queries": {
+        "id": "generate_queries", "op": "模型", "agent": "strategist", "prompt": "queries", "parse_as": "json_object",
+        "json_fallback": {"queries": []}, "temperature": 0.4, "retry": {"max_attempts": 2},
+        "output_schema": {
+          "type": "object",
+          "required": ["queries"],
+          "properties": {
+            "queries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["query", "research_goal"],
+                "properties": {
+                  "query": {"type": "string"},
+                  "research_goal": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "outputs": {"structured.queries": "queries"}, "edges": [{"condition": "has_text", "to": "has_queries"}]
+      },
+      "has_queries": {"id": "has_queries", "op": "条件", "condition": "not empty(ctx.queries)", "edges": [{"condition": "true", "to": "search_map"}, {"condition": "false", "to": "empty_output"}]},
+      "search_map": {
+        "id": "search_map", "op": "映射", "source": "$ctx.queries", "item_var": "search_spec", "body_start": "search_branch", "join": "collect_level",
+        "max_count": "$ctx.breadth", "max_workers": 2, "fail_fast": false, "output_var": "level_branches", "edges": []
+      },
+      "search_branch": {
+        "id": "search_branch", "op": "子流程", "harness": "gpt_researcher_deep_query_worker", "result_mode": "result",
+        "inputs": {"message": "${ctx.search_spec.query}", "data": {"research_goal": "$ctx.search_spec.research_goal"}},
+        "output_var": "branch_result", "edges": [{"condition": "subflow_done", "to": "collect_level"}]
+      },
+      "collect_level": {"id": "collect_level", "op": "合并", "source": "$ctx.level_branches", "strategy": "values", "output_var": "level_results", "edges": [{"condition": "joined", "to": "should_descend"}]},
+      "should_descend": {"id": "should_descend", "op": "条件", "condition": "ctx.depth > 1 and not empty(ctx.level_results)", "edges": [{"condition": "true", "to": "decrement_depth"}, {"condition": "false", "to": "output"}]},
+      "decrement_depth": {"id": "decrement_depth", "op": "数据", "action": "evaluate", "key": "next_depth", "expression": "max(1, ctx.depth - 1)", "edges": [{"condition": "default", "to": "narrow_breadth"}]},
+      "narrow_breadth": {"id": "narrow_breadth", "op": "数据", "action": "evaluate", "key": "next_breadth", "expression": "max(2, ctx.breadth // 2)", "edges": [{"condition": "default", "to": "deeper_map"}]},
+      "deeper_map": {
+        "id": "deeper_map", "op": "映射", "source": "$ctx.level_results", "item_var": "level_result", "body_start": "run_deeper", "join": "collect_deeper",
+        "max_count": 4, "max_workers": 2, "fail_fast": false, "output_var": "deeper_branches", "edges": []
+      },
+      "run_deeper": {
+        "id": "run_deeper", "op": "子流程", "harness": "gpt_researcher_deep_worker", "result_mode": "result", "max_depth": 8,
+        "inputs": {
+          "message": "Previous research goal: ${ctx.level_result.research_goal}\nFollow-up questions: ${ctx.level_result.follow_up_questions}",
+          "data": {"depth": "$ctx.next_depth", "breadth": "$ctx.next_breadth"}
+        },
+        "output_var": "deeper_result", "edges": [{"condition": "subflow_done", "to": "collect_deeper"}]
+      },
+      "collect_deeper": {"id": "collect_deeper", "op": "合并", "source": "$ctx.deeper_branches", "strategy": "values", "output_var": "deeper_results", "edges": [{"condition": "joined", "to": "output"}]},
+      "output": {
+        "id": "output", "op": "结束",
+        "inputs": {"value": {"depth": "$ctx.depth", "breadth": "$ctx.breadth", "level_results": "$ctx.level_results", "deeper_results": "$ctx.deeper_results"}},
+        "record": true, "edges": []
+      },
+      "empty_output": {"id": "empty_output", "op": "结束", "inputs": {"value": {"depth": "$ctx.depth", "breadth": "$ctx.breadth", "level_results": [], "deeper_results": []}}, "record": true, "edges": []}
+    }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "name": "component_context_compactor",
+  "description": "Reusable SubDAG for passive token-pressure compression. A Conversation Input computes declared metadata, an ordinary Model writes the plan, and Conversation Output applies it.",
+  "component": {
+    "name": "context_compactor",
+    "display_name": "Token Pressure Compactor",
+    "category": "Conversation",
+    "icon": "⇲",
+    "description": "Trigger only at a configurable token watermark; prompts and thresholds live in this DAG.",
+    "share_session": true,
+    "inputs": {
+      "context_limit_tokens": {"default": 128000, "schema": {"type": "integer", "minimum": 1024}},
+      "high_watermark": {"default": 0.82, "schema": {"type": "number", "minimum": 0.2, "maximum": 0.98}},
+      "target_ratio": {"default": 0.62, "schema": {"type": "number", "minimum": 0.1, "maximum": 0.9}},
+      "reserved_output_tokens": {"default": 4096, "schema": {"type": "integer", "minimum": 0}},
+      "protect_recent_turns": {"default": 2, "schema": {"type": "integer", "minimum": 1}}
+    },
+    "outputs": {
+      "compacted": {"path": "context_compacted", "default": false},
+      "stats": {"path": "context_result.stats", "default": {}},
+      "pressure": {"path": "conversation_snapshot.pressure", "default": {}}
+    }
+  },
+  "slots": {"compactor": {"description": "Identity used by the normal compaction planning Model", "required": true, "identity": "dante"}},
+  "prompts": {
+    "compact_blocks": {
+      "description": "Editable block-level compression policy",
+      "default": "Token pressure has already been detected by a declared DAG threshold. Produce a conservative block plan toward the supplied target. System instructions are immutable. Never elide user requirements. Preserve exact file paths, commands that changed state, error signatures, decisions, artifacts, test results and unfinished work. Collapse repeated searches, resolved failures and pre-pivot analysis; simplify reasoning to the decisive insight.\n\nConversation metadata:\n{conversation_payload}\n\nReturn ONLY JSON: {{\"blocks\":[{{\"block_id\":\"...\",\"action\":\"keep|summarize|elide|simplify_reasoning\",\"reason\":\"short reason\",\"summary\":\"required for summarize/simplify_reasoning\"}}],\"continuation_summary\":\"faithful current state\"}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "conversation_in", "max_steps": 8,
+    "budget": {"max_model_calls": 1, "max_tokens": 180000},
+    "context": {"context_compacted": false, "context_result": {"stats": {}}},
+    "nodes": {
+      "conversation_in": {
+        "id": "conversation_in", "op": "上下文", "action": "snapshot",
+        "context_limit_tokens": "$ctx.context_limit_tokens", "high_watermark": "$ctx.high_watermark",
+        "target_ratio": "$ctx.target_ratio", "reserved_output_tokens": "$ctx.reserved_output_tokens",
+        "protect_recent_turns": "$ctx.protect_recent_turns", "output_var": "conversation_snapshot",
+        "outputs": {"model_payload": "conversation_payload"},
+        "edges": [{"condition": "pressure_due", "to": "plan"}, {"condition": "pressure_ok", "to": "skipped"}]
+      },
+      "plan": {
+        "id": "plan", "op": "模型", "agent": "compactor", "prompt": "compact_blocks",
+        "parse_as": "json_object", "json_fallback": {"blocks": [], "continuation_summary": ""},
+        "temperature": 0.1, "max_tokens": 3600, "outputs": {"structured": "context_plan"},
+        "edges": [{"condition": "json_fallback", "to": "skipped"}, {"condition": "has_text", "to": "conversation_out"}]
+      },
+      "conversation_out": {
+        "id": "conversation_out", "op": "上下文", "action": "apply", "apply_mode": "block_plan",
+        "protect_recent_turns": "$ctx.protect_recent_turns",
+        "inputs": {
+          "plan": "$ctx.context_plan",
+          "messages": "$ctx.conversation_snapshot.working_messages",
+          "full_messages": "$ctx.conversation_snapshot.full_messages",
+          "target_tokens": "$ctx.conversation_snapshot.pressure.target_tokens"
+        },
+        "output_var": "context_result", "edges": [{"condition": "conversation_applied", "to": "reduced"}]
+      },
+      "reduced": {"id": "reduced", "op": "条件", "condition": "ctx.context_result.stats.saved_tokens_estimated > 0", "edges": [{"condition": "true", "to": "mark_compacted"}, {"condition": "false", "to": "skipped"}]},
+      "mark_compacted": {"id": "mark_compacted", "op": "数据", "action": "set", "key": "context_compacted", "value": true, "edges": [{"condition": "default", "to": "done"}]},
+      "skipped": {"id": "skipped", "op": "数据", "action": "set", "key": "context_compacted", "value": false, "edges": [{"condition": "default", "to": "done"}]},
+      "done": {"id": "done", "op": "结束", "value": {"compacted": "$ctx.context_compacted", "stats": "$ctx.context_result.stats", "pressure": "$ctx.conversation_snapshot.pressure"}, "edges": []}
+    }
+  }
+}

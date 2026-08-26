@@ -36,12 +36,27 @@ def run_command(command: str, cwd: str = None, blocking: bool = True, timeout: i
     env = os.environ.copy()
     env["PAGER"] = "cat"
 
+    container_name = (_context or {}).get("container_name")
+    process_args = command
+    use_shell = True
+    process_cwd = cwd
+    if container_name:
+        workspace = os.path.realpath(str((_context or {}).get("container_workspace") or ""))
+        workdir = str((_context or {}).get("container_workdir") or "/app")
+        relative = os.path.relpath(os.path.realpath(cwd or workspace), workspace).replace("\\", "/")
+        if relative == ".." or relative.startswith("../"):
+            return json.dumps({"error": "Container working directory escapes the task workspace."})
+        container_cwd = workdir if relative in {"", "."} else workdir.rstrip("/") + "/" + relative
+        process_args = ["docker", "exec", "--workdir", container_cwd, str(container_name), "sh", "-lc", command]
+        use_shell = False
+        process_cwd = None
+
     if blocking:
         try:
             result = subprocess.run(
-                command,
-                shell=True,
-                cwd=cwd,
+                process_args,
+                shell=use_shell,
+                cwd=process_cwd,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -73,9 +88,9 @@ def run_command(command: str, cwd: str = None, blocking: bool = True, timeout: i
         cmd_id = str(uuid.uuid4())[:8]
         try:
             proc = subprocess.Popen(
-                command,
-                shell=True,
-                cwd=cwd,
+                process_args,
+                shell=use_shell,
+                cwd=process_cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

@@ -1,0 +1,66 @@
+{
+  "name": "component_repeat_tool_guard",
+  "description": "Reusable advisory guard for exact consecutive tool calls. It tracks canonical tool name/arguments, ignores declared tools transparently, and injects reminders without blocking execution.",
+  "component": {
+    "name": "repeat_tool_guard",
+    "display_name": "Repeated Tool Call Guard",
+    "category": "Control",
+    "icon": "↯",
+    "description": "DeepSeek-style in-memory loop reminder with configurable thresholds and no hidden execution policy.",
+    "share_session": true,
+    "inputs": {
+      "action": {"default": "observe", "schema": {"type": "string", "enum": ["observe", "reset"]}},
+      "trajectory": {"default": [], "schema": {"type": "array"}},
+      "thresholds": {"default": [3, 5, 8], "schema": {"type": "array", "items": {"type": "integer", "minimum": 2}, "minItems": 1}},
+      "include": {"default": [], "schema": {"type": "array", "items": {"type": "string"}}},
+      "exclude": {"default": [], "schema": {"type": "array", "items": {"type": "string"}}},
+      "arguments_preview_chars": {"default": 500, "schema": {"type": "integer", "minimum": 1}},
+      "inject_message": {"default": true, "schema": {"type": "boolean"}},
+      "namespace": {"default": "default", "schema": {"type": "string", "minLength": 1}}
+    },
+    "outputs": {
+      "reminded": {"path": "guard_result.reminded", "default": false},
+      "reminders": {"path": "guard_result.reminders", "default": []},
+      "state": {"path": "guard_result.state", "default": {}},
+      "observed": {"path": "guard_result.observed", "default": 0}
+    }
+  },
+  "slots": {},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "guard",
+    "max_steps": 2,
+    "context": {"guard_result": {"reminded": false, "reminders": [], "state": {}, "observed": 0}},
+    "nodes": {
+      "guard": {
+        "id": "guard",
+        "op": "循环守卫",
+        "inputs": {"action": "$ctx.action", "trajectory": "$ctx.trajectory"},
+        "thresholds": "$ctx.thresholds",
+        "include": "$ctx.include",
+        "exclude": "$ctx.exclude",
+        "arguments_preview_chars": "$ctx.arguments_preview_chars",
+        "inject_message": "$ctx.inject_message",
+        "namespace": "$ctx.namespace",
+        "output_var": "guard_result",
+        "edges": [
+          {"condition": "guard_reset", "to": "done"},
+          {"condition": "guard_clear", "to": "done"},
+          {"condition": "guard_reminder", "to": "done"}
+        ]
+      },
+      "done": {
+        "id": "done",
+        "op": "结束",
+        "value": {
+          "reminded": "$ctx.guard_result.reminded",
+          "reminders": "$ctx.guard_result.reminders",
+          "state": "$ctx.guard_result.state",
+          "observed": "$ctx.guard_result.observed"
+        },
+        "edges": []
+      }
+    }
+  }
+}

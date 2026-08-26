@@ -1,0 +1,19 @@
+{
+  "type": "tool",
+  "name": "evolve_capabilities",
+  "description": "Analyze whether an Identity should evolve through Knowledge, a deterministic Skill, an isolated sub-Agent, or a Harness patch. Can safely dry-run/install/rollback built-in capability packs. Analyze before installing.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {"type": "string", "enum": ["list", "analyze", "inspect", "install", "rollback"]},
+      "identity_name": {"type": "string", "description": "Identity to inspect or evolve"},
+      "observations": {"description": "Failure trace, task description, session summary or repeated behavior to analyze"},
+      "pack": {"type": "string", "enum": ["paper_library", "delegated_search"]},
+      "workspace": {"type": "string"},
+      "dry_run": {"type": "boolean"},
+      "reason": {"type": "string"},
+      "transaction_id": {"type": "string"}
+    },
+    "required": ["action"]
+  }
+}

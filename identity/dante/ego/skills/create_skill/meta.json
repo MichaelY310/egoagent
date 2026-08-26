@@ -1,0 +1,16 @@
+{
+  "type": "tool",
+  "name": "create_skill",
+  "description": "Create a reusable executable Skill package for an Identity. A Skill owns its metadata and implementation and is exposed through one bounded tool interface after the Identity reloads. Search the capability catalog first and create only when no adequate Skill exists. Workspace-aware functions may accept optional `_context=None` (omit it from parameters_schema) and resolve files from `_context['workspace']`; do not invent facts absent from evidence.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "identity_name": {"type": "string", "description": "Target Identity name"},
+      "skill_name": {"type": "string", "description": "Unique snake_case Skill and runtime function name"},
+      "description": {"type": "string", "description": "Trigger, behavior, bounds and returned evidence"},
+      "parameters_schema": {"type": "object", "description": "Complete JSON Schema object. Its properties must exactly match the Python function signature; omit runtime-only _context."},
+      "function_code": {"type": "string", "description": "Python defining one top-level function with the same name as skill_name; use only when a reusable deterministic operation truly requires code"}
+    },
+    "required": ["identity_name", "skill_name", "description", "parameters_schema", "function_code"]
+  }
+}

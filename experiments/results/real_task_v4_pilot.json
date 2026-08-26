@@ -1,0 +1,89 @@
+{
+  "format": "ego.real-task-v4-pilot.summary.v1",
+  "date": "2026-08-13",
+  "model": "deepseek-v4-flash",
+  "claims": {
+    "statistically_powered": false,
+    "official_leaderboard_run": false,
+    "gold_solution_exposed_to_agent": false
+  },
+  "external_transfer": {
+    "benchmark": "Harness-Bench Fast",
+    "repository": "https://github.com/ai-forever/harness-bench-fast",
+    "repetitions": 1,
+    "fresh_workspace_per_cell": true,
+    "heldout_hidden_from_protocol_authoring": true,
+    "original_verifier": true,
+    "families": [
+      {
+        "name": "logq",
+        "validation": "task_372_cli_logq_percentile_window",
+        "heldout": "task_373_cli_logq_mean_by_component",
+        "selected": "knowledge",
+        "layers": {
+          "none": {"success": "2/2", "mean_actual_tokens": 44670, "mean_seconds": 21.0},
+          "knowledge": {"success": "2/2", "mean_actual_tokens": 27918.5, "mean_seconds": 15.1},
+          "skill": {"success": "2/2", "mean_actual_tokens": 29667.5, "mean_seconds": 16.1},
+          "harness": {
+            "success": "1/2",
+            "mean_actual_tokens": null,
+            "mean_seconds": 37.3,
+            "token_metric_complete": false,
+            "note": "The failed validation cell did not persist aggregate provider usage."
+          }
+        },
+        "knowledge_token_reduction_vs_none": 0.375
+      },
+      {
+        "name": "cfgctl",
+        "validation": "task_378_cli_cfgctl_layered_merge",
+        "heldout": "task_379_cli_cfgctl_diff_changed",
+        "selected": "none",
+        "layers": {
+          "none": {"success": "2/2", "mean_actual_tokens": 38490, "mean_seconds": 21.9},
+          "knowledge": {"success": "2/2", "mean_actual_tokens": 36803.5, "mean_seconds": 21.3},
+          "skill": {"success": "2/2", "mean_actual_tokens": 36032.5, "mean_seconds": 21.5},
+          "harness": {"success": "2/2", "mean_actual_tokens": 47973.5, "mean_seconds": 24.1}
+        }
+      }
+    ]
+  },
+  "real_github_issue": {
+    "benchmark": "SWE-bench Verified",
+    "instance_id": "pallets__flask-5014",
+    "repo": "pallets/flask",
+    "base_commit": "7ee9ceb71e868944a46e1ff00b506772a53a4f1d",
+    "difficulty": "<15 min fix",
+    "harness": "bounded_coder_worker",
+    "identity": "coder",
+    "resolved": true,
+    "focused_official_test": "passed",
+    "nearby_blueprint_tests": "60 passed",
+    "post_run_gold_diff_match": true,
+    "model_calls": 9,
+    "tool_calls": 11,
+    "actual_tokens": 43294,
+    "runtime_seconds": 30.718,
+    "environment": {
+      "official_docker": false,
+      "host": "Windows / Python 3.13",
+      "pytest": "7.4.4",
+      "werkzeug": "2.3.8",
+      "warning_override": "filterwarnings=ignore"
+    }
+  },
+  "host_resource_audit": {
+    "logical_processors": 12,
+    "total_ram_gb": 63.7,
+    "free_ram_gb_at_audit": 50.5,
+    "c_free_gb_at_audit": 622.4,
+    "docker_client": "27.4.0",
+    "docker_engine_running": false
+  },
+  "limitations": [
+    "Harness-Bench Fast is external and independently verified, but its compact tasks are benchmark-authored rather than naturally occurring production issues.",
+    "Each transfer cell has one repetition; success and efficiency deltas are integration evidence, not population estimates.",
+    "The Flask issue ran in a pinned host venv, not the official Linux Docker image.",
+    "One easy real issue establishes the evaluation path but cannot establish self-evolution efficacy or a SWE-bench score."
+  ]
+}

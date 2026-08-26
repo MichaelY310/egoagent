@@ -1,0 +1,133 @@
+{
+  "name": "ai_scientist_replica",
+  "description": "EgoAgent DAG reproduction of AI Scientist: reflected idea generation, literature-backed novelty filtering, bounded experiments, paper writing, ensemble review and review-driven improvement.",
+  "slots": {
+    "ideator": {"description": "Generates and reflects on candidate research ideas", "required": true, "identity": "dante"},
+    "novelty": {"description": "Scientific critic passed into novelty workers", "required": true, "identity": "dante"},
+    "researcher": {"description": "Literature researcher with web tools", "required": true, "identity": "researcher"},
+    "scientist": {"description": "Plans falsifiable experiments", "required": true, "identity": "dante"},
+    "experimenter": {"description": "Implements and runs experiments", "required": true, "identity": "coder"},
+    "writer": {"description": "Writes and revises papers from evidence", "required": true, "identity": "dante"},
+    "citation_researcher": {"description": "Retrieves papers for the writeup citation loop", "required": true, "identity": "researcher"},
+    "reviewer_a": {"description": "Independent reviewer A", "required": true, "identity": "dante"},
+    "reviewer_b": {"description": "Independent reviewer B", "required": true, "identity": "dante"},
+    "reviewer_c": {"description": "Independent reviewer C", "required": true, "identity": "dante"},
+    "reviewer_d": {"description": "Independent reviewer D", "required": true, "identity": "dante"},
+    "reviewer_e": {"description": "Independent reviewer E", "required": true, "identity": "dante"},
+    "meta_reviewer": {"description": "Evidence-aware meta-reviewer", "required": true, "identity": "dante"},
+    "synthesizer": {"description": "Summarizes the resulting scientific portfolio", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "generate": {
+      "description": "Generate one AI Scientist idea against the template and prior idea archive",
+      "default": "Come up with the next impactful and creative research idea that can be feasibly investigated with the supplied experiment template. Do not require additional datasets or resources. Avoid overlap with prior ideas and avoid overfitting to one dataset/model.\n\nResearch request: {request}\nTemplate task: {template_prompt}\n<experiment.py>\n{template_code}\n</experiment.py>\nPrior ideas:\n{ideas}\n\nFirst explain the motivation and high-level plan. Then return one JSON object with Name (lowercase filesystem-safe), Title, Experiment, Interestingness, Feasibility and Novelty, with all ratings from 1 to 10."
+    },
+    "reflect": {
+      "description": "Per-idea AI Scientist reflection, three rounds including generation",
+      "default": "Round {idea_reflection_round}/3. Carefully reconsider the quality, novelty and feasibility of the single idea below. Make it clear, concise, falsifiable and no more complicated than necessary. Keep the spirit unless there is a glaring issue. Return the same single JSON object schema. If nothing should change, include `I am done` in the reasoning and repeat the JSON exactly.\n\nResearch request: {request}\nCurrent idea: {candidate_idea}"
+    },
+    "summary": {
+      "description": "Summarize all completed idea projects",
+      "default": "Summarize this AI Scientist run for the user. For every processed idea, state novelty evidence, experiment status, key measured result, paper/repository artifact paths, review outcome and unresolved limitations. Clearly distinguish executed evidence from proposed work. Do not hide rejected ideas.\n\nRequest: {request}\nNovelty decisions: {novelty_results}\nCompleted studies: {studies}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 400,
+    "max_node_steps": 1400,
+    "timeout_seconds": 10800,
+    "workspace_preview": true,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "budget": {"max_model_calls": 300, "max_tool_calls": 800, "max_tokens": 2200000},
+    "context": {
+      "request": "", "template_dir": "", "template_experiment_path": "experiment.py", "template_prompt_path": "prompt.json", "seed_ideas_path": "seed_ideas.json",
+      "template_code": "", "template_prompt": {}, "seed_ideas": [], "ideas": [],
+      "generation_slots": [1, 2, 3], "generation_slot": 1, "generation_response": "", "candidate_idea": {},
+      "idea_reflection_rounds": [2, 3], "idea_reflection_round": 2, "idea_done": false, "generation_errors": [],
+      "novelty_branches": [], "novelty_results": [], "selected_ideas": [], "study_branches": [], "studies": [], "summary": ""
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "read_template_code"}]},
+      "read_template_code": {
+        "id": "read_template_code", "op": "工作区", "action": "read_text", "path": "$ctx.template_experiment_path",
+        "allow_missing": true, "default": "", "max_bytes": 200000, "truncate": true,
+        "outputs": {"text": "template_code"}, "edges": [{"condition": "default", "to": "read_template_prompt"}]
+      },
+      "read_template_prompt": {
+        "id": "read_template_prompt", "op": "工作区", "action": "read_json", "path": "$ctx.template_prompt_path",
+        "allow_missing": true, "default": {}, "max_bytes": 200000,
+        "outputs": {"structured": "template_prompt"}, "edges": [{"condition": "default", "to": "read_seed_ideas"}]
+      },
+      "read_seed_ideas": {
+        "id": "read_seed_ideas", "op": "工作区", "action": "read_json", "path": "$ctx.seed_ideas_path",
+        "allow_missing": true, "default": [], "max_bytes": 500000,
+        "outputs": {"structured": "seed_ideas"}, "edges": [{"condition": "default", "to": "initialize_ideas"}]
+      },
+      "initialize_ideas": {"id": "initialize_ideas", "op": "数据", "action": "set", "key": "ideas", "value": "$ctx.seed_ideas", "edges": [{"condition": "default", "to": "generation_loop"}]},
+      "generation_loop": {
+        "id": "generation_loop", "op": "循环", "list_var": "generation_slots", "item_var": "generation_slot", "counter_var": "generation_index",
+        "body_start": "reset_idea_done", "result_var": "generation_results", "max_count": 50,
+        "edges": [{"condition": "loop_done", "to": "novelty_map"}]
+      },
+      "reset_idea_done": {"id": "reset_idea_done", "op": "数据", "action": "set", "key": "idea_done", "value": false, "edges": [{"condition": "default", "to": "generate"}]},
+      "generate": {
+        "id": "generate", "op": "模型", "agent": "ideator", "prompt": "generate", "parse_as": "json_object", "json_fallback": {}, "temperature": 0.7,
+        "retry": {"max_attempts": 1}, "outputs": {"text": "generation_response", "structured": "candidate_idea"},
+        "edges": [{"condition": "has_text", "to": "valid_generated_idea"}, {"condition": "error", "to": "record_generation_error"}]
+      },
+      "valid_generated_idea": {
+        "id": "valid_generated_idea", "op": "条件",
+        "condition": "exists(ctx.candidate_idea.Name) and exists(ctx.candidate_idea.Title) and exists(ctx.candidate_idea.Experiment) and exists(ctx.candidate_idea.Interestingness) and exists(ctx.candidate_idea.Feasibility) and exists(ctx.candidate_idea.Novelty)",
+        "edges": [{"condition": "true", "to": "idea_reflection_loop"}, {"condition": "false", "to": "record_generation_format_error"}]
+      },
+      "idea_reflection_loop": {
+        "id": "idea_reflection_loop", "op": "循环", "list_var": "idea_reflection_rounds", "item_var": "idea_reflection_round",
+        "body_start": "reflect", "break_when": "ctx.idea_done", "result_var": "idea_reflections", "max_count": 2,
+        "edges": [{"condition": "loop_break", "to": "append_idea"}, {"condition": "loop_done", "to": "append_idea"}]
+      },
+      "reflect": {
+        "id": "reflect", "op": "模型", "agent": "ideator", "prompt": "reflect", "parse_as": "json_object",
+        "json_fallback": "$ctx.candidate_idea", "temperature": 0.35, "retry": {"max_attempts": 1},
+        "outputs": {"text": "generation_response", "structured": "candidate_idea"},
+        "edges": [{"condition": "has_text", "to": "idea_reflection_done"}]
+      },
+      "idea_reflection_done": {"id": "idea_reflection_done", "op": "条件", "condition": "contains(lower(ctx.generation_response), 'i am done')", "edges": [{"condition": "true", "to": "mark_idea_done"}, {"condition": "false", "to": "capture_idea_reflection"}]},
+      "mark_idea_done": {"id": "mark_idea_done", "op": "数据", "action": "set", "key": "idea_done", "value": true, "edges": [{"condition": "default", "to": "capture_idea_reflection"}]},
+      "capture_idea_reflection": {"id": "capture_idea_reflection", "op": "数据", "action": "set", "key": "_loop_result", "value": "$ctx.candidate_idea", "edges": [{"condition": "default", "to": "idea_reflection_loop"}]},
+      "append_idea": {"id": "append_idea", "op": "数据", "action": "append", "key": "ideas", "value": "$ctx.candidate_idea", "edges": [{"condition": "default", "to": "capture_generation"}]},
+      "capture_generation": {"id": "capture_generation", "op": "数据", "action": "set", "key": "_loop_result", "value": "$ctx.candidate_idea", "edges": [{"condition": "default", "to": "generation_loop"}]},
+      "record_generation_format_error": {"id": "record_generation_format_error", "op": "数据", "action": "append", "key": "generation_errors", "value": {"slot": "$ctx.generation_slot", "error": "Generated response had no complete idea JSON."}, "edges": [{"condition": "default", "to": "generation_loop"}]},
+      "record_generation_error": {"id": "record_generation_error", "op": "数据", "action": "append", "key": "generation_errors", "value": {"slot": "$ctx.generation_slot", "error": "$ctx._error.message"}, "edges": [{"condition": "default", "to": "generation_loop"}]},
+      "novelty_map": {
+        "id": "novelty_map", "op": "映射", "source": "$ctx.ideas", "item_var": "candidate_idea", "counter_var": "idea_index",
+        "body_start": "novelty_worker", "join": "novelty_join", "max_count": 50, "max_workers": 3, "fail_fast": false, "output_var": "novelty_branches", "edges": []
+      },
+      "novelty_worker": {
+        "id": "novelty_worker", "op": "子流程", "harness": "ai_scientist_novelty_worker", "result_mode": "result",
+        "agent_map": {"critic": "novelty", "researcher": "researcher"},
+        "inputs": {"message": "${ctx.candidate_idea}"}, "output_var": "novelty_result", "edges": [{"condition": "subflow_done", "to": "novelty_join"}]
+      },
+      "novelty_join": {"id": "novelty_join", "op": "合并", "source": "$ctx.novelty_branches", "strategy": "values", "output_var": "novelty_results", "edges": [{"condition": "joined", "to": "select_novel"}]},
+      "select_novel": {
+        "id": "select_novel", "op": "数据", "action": "filter", "scope": "run", "key": "selected_ideas", "source": "$ctx.novelty_results",
+        "condition": "item.novel == true", "item_var": "item", "counter_var": "index", "output_var": "selected_ideas",
+        "edges": [{"condition": "default", "to": "has_novel"}]
+      },
+      "has_novel": {"id": "has_novel", "op": "条件", "condition": "len(ctx.selected_ideas) > 0", "edges": [{"condition": "true", "to": "experiment_map"}, {"condition": "false", "to": "no_novel"}]},
+      "no_novel": {"id": "no_novel", "op": "结束", "inputs": {"value": {"status": "no_novel_idea", "novelty_results": "$ctx.novelty_results", "studies": []}}, "edges": []},
+      "experiment_map": {
+        "id": "experiment_map", "op": "映射", "source": "$ctx.selected_ideas", "item_var": "selected_idea", "counter_var": "study_index",
+        "body_start": "idea_worker", "join": "study_join", "max_count": 50, "max_workers": 1, "fail_fast": false, "output_var": "study_branches", "edges": []
+      },
+      "idea_worker": {
+        "id": "idea_worker", "op": "子流程", "harness": "ai_scientist_idea_worker", "result_mode": "result",
+        "agent_map": {"scientist": "scientist", "experimenter": "experimenter", "writer": "writer", "citation_researcher": "citation_researcher", "reviewer_a": "reviewer_a", "reviewer_b": "reviewer_b", "reviewer_c": "reviewer_c", "reviewer_d": "reviewer_d", "reviewer_e": "reviewer_e", "meta_reviewer": "meta_reviewer"},
+        "inputs": {"message": "${ctx.selected_idea}", "data": {"template_dir": "$ctx.template_dir"}}, "output_var": "study", "edges": [{"condition": "subflow_done", "to": "study_join"}]
+      },
+      "study_join": {"id": "study_join", "op": "合并", "source": "$ctx.study_branches", "strategy": "values", "output_var": "studies", "edges": [{"condition": "joined", "to": "summary"}]},
+      "summary": {"id": "summary", "op": "模型", "agent": "synthesizer", "prompt": "summary", "temperature": 0.1, "max_tokens": 5000, "output_var": "summary", "edges": [{"condition": "has_text", "to": "output"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": {"status": "completed", "summary": "$ctx.summary", "novelty_results": "$ctx.novelty_results", "selected_ideas": "$ctx.selected_ideas", "studies": "$ctx.studies"}}, "edges": []}
+    }
+  }
+}

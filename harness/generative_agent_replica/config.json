@@ -1,0 +1,62 @@
+{
+  "name": "generative_agent_replica",
+  "description": "Source-shaped Generative Agents tick: attention-limited perception, recent-event dedupe, scored retrieval, plan, thresholded three-focus reflection, then environment-ready execution output.",
+  "slots": {"persona": {"description": "The Identity whose behavior and personality drive cognition", "required": true, "identity": "dante"}},
+  "prompts": {
+    "perceive": {
+      "description": "Select and normalize nearby events",
+      "default": "Perceive at most three salient events from the observation. Prefer nearby events in the same arena. Express each as a stable event triple key and rate poignancy from 1 (routine) to 10 (life-changing). Idle events should have importance 1.\n\nObservation: {observation}\n\nReturn ONLY JSON: {{\"events\":[{{\"description\":\"...\",\"event_key\":\"subject|predicate|object\",\"importance\":5,\"keywords\":[\"...\"],\"distance\":0}}]}}"
+    },
+    "plan": {
+      "description": "Continue or revise the persona's schedule and current action",
+      "default": "Plan the persona's action before reflection, matching the original tick order. Continue current_action if its scheduled end has not passed; otherwise choose the next item from the daily plan and decompose it to a concrete destination and event triple. If no daily plan exists, create a concise day plan first. Stay faithful to the loaded Identity's goals and personality.\n\nObservation: {observation}\nDaily plan: {daily_plan}\nCurrent action: {current_action}\nRelevant memories: {retrieved_memories}\n\nReturn ONLY JSON: {{\"daily_plan\":[\"...\"],\"action\":{{\"description\":\"...\",\"duration_minutes\":15,\"address\":\"world:sector:arena:object\",\"emoji\":\"🙂\",\"event_key\":\"persona|is|doing something\",\"should_talk\":false,\"utterance\":\"\"}}}}"
+    },
+    "focal_points": {
+      "description": "Derive three reflection questions from recent memory",
+      "default": "Generate exactly three high-level focal questions from the recent memory stream. They should reveal patterns useful for future behavior.\n\nRecent memories: {retrieved_memories}\n\nReturn ONLY JSON: {{\"focal_points\":[\"...\",\"...\",\"...\"]}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 40,
+    "max_node_steps": 360,
+    "timeout_seconds": 600,
+    "budget": {"max_model_calls": 32, "max_tokens": 240000},
+    "context": {
+      "observation": "",
+      "events": [],
+      "retrieved_memories": [],
+      "daily_plan": [],
+      "current_action": {},
+      "next_action": {},
+      "reflection_state": {},
+      "focal_points": [],
+      "reflection_branches": [],
+      "insights": [],
+      "execution": {}
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "observation"}, "edges": [{"condition": "input", "to": "load_daily_plan"}]},
+      "load_daily_plan": {"id": "load_daily_plan", "op": "数据", "action": "get", "scope": "file", "path": ".egoagent/generative-scratch.json", "key": "daily_plan", "default": [], "output_var": "daily_plan", "edges": [{"condition": "default", "to": "load_current_action"}]},
+      "load_current_action": {"id": "load_current_action", "op": "数据", "action": "get", "scope": "file", "path": ".egoagent/generative-scratch.json", "key": "current_action", "default": {}, "output_var": "current_action", "edges": [{"condition": "default", "to": "perceive"}]},
+      "perceive": {"id": "perceive", "op": "模型", "agent": "persona", "prompt": "perceive", "parse_as": "json", "temperature": 0.2, "retry": {"max_attempts": 3}, "output_schema": {"type": "object", "required": ["events"], "properties": {"events": {"type": "array", "items": {"type": "object", "required": ["description", "event_key", "importance", "keywords"]}}}}, "outputs": {"structured.events": "events"}, "edges": [{"condition": "has_text", "to": "store_events"}]},
+      "store_events": {"id": "store_events", "op": "映射", "source": "$ctx.events", "item_var": "event", "body_start": "store_event", "join": "retrieve", "max_count": 3, "max_workers": 1, "output_var": "stored_events", "edges": []},
+      "store_event": {"id": "store_event", "op": "记忆", "action": "add_unique", "namespace": "generative_persona", "dedupe_key": "metadata.event_key", "retention": 5, "inputs": {"memory": {"text": "$ctx.event.description", "type": "event", "importance": "$ctx.event.importance", "keywords": "$ctx.event.keywords", "metadata": {"event_key": "$ctx.event.event_key", "distance": "$ctx.event.distance"}}}, "edges": [{"condition": "memory_added", "to": "retrieve"}, {"condition": "memory_duplicate", "to": "retrieve"}]},
+      "retrieve": {"id": "retrieve", "op": "记忆", "action": "search", "namespace": "generative_persona", "query": "$ctx.observation", "top_k": 12, "weights": {"recency": 0.5, "relevance": 3, "importance": 2}, "output_var": "retrieved_memories", "edges": [{"condition": "memory_found", "to": "plan"}, {"condition": "memory_empty", "to": "plan"}]},
+      "plan": {"id": "plan", "op": "模型", "agent": "persona", "prompt": "plan", "parse_as": "json", "temperature": 0.4, "retry": {"max_attempts": 3}, "output_schema": {"type": "object", "required": ["daily_plan", "action"], "properties": {"daily_plan": {"type": "array"}, "action": {"type": "object", "required": ["description", "duration_minutes", "address", "emoji", "event_key", "should_talk", "utterance"]}}}, "outputs": {"structured.daily_plan": "daily_plan", "structured.action": "next_action"}, "edges": [{"condition": "has_text", "to": "save_daily_plan"}]},
+      "save_daily_plan": {"id": "save_daily_plan", "op": "数据", "action": "set", "scope": "file", "path": ".egoagent/generative-scratch.json", "key": "daily_plan", "value": "$ctx.daily_plan", "edges": [{"condition": "default", "to": "reflection_due"}]},
+      "reflection_due": {"id": "reflection_due", "op": "记忆", "action": "needs_reflection", "namespace": "generative_persona", "threshold": 150, "output_var": "reflection_state", "edges": [{"condition": "reflection_due", "to": "focal_points"}, {"condition": "reflection_not_due", "to": "execute"}]},
+      "focal_points": {"id": "focal_points", "op": "模型", "agent": "persona", "prompt": "focal_points", "parse_as": "json", "temperature": 0.3, "retry": {"max_attempts": 3}, "output_schema": {"type": "object", "required": ["focal_points"], "properties": {"focal_points": {"type": "array", "items": {"type": "string"}}}}, "outputs": {"structured.focal_points": "focal_points"}, "edges": [{"condition": "has_text", "to": "reflect_each"}]},
+      "reflect_each": {"id": "reflect_each", "op": "映射", "source": "$ctx.focal_points", "item_var": "focal_point", "body_start": "reflect_one", "join": "join_insights", "max_count": 3, "max_workers": 1, "output_var": "reflection_branches", "edges": []},
+      "reflect_one": {"id": "reflect_one", "op": "子流程", "harness": "generative_reflection_worker", "agent_map": {"persona": "persona"}, "result_mode": "result", "inputs": {"message": "$ctx.focal_point"}, "edges": [{"condition": "subflow_done", "to": "join_insights"}]},
+      "join_insights": {"id": "join_insights", "op": "合并", "source": "$ctx.reflection_branches", "strategy": "flatten", "output_var": "insights", "edges": [{"condition": "joined", "to": "store_insights"}]},
+      "store_insights": {"id": "store_insights", "op": "映射", "source": "$ctx.insights", "item_var": "insight", "body_start": "store_thought", "join": "mark_reflected", "max_count": 15, "max_workers": 1, "output_var": "stored_insights", "edges": []},
+      "store_thought": {"id": "store_thought", "op": "记忆", "action": "add", "namespace": "generative_persona", "inputs": {"memory": {"text": "$ctx.insight.thought", "type": "thought", "importance": "$ctx.insight.importance", "evidence": "$ctx.insight.evidence", "metadata": {"depth": 1}}}, "edges": [{"condition": "memory_added", "to": "mark_reflected"}]},
+      "mark_reflected": {"id": "mark_reflected", "op": "记忆", "action": "mark_reflected", "namespace": "generative_persona", "edges": [{"condition": "reflection_marked", "to": "execute"}]},
+      "execute": {"id": "execute", "op": "数据", "action": "set", "key": "execution", "value": "$ctx.next_action", "edges": [{"condition": "default", "to": "save_current_action"}]},
+      "save_current_action": {"id": "save_current_action", "op": "数据", "action": "set", "scope": "file", "path": ".egoagent/generative-scratch.json", "key": "current_action", "value": "$ctx.execution", "edges": [{"condition": "default", "to": "output"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$ctx.execution"}, "edges": []}
+    }
+  }
+}

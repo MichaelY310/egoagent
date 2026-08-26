@@ -1,0 +1,68 @@
+{
+  "name": "component_context_curator",
+  "description": "Reusable SubDAG: expose conversation metadata, let an ordinary Model node author a relevance plan, then commit it through a validated Conversation Output effect.",
+  "component": {
+    "name": "context_curator",
+    "display_name": "Context Curator",
+    "category": "Conversation",
+    "icon": "✂",
+    "description": "Review a configurable batch of old turns without hiding a model call in the runtime.",
+    "share_session": true,
+    "inputs": {
+      "review_interval": {"description": "Unreviewed old turns required before a review", "default": 5, "schema": {"type": "integer", "minimum": 1}},
+      "protect_recent_turns": {"description": "Recent turns that cannot be removed", "default": 2, "schema": {"type": "integer", "minimum": 1}},
+      "max_tool_chars": {"description": "Deterministic tool-result compression limit; 0 disables it", "default": 0, "schema": {"type": "integer", "minimum": 0}}
+    },
+    "outputs": {
+      "applied": {"description": "Whether a review plan was applied", "path": "context_applied", "default": false},
+      "stats": {"description": "Estimated context reduction", "path": "context_result.stats", "default": {}},
+      "snapshot": {"description": "The inspected conversation metadata", "path": "conversation_snapshot", "default": {}}
+    }
+  },
+  "slots": {
+    "curator": {"description": "Identity used only by the ordinary Model planning node", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "curate_turns": {
+      "description": "Editable policy for relevance pruning",
+      "default": "You are reviewing old conversation turns for the CURRENT project task. The runtime has only provided metadata; you must author the policy decision. Preserve user requirements, decisions, exact paths, errors, successful evidence and unfinished work. Elide only clearly unrelated chat or obsolete noise. Summarize when facts remain useful but the wording is wasteful. Never invent facts.\n\nConversation metadata:\n{conversation_payload}\n\nReturn ONLY JSON: {{\"decisions\":[{{\"turn_id\":\"...\",\"action\":\"keep|summarize|elide\",\"reason\":\"short reason\",\"summary\":\"required for summarize\"}}]}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "conversation_in",
+    "max_steps": 8,
+    "budget": {"max_model_calls": 1, "max_tokens": 8000},
+    "context": {"context_applied": false, "context_result": {"stats": {}}},
+    "nodes": {
+      "conversation_in": {
+        "id": "conversation_in", "op": "上下文", "action": "snapshot",
+        "review_interval": "$ctx.review_interval", "protect_recent_turns": "$ctx.protect_recent_turns",
+        "output_var": "conversation_snapshot",
+        "outputs": {"model_payload": "conversation_payload"},
+        "edges": [{"condition": "review_due", "to": "plan"}, {"condition": "review_not_due", "to": "skipped"}]
+      },
+      "plan": {
+        "id": "plan", "op": "模型", "agent": "curator", "prompt": "curate_turns",
+        "parse_as": "json_object", "json_fallback": {"decisions": []}, "temperature": 0.1, "max_tokens": 1600,
+        "outputs": {"structured": "context_plan"},
+        "edges": [{"condition": "json_fallback", "to": "skipped"}, {"condition": "has_text", "to": "conversation_out"}]
+      },
+      "conversation_out": {
+        "id": "conversation_out", "op": "上下文", "action": "apply", "apply_mode": "turn_plan",
+        "protect_recent_turns": "$ctx.protect_recent_turns", "max_tool_chars": "$ctx.max_tool_chars",
+        "inputs": {
+          "plan": "$ctx.context_plan",
+          "messages": "$ctx.conversation_snapshot.working_messages",
+          "full_messages": "$ctx.conversation_snapshot.full_messages",
+          "reviewed_turn_ids": "$ctx.conversation_snapshot.review_turn_ids"
+        },
+        "output_var": "context_result", "outputs": {"value": "context_result"},
+        "edges": [{"condition": "conversation_applied", "to": "mark_applied"}]
+      },
+      "mark_applied": {"id": "mark_applied", "op": "数据", "action": "set", "key": "context_applied", "value": true, "edges": [{"condition": "default", "to": "done"}]},
+      "skipped": {"id": "skipped", "op": "数据", "action": "set", "key": "context_applied", "value": false, "edges": [{"condition": "default", "to": "done"}]},
+      "done": {"id": "done", "op": "结束", "value": {"applied": "$ctx.context_applied", "stats": "$ctx.context_result.stats"}, "edges": []}
+    }
+  }
+}

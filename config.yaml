@@ -1,7 +1,7 @@
-root_environment_path: /home/tiger/egoagent/.environment
-harness_template_repository: /home/tiger/egoagent/harness
-identity_repository: /home/tiger/egoagent/identity
-registry_path: ~/.egoagent_registry.json
+root_environment_path: .environment
+harness_template_repository: harness
+identity_repository: identity
+registry_path: .egoagent_registry.json
 
 # prompt 中最多显示多少个 tool 和 knowledge（identity自身+当前环境的前N个）
 max_prompt_tools: 20
@@ -12,7 +12,7 @@ command_blacklist:
   - rm -rf /*
   - mkfs
   - dd if=/dev
-  - :(){ :|:& };:
+  - ':(){ :|:& };:'
   - chmod -R 777 /
   - shutdown
   - reboot

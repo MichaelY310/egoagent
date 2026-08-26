@@ -1,0 +1,26 @@
+{
+  "type": "function",
+  "function": {
+    "name": "coc_use_notebook",
+    "description": "Use the carried CoC item: notebook. Returns an action intent for Keeper adjudication; it does not bypass the Keeper.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Target or intended use."
+        },
+        "intent": {
+          "type": "string",
+          "description": "Brief in-character intent."
+        }
+      },
+      "required": []
+    }
+  },
+  "coc_item": {
+    "id": "notebook",
+    "label": "notebook",
+    "action": "take_notes"
+  }
+}

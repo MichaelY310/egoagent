@@ -1,0 +1,17 @@
+{
+  "type": "function",
+  "title": "Write Process Input",
+  "name": "write_stdin",
+  "description": "Send characters to a running exec_command session, or poll it when chars is empty. Returns only new output since the previous read.",
+  "permissions": ["process"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "session_id": {"type": "string"},
+      "chars": {"type": "string", "description": "Exact input bytes as text; include a newline when the program expects Enter"},
+      "yield_time_ms": {"type": "integer", "minimum": 0, "maximum": 30000},
+      "max_output_chars": {"type": "integer", "minimum": 1000, "maximum": 100000}
+    },
+    "required": ["session_id"]
+  }
+}

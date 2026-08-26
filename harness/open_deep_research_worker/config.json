@@ -1,0 +1,68 @@
+{
+  "name": "open_deep_research_worker",
+  "description": "Open Deep Research researcher subgraph: a ten-round parallel-tool ReAct loop followed by a three-attempt loss-minimizing compression pass.",
+  "slots": {
+    "researcher": {"description": "Uses search, page-reading, native search or MCP tools and then compresses its own evidence", "required": true}
+  },
+  "prompts": {
+    "compress": {
+      "description": "Clean the researcher transcript without dropping evidence",
+      "default": "Clean the research transcript below into a comprehensive evidence note. Preserve all relevant facts, exact excerpts, uncertainty and source URLs. Remove conversational filler and duplicate tool chatter, but do not shorten away useful information. Never invent a source.\n\nResearch topic: {research_request}\n\nTranscript:\n{research_transcript}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 48,
+    "max_node_steps": 160,
+    "timeout_seconds": 240,
+    "budget": {"max_model_calls": 16, "max_tool_calls": 40, "max_tokens": 100000},
+    "context": {
+      "research_request": "",
+      "react_rounds": [1,2,3,4,5,6,7,8,9,10],
+      "research_done": false,
+      "final_observation": "",
+      "research_transcript": []
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "research_request"}, "edges": [{"condition": "input", "to": "react_loop"}]},
+      "react_loop": {
+        "id": "react_loop", "op": "循环", "list_var": "react_rounds", "item_var": "react_round",
+        "body_start": "research", "break_when": "ctx.research_done",
+        "edges": [{"condition": "loop_break", "to": "capture_transcript"}, {"condition": "loop_done", "to": "capture_transcript"}]
+      },
+      "research": {
+        "id": "research", "op": "Agent", "agent": "researcher", "tools": "all",
+        "retry": {"max_attempts": 3, "delay_seconds": 1, "backoff": 2}, "timeout_seconds": 90,
+        "error_nudge_threshold": 3,
+        "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "save_answer"}]
+      },
+      "tools": {
+        "id": "tools", "op": "工具", "agent": "researcher", "parallel": true, "max_workers": 5,
+        "timeout_seconds": 45, "retry": {"max_attempts": 2, "delay_seconds": 1},
+        "edges": [{"condition": "tools_executed", "to": "react_loop"}, {"condition": "no_tool_calls", "to": "react_loop"}]
+      },
+      "save_answer": {"id": "save_answer", "op": "数据", "action": "set", "key": "final_observation", "value": "$node.research.text", "edges": [{"condition": "default", "to": "mark_done"}]},
+      "mark_done": {"id": "mark_done", "op": "数据", "action": "set", "key": "research_done", "value": true, "edges": [{"condition": "default", "to": "react_loop"}]},
+      "capture_transcript": {
+        "id": "capture_transcript", "op": "上下文", "action": "select", "source": "$session.full_messages",
+        "max_chars": 120000, "output_var": "research_transcript", "edges": [{"condition": "context_ready", "to": "compress"}]
+      },
+      "compress": {
+        "id": "compress", "op": "模型", "agent": "researcher", "prompt": "compress", "temperature": 0.1,
+        "max_tokens": 8192, "retry": {"max_attempts": 3, "delay_seconds": 1, "backoff": 2}, "error_to": "fallback_raw",
+        "edges": [{"condition": "has_text", "to": "output"}]
+      },
+      "output": {
+        "id": "output", "op": "结束",
+        "inputs": {"value": {"compressed_research": "$node.compress.text", "raw_notes": "$ctx.research_transcript", "tool_call_iterations": "$ctx.react_round"}},
+        "record": true, "edges": []
+      },
+      "fallback_raw": {
+        "id": "fallback_raw", "op": "结束",
+        "inputs": {"value": {"compressed_research": "$ctx.final_observation", "raw_notes": "$ctx.research_transcript", "compression_error": "$node.compress.error"}},
+        "record": true, "edges": []
+      }
+    }
+  }
+}

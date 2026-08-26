@@ -1,0 +1,15 @@
+{
+  "task_prompt": "Work in an evidence-driven coding loop. Inspect before editing, make focused changes, and use tool observations as the source of truth. Run the most relevant verification before claiming success. A separate goal judge decides whether the objective is actually complete, so treat judge feedback as a concrete list of missing evidence. Never invent command output, tests, file contents, network results, or completion. If blocked, state the exact blocker and the safest next action.",
+  "tool_access": {"whitelist": [], "blacklist": ["submit_result"]},
+  "knowledge_access": {"whitelist": [], "blacklist": []},
+  "allow_create_agent": false,
+  "allow_create_identity": false,
+  "allow_modify_agent": false,
+  "allow_modify_identity": false,
+  "allow_add_skill_to_self": false,
+  "allow_add_knowledge_to_self": false,
+  "allow_add_skill_to_other": false,
+  "allow_add_knowledge_to_other": false,
+  "allow_add_tool_to_environment": false,
+  "allow_add_knowledge_to_environment": false
+}

@@ -1,0 +1,197 @@
+{
+  "format": "ego.flow-evolution.v1",
+  "created_at": 1787402332.829024,
+  "source_result": "C:\\Users\\aa310\\Desktop\\egoagent\\experiments\\arc_agi3\\results\\1787400966-arc_long_horizon-ls20-0f70c6.json",
+  "generation": 2,
+  "evidence": {
+    "source_kind": "official unknown interactive environment",
+    "budget": {
+      "environment_actions": 12
+    },
+    "official_outcome": {
+      "score": 0.0,
+      "total_levels_completed": 0,
+      "total_actions": 12,
+      "state": "NOT_FINISHED"
+    },
+    "runtime": {
+      "model_calls": 19,
+      "tool_calls": 14,
+      "input_tokens_actual": 410218,
+      "output_tokens_actual": 19002
+    },
+    "behavioral_aggregates": {
+      "distinct_action_classes": 4,
+      "action_histogram": {
+        "ACTION1": 5,
+        "ACTION2": 2,
+        "ACTION3": 4,
+        "ACTION4": 1
+      },
+      "longest_identical_action_streak": 4,
+      "supervision_events": 4,
+      "supervisor_keyword_sets": [
+        [
+          "mechanic",
+          "premature-commitment",
+          "action-mapping",
+          "multi-object"
+        ],
+        [
+          "mechanic",
+          "premature-commitment",
+          "action-mapping",
+          "multi-object",
+          "stagnation"
+        ],
+        [
+          "mechanic",
+          "stagnation",
+          "premature-commitment",
+          "action-mapping"
+        ],
+        [
+          "mechanic",
+          "premature-commitment",
+          "action-mapping",
+          "stagnation"
+        ]
+      ]
+    },
+    "measured_failure": "The interactive run exhausted all 12 environment actions with 0 levels completed. The acting model repeated one action class for 4 consecutive steps after its own explanation had already described that line of inquiry as unlikely. The periodic supervisor eventually detected the stagnation, but too late to preserve enough experimental budget. This is a search-control and belief-update failure, not a missing final-answer validation step.",
+    "constraints": [
+      "No game ID, coordinate, action sequence, discovered rule or environment-specific tool may enter the candidate Flow.",
+      "Official outcome is the primary promotion metric.",
+      "Validate on an independent seed before promotion."
+    ]
+  },
+  "proposal": {
+    "hypothesis": "The search flow fails because it lacks a bounded-context checkpoint that periodically consolidates intermediate findings and prunes unpromising branches, causing the agent to drift or loop on low-value trajectories.",
+    "failure_mechanism": "Measured failures show repeated, unproductive exploration without convergence—likely due to unbounded context growth and no cadence for re-evaluating search direction. The agent keeps expanding the same weak branches instead of committing to a focused subset.",
+    "operations": [
+      {
+        "op": "set_field",
+        "path": "pipeline.nodes.supervise.prompt",
+        "value": "supervise"
+      },
+      {
+        "op": "set_field",
+        "path": "pipeline.nodes.supervision_due.condition",
+        "value": "ctx.action_batches % 4 == 0"
+      }
+    ],
+    "expected_effect": "Every 4 iterations, the flow will trigger the existing supervisor to summarize the current context and recommend a focused subset of falsifiable experiments, discarding unpromising branches via the supervisor's qualitative diagnosis. This bounds context growth and introduces a regular re-planning cadence, reducing drift and improving convergence without adding new nodes.",
+    "risk": "The supervisor's qualitative pruning may discard a rare but correct branch early; the supervisor is instructed to prioritize information gain per action to mitigate this. Also, summarization may lose fine-grained details needed for later steps.",
+    "evaluation_plan": {
+      "validation": "Run on the same failed trajectories; check that the agent reaches a final answer within the existing budget and that the answer quality (exact match or task-specific metric) improves over the base flow.",
+      "heldout": "Run on a separate set of unseen search tasks from the same distribution; compare success rate and average iterations to base flow.",
+      "promotion_rule": "Official task outcome first; efficiency only breaks ties"
+    }
+  },
+  "variant": {
+    "base_digest": "c2dc0154a6eeb3c5647307eb770346b609d2f473f0bca7a91c9c23d9da038b05",
+    "candidate_digest": "53d6fd1ac4f4651390415e6820471bfeea334e1065abcc3706523ecc1e3a6819",
+    "operations": [
+      {
+        "op": "set_field",
+        "path": "pipeline.nodes.supervise.prompt",
+        "before": "supervise",
+        "after": "supervise"
+      },
+      {
+        "op": "set_field",
+        "path": "pipeline.nodes.supervision_due.condition",
+        "before": "ctx.action_batches % 3 == 0",
+        "after": "ctx.action_batches % 4 == 0"
+      }
+    ],
+    "proposal": {
+      "hypothesis": "The search flow fails because it lacks a bounded-context checkpoint that periodically consolidates intermediate findings and prunes unpromising branches, causing the agent to drift or loop on low-value trajectories.",
+      "failure_mechanism": "Measured failures show repeated, unproductive exploration without convergence—likely due to unbounded context growth and no cadence for re-evaluating search direction. The agent keeps expanding the same weak branches instead of committing to a focused subset.",
+      "operations": [
+        {
+          "op": "set_field",
+          "path": "pipeline.nodes.supervise.prompt",
+          "value": "supervise"
+        },
+        {
+          "op": "set_field",
+          "path": "pipeline.nodes.supervision_due.condition",
+          "value": "ctx.action_batches % 4 == 0"
+        }
+      ],
+      "expected_effect": "Every 4 iterations, the flow will trigger the existing supervisor to summarize the current context and recommend a focused subset of falsifiable experiments, discarding unpromising branches via the supervisor's qualitative diagnosis. This bounds context growth and introduces a regular re-planning cadence, reducing drift and improving convergence without adding new nodes.",
+      "risk": "The supervisor's qualitative pruning may discard a rare but correct branch early; the supervisor is instructed to prioritize information gain per action to mitigate this. Also, summarization may lose fine-grained details needed for later steps.",
+      "evaluation_plan": {
+        "validation": "Run on the same failed trajectories; check that the agent reaches a final answer within the existing budget and that the answer quality (exact match or task-specific metric) improves over the base flow.",
+        "heldout": "Run on a separate set of unseen search tasks from the same distribution; compare success rate and average iterations to base flow.",
+        "promotion_rule": "Official task outcome first; efficiency only breaks ties"
+      }
+    },
+    "ok": true
+  },
+  "candidate_path": "C:\\Users\\aa310\\Desktop\\egoagent\\experiments\\arc_agi3\\candidates\\generation_002\\config.json",
+  "promoted": false,
+  "promotion_reason": "primary metrics tied while efficiency materially regressed",
+  "runtime_stats": {
+    "started_at": 605158.517496,
+    "node_steps": 5,
+    "model_calls": 2,
+    "tool_calls": 0,
+    "process_calls": 0,
+    "retries": 0,
+    "input_tokens_estimated": 2607,
+    "output_tokens_estimated": 953,
+    "cost_estimated": 0.0,
+    "provider_requests": 2,
+    "provider_retries": 0,
+    "input_tokens_actual": 3035,
+    "output_tokens_actual": 829,
+    "cached_input_tokens_actual": 0,
+    "cost_actual": 0.0,
+    "provider_request_ids": [
+      "638cd4ff-d051-457d-99b4-b663c4dd5465",
+      "f95e48e2-8222-48cd-9389-1c4e13e1639d"
+    ]
+  },
+  "evaluation": {
+    "baseline": {
+      "levels_completed": 0,
+      "score": 0.0,
+      "actions": 12,
+      "tokens": 429220,
+      "elapsed_seconds": 184.196,
+      "run_id": "1787400966-arc_long_horizon-ls20-0f70c6"
+    },
+    "candidate": {
+      "levels_completed": 0,
+      "score": 0.0,
+      "actions": 12,
+      "tokens": 461527,
+      "elapsed_seconds": 168.474,
+      "run_id": "1787402449-arc_long_horizon_candidate_g002-ls20-7edace"
+    },
+    "decision": {
+      "status": "rejected",
+      "promoted": false,
+      "reason": "primary metrics tied while efficiency materially regressed",
+      "baseline_primary": {
+        "levels_completed": 0.0,
+        "score": 0.0
+      },
+      "candidate_primary": {
+        "levels_completed": 0.0,
+        "score": 0.0
+      },
+      "cost_regressions": [
+        {
+          "metric": "tokens",
+          "baseline": 429220.0,
+          "candidate": 461527.0,
+          "allowed": 450681.0
+        }
+      ],
+      "heldout_verified": false
+    }
+  }
+}

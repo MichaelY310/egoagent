@@ -1,5 +1,6 @@
 {
   "name": "coder",
+  "ego_inherits": ["@pack/filesystem_readonly", "@pack/filesystem_navigation", "@pack/filesystem_edit"],
   "personality": {
     "traits": [
       "analytical",

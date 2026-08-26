@@ -1,0 +1,28 @@
+{
+  "version": "ego.task.v1",
+  "id": "video_context_governance_walkthrough",
+  "title": "录屏：精简上下文与被动压缩",
+  "description": "用五轮真实交互分别展示 relevance curation 与 token-pressure compaction，并保留完整审计历史。",
+  "category": "context-governance",
+  "difficulty": "tutorial",
+  "tags": ["video", "context", "curation", "compaction", "subdag"],
+  "prompt": "项目关键事实：服务端口必须保持 7319，发布前必须运行 unittest。请确认你记住了；不要改文件。",
+  "workspace": {"files": {"PROJECT_FACTS.md": "Port: 7319\nVerification: python -m unittest discover -v\nCache TTL: 45 seconds\n"}},
+  "selection": {
+    "recommended_harness": "conversation_component_demo",
+    "recommended_identity": "dante",
+    "compatible_harnesses": ["conversation_component_demo"],
+    "compatible_identities": ["dante"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 600, "interactive": true},
+  "evolution": {"allowed": false},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"type": "node_visited", "node": "summarize_subdag", "weight": 1},
+      {"type": "node_visited", "node": "compact_subdag", "weight": 1},
+      {"type": "event_emitted", "event": "conversation_applied", "minimum": 2, "weight": 1}
+    ]
+  }
+}

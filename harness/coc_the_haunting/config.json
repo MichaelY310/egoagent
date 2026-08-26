@@ -1,0 +1,39 @@
+{
+  "name": "coc_the_haunting",
+  "description": "CoC 7e Identity 跑团：每名玩家绑定一张可跨团复用的人物卡 Identity；KP 通过受限事务修改 HP/SAN/物品 Tool，场景 Session 只保存世界事实。",
+  "slots": {
+    "KP": {"description": "守秘人：叙事与 NPC，不覆盖确定性规则", "required": true, "identity": "coc_keeper"},
+    "规则裁判": {"description": "把自然语言行动归一化为 JSON，不自行掷骰", "required": true, "identity": "coc_rules_judge"},
+    "人类调查员": {"description": "人类玩家的可复用人物卡；只用于数值、技能与物品校验，不替玩家发言", "required": true, "identity": "coc_investigator_human"},
+    "调查员A": {"description": "谨慎的 AI 调查员", "required": true, "identity": "coc_investigator_cautious"},
+    "调查员B": {"description": "果断的 AI 调查员", "required": true, "identity": "coc_investigator_bold"}
+  },
+  "prompts": {
+    "normalize_actions": "你是 CoC 行动归一化器。只输出一个 JSON object，不要 markdown。格式：{{\"actions\":[{{\"actor\":\"human|investigator_a|investigator_b\",\"kind\":\"say|wait|assist|move|inspect|drop_item|pick_up|use_item|firearm_attack|first_aid\",\"target\":\"id\",\"item\":\"id\",\"skill\":\"skill_id\",\"intent\":\"简述\"}}]}}。每个角色最多一个行动。characters 是绑定 Identity 的权威人物卡；不得给角色编造人物卡中不存在的物品、技能或数值。public state: {public_state}\n人类行动: {human_action}\n调查员A: {investigator_a}\n调查员B: {investigator_b}"
+  },
+  "return_mode": "all",
+  "pipeline": {
+    "start": "load_scenario",
+    "max_steps": 120,
+    "workspace_preview": false,
+    "nodes": {
+      "load_scenario": {"op": "Python", "script": "load_scenario", "output_vars": ["scenario_state", "state_schema", "characters"], "edges": [{"condition": "default", "to": "init_state"}]},
+      "init_state": {"op": "数据", "action": "set", "scope": "session", "key": "coc_state", "value": "$ctx.scenario_state", "output_var": "coc_state", "edges": [{"condition": "default", "to": "initial_public_view"}]},
+      "initial_public_view": {"op": "Python", "script": "public_view", "inputs": {"state": "$ctx.coc_state"}, "output_vars": ["public_state", "characters"], "edges": [{"condition": "default", "to": "kp_opening"}]},
+      "kp_opening": {"op": "Agent", "agent": "KP", "tools": false, "instructions": "根据 public state 开场，用中文给出简洁、具氛围但不泄密的场景描述。只描述调查员此刻能观察到的东西，最后询问人类调查员做什么。public state=${ctx.public_state}", "edges": [{"condition": "has_text", "to": "opening_output"}]},
+      "opening_output": {"op": "输出", "inputs": {"value": "$node.kp_opening.text"}, "record": true, "name": "KP", "continue": true, "edges": [{"condition": "default", "to": "human_turn"}]},
+      "human_turn": {"op": "输入", "prompt_text": "你作为 human 调查员要做什么？", "reuse_last": false, "outputs": {"text": "human_action"}, "edges": [{"condition": "input", "to": "investigator_a_turn"}]},
+      "investigator_a_turn": {"op": "Agent", "agent": "调查员A", "tools": false, "instructions": "public state=${ctx.public_state}\n人类同伴刚提出：${ctx.human_action}\n以 investigator_a 身份只提出一个本回合行动，不描述结果。", "edges": [{"condition": "has_text", "to": "investigator_b_turn"}]},
+      "investigator_b_turn": {"op": "Agent", "agent": "调查员B", "tools": false, "instructions": "public state=${ctx.public_state}\n人类同伴：${ctx.human_action}\n调查员A：${node.investigator_a_turn.text}\n以 investigator_b 身份只提出一个不重复的本回合行动，不描述结果。", "edges": [{"condition": "has_text", "to": "normalize_actions"}]},
+      "normalize_actions": {"op": "模型", "agent": "规则裁判", "prompt": "normalize_actions", "parse_as": "json_object", "json_fallback": {"actions": []}, "output_var": "action_plan", "max_tokens": 700, "temperature": 0.05, "inputs": {"public_state": "$ctx.public_state", "human_action": "$ctx.human_action", "investigator_a": "$node.investigator_a_turn.text", "investigator_b": "$node.investigator_b_turn.text"}, "edges": [{"condition": "has_text", "to": "enforce_player_intent"}, {"condition": "json_fallback", "to": "enforce_player_intent"}]},
+      "enforce_player_intent": {"op": "Python", "script": "enforce_player_intent", "inputs": {"plan": "$ctx.action_plan", "human_action": "$ctx.human_action", "public_state": "$ctx.public_state"}, "output_vars": ["action_plan", "intent_guard"], "edges": [{"condition": "default", "to": "adjudicate"}]},
+      "adjudicate": {"op": "Python", "script": "adjudicate", "inputs": {"state": "$ctx.coc_state", "plan": "$ctx.action_plan", "characters": "$ctx.characters"}, "output_vars": ["transition", "character_transactions", "resolutions", "public_state_after"], "edges": [{"condition": "default", "to": "commit_state"}]},
+      "commit_state": {"op": "Python", "script": "commit_round", "inputs": {"state": "$ctx.coc_state", "transition": "$ctx.transition", "schema": "$ctx.state_schema", "character_transactions": "$ctx.character_transactions"}, "output_vars": ["commit_result"], "edges": [{"condition": "default", "to": "sync_state"}]},
+      "sync_state": {"op": "数据", "action": "set", "scope": "run", "key": "coc_state", "value": "$ctx.commit_result.state", "output_var": "coc_state", "edges": [{"condition": "default", "to": "refresh_public_view"}]},
+      "refresh_public_view": {"op": "Python", "script": "public_view", "inputs": {"state": "$ctx.coc_state"}, "output_vars": ["public_state", "characters"], "edges": [{"condition": "default", "to": "kp_narrates"}]},
+      "kp_narrates": {"op": "Agent", "agent": "KP", "tools": false, "instructions": "你收到的是权威规则结果。根据 resolutions 叙述本回合，不改骰点、不把 rejected 行动写成成功、不恢复遗失物品，不泄露 keeper secrets。若玩家行动 rejected，必须明确说没有执行并说明 reason；不得替玩家改成 wait/say。最后说明当前可观察状态并询问下一步。intent guard=${ctx.intent_guard}\nresolutions=${ctx.resolutions}\npublic state=${ctx.public_state}\nkeeper context=${ctx.coc_state.keeper}", "edges": [{"condition": "has_text", "to": "round_output"}]},
+      "round_output": {"op": "输出", "inputs": {"value": "$node.kp_narrates.text"}, "record": true, "name": "KP", "continue": true, "edges": [{"condition": "default", "to": "human_turn"}]},
+      "commit_failed": {"op": "输出", "value": "规则状态提交失败；本回合没有修改权威状态。请在 DAG 运行面板检查 reason_codes。", "record": true, "name": "system", "edges": []}
+    }
+  }
+}

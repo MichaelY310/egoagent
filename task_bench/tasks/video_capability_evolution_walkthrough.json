@@ -1,0 +1,36 @@
+{
+  "version": "ego.task.v1",
+  "id": "video_capability_evolution_walkthrough",
+  "title": "录屏：从重复检索到可复用能力",
+  "description": "展示搜索现有 Skill/DAG、隔离检索轨迹和证据驱动进化；不是用关键词强制创建。",
+  "category": "self-evolution",
+  "difficulty": "research",
+  "tags": ["video", "semantic-search", "subdag", "self-evolution"],
+  "prompt": "读取 docs 中三份温室笔记，给出 SM-20 的干燥阈值、P-12 五秒用水量及证据路径。这个本地检索会在每个温室分区重复执行：先搜索能力库中是否已有可复用 Skill 或 DAG，并让主 Agent 只看到紧凑证据；只有确实找不到合适能力时，才提出最小、可测试、可回滚的进化方案。",
+  "workspace": {
+    "files": {
+      "docs/sensor_notes.md": "SM-20 is the production soil-moisture sensor. A reading below 35 percent means dry soil.\n",
+      "docs/pump_notes.md": "P-12 delivers 12 millilitres per second. Volume equals flow multiplied by duration.\n",
+      "docs/operations_notes.md": "Repeat this lookup for each zone. Return compact cited evidence and isolate noisy search traces.\n",
+      ".agents/skills/garden_evidence/SKILL.md": "# Garden evidence lookup\nUse for sensor, pump, calibration, threshold, or watering evidence. Search docs only, cite relative paths, and do not browse.\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "adaptive_code_agent",
+    "recommended_identity": "dante",
+    "compatible_harnesses": ["adaptive_code_agent", "agent_factory"],
+    "compatible_identities": ["dante", "coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 600},
+  "evolution": {"allowed": true, "targets": ["skill", "knowledge", "harness", "identity"]},
+  "evaluation": {
+    "pass_score": 0.75,
+    "checks": [
+      {"type": "response_contains", "value": "35", "weight": 1},
+      {"type": "response_contains", "value": "60", "weight": 1},
+      {"type": "response_contains", "value": "docs/", "weight": 1},
+      {"type": "tool_called", "name": "search_capabilities", "weight": 1}
+    ]
+  }
+}

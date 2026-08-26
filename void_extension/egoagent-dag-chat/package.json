@@ -1,0 +1,372 @@
+{
+  "name": "egoagent-dag-chat",
+  "displayName": "EgoAgent for Void",
+  "description": "Native Void AI coding workspace: DAG agents, model-backed Tab completion, inline edits and per-hunk change review.",
+	"version": "0.21.11",
+  "publisher": "egoagent",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other"
+  ],
+	"main": "./extension-v21.js",
+	"browser": "./extension-v21.js",
+  "extensionKind": [
+    "workspace",
+    "ui"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": true,
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "activationEvents": [
+    "onView:egoagent.dagChat",
+    "onCommand:egoagent.openWorkbench",
+    "onCommand:egoagent.openStudio",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "egoagent.openWorkbench",
+        "title": "Open Agent Workbench",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.openHarnessBuilder",
+        "title": "Open Harness Builder",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.openEvaluation",
+        "title": "Open Agent Evaluation",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.openEvolution",
+        "title": "Open Evolution Lab",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.sendFileToEvaluation",
+        "title": "Send File to Agent Evaluation",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.sendSelectionToEvaluation",
+        "title": "Send Selection to Agent Evaluation",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.attachFileToChat",
+        "title": "Attach File to Chat",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.attachSelectionToChat",
+        "title": "Attach Selection to Chat",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.refreshDagChat",
+        "title": "Refresh DAG Chat",
+        "category": "EgoAgent",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "egoagent.mockAgentEdit",
+        "title": "Generate AI Multi-Hunk Edit",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.inlineEdit",
+        "title": "Inline Edit: Cursor, Selection, or File",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.localReview",
+        "title": "Review Current File with AI",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.reviewChanges",
+        "title": "Review Agent Changes",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.toggleLocalCompletion",
+        "title": "Toggle AI Tab Completion",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.dismissCompletion",
+        "title": "Dismiss AI Tab Completion",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.predictNextEdit",
+        "title": "Predict Next Edit",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.previewNextEdit",
+        "title": "Preview Predicted Next Edit",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.dismissNextEdit",
+        "title": "Dismiss Predicted Next Edit",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.codeMap",
+        "title": "Open Local Code Map",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.preview",
+        "title": "Preview Local Application",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.generateCommitMessage",
+        "title": "Generate AI Commit Message",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.runTerminalCommand",
+        "title": "Run Terminal Command with Approval",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.copyEditorContext",
+        "title": "Copy Editor Selection for Chat Context",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.copyTerminalContext",
+        "title": "Copy Terminal Selection for Chat Context",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.nextPendingChange",
+        "title": "Go to Next Pending Agent Change",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.previousPendingChange",
+        "title": "Go to Previous Pending Agent Change",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.acceptCurrentFileChanges",
+        "title": "Accept All Agent Changes in Current File",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.rejectCurrentFileChanges",
+        "title": "Reject All Agent Changes in Current File",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.acceptAllChanges",
+        "title": "Accept All Agent Changes",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.rejectAllChanges",
+        "title": "Reject All Agent Changes",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.undoLatestReviewDecision",
+        "title": "Undo Latest Accept or Refuse Decision",
+        "category": "EgoAgent"
+      }
+    ],
+    "views": {
+      "void": [
+        {
+          "type": "webview",
+          "id": "egoagent.dagChat",
+          "name": "EgoAgent",
+          "contextualTitle": "EgoAgent"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "egoagent.openWorkbench",
+          "when": "view == egoagent.dagChat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "egoagent.refreshDagChat",
+          "when": "view == egoagent.dagChat",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "egoagent.attachSelectionToChat",
+          "when": "editorHasSelection",
+          "group": "egoagent@1"
+        },
+        {
+          "command": "egoagent.attachFileToChat",
+          "when": "editorTextFocus",
+          "group": "egoagent@2"
+        },
+        {
+          "command": "egoagent.sendSelectionToEvaluation",
+          "when": "editorHasSelection",
+          "group": "egoagent@3"
+        },
+        {
+          "command": "egoagent.sendFileToEvaluation",
+          "when": "editorTextFocus",
+          "group": "egoagent@4"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "egoagent.attachFileToChat",
+          "group": "egoagent@1"
+        },
+        {
+          "command": "egoagent.sendFileToEvaluation",
+          "group": "egoagent@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "egoagent.inlineEdit",
+        "key": "ctrl+i",
+        "mac": "cmd+i",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "egoagent.mockAgentEdit",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "egoagent.nextPendingChange",
+        "key": "alt+]",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "egoagent.previousPendingChange",
+        "key": "alt+[",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "egoagent.dismissCompletion",
+        "key": "escape",
+        "when": "editorTextFocus && inlineSuggestionVisible"
+      },
+      {
+        "command": "egoagent.copyEditorContext",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "egoagent.copyTerminalContext",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "terminalFocus && terminalTextSelected"
+      },
+      {
+        "command": "egoagent.undoLatestReviewDecision",
+        "key": "ctrl+z",
+        "mac": "cmd+z",
+        "when": "editorTextFocus && egoagent.reviewDecisionAvailable"
+      }
+    ],
+    "configurationDefaults": {
+      "diffEditor.codeLens": true
+    },
+    "configuration": {
+      "title": "EgoAgent",
+      "properties": {
+        "egoagent.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8765",
+          "description": "EgoAgent backend URL used by the native DAG Chat view."
+        },
+        "egoagent.localCompletion.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable inline Tab suggestions. The model provider is used when available, with deterministic local fallback."
+        },
+        "egoagent.ai.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use the configured backend model for completion, edits, reviews, and commit messages."
+        },
+        "egoagent.ai.requestTimeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 1000,
+          "maximum": 300000,
+          "description": "Timeout for model-backed IDE assistance requests."
+        },
+        "egoagent.ai.completionDelayMs": {
+          "type": "number",
+          "default": 280,
+          "minimum": 0,
+          "maximum": 3000,
+          "description": "Idle delay before requesting an AI Tab completion."
+        },
+        "egoagent.nextEdit.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable predictions for the next likely coherent code edit."
+        },
+        "egoagent.nextEdit.autoPredict": {
+          "type": "boolean",
+          "default": true,
+          "description": "Predict after a meaningful edit settles; suggestions are preview-only until explicitly applied."
+        },
+        "egoagent.nextEdit.delayMs": {
+          "type": "number",
+          "default": 1800,
+          "minimum": 200,
+          "maximum": 10000,
+          "description": "Idle delay before requesting a next-edit prediction."
+        },
+        "egoagent.nextEdit.minimumConfidence": {
+          "type": "number",
+          "default": 0.35,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Predictions below this confidence are discarded."
+        },
+        "egoagent.review.inlineActions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show one CodeLens review toolbar with Review Diff / Accept / Refuse above every pending Agent edit."
+        },
+        "egoagent.review.preferInlineDiff": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open Agent review diffs in VS Code's native inline layout instead of forcing deleted text into the normal editor with decorations."
+        },
+        "egoagent.previewUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8765",
+          "description": "Default URL opened by EgoAgent application preview."
+        }
+      }
+    }
+  }
+}

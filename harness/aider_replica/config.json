@@ -1,0 +1,224 @@
+{
+  "name": "aider_replica",
+  "description": "Source-aligned Aider architect/editor loop: explicit plan approval, deterministic SEARCH/REPLACE parsing, recoverable partial edits, lint/test review and at most three reflection rounds.",
+  "slots": {
+    "architect": {"description": "Produces the architecture proposal without editing", "required": true, "identity": "dante"},
+    "editor": {"description": "Returns Aider SEARCH/REPLACE edit blocks", "required": true, "identity": "coder"},
+    "reviewer": {"description": "Runs the automatic lint/test review without editing", "required": true, "identity": "coder"}
+  },
+  "prompts": {
+    "architect": {
+      "description": "Aider architect mode planning prompt",
+      "default": "Act as the Aider architect and classify the user's intent before any edit. Use action=\"answer\" when the user asks a question, requests an explanation/review/analysis, or does not explicitly ask to create, modify, fix, implement, rename, move, or delete files. Use action=\"edit\" only for an explicit repository change. For action=\"answer\", do not invent an edit plan: keep files, steps, and tests empty because a read-only repository agent will inspect evidence and answer. For action=\"edit\", identify exact likely files, constraints, risks, implementation steps, and focused lint/tests. Do not write code.\n\nRequest: {request}\n\nReturn ONLY JSON: {{\"action\":\"answer|edit\",\"summary\":\"...\",\"files\":[\"relative/path\"],\"steps\":[\"...\"],\"tests\":[\"...\"]}}"
+    },
+    "judge_review": {
+      "description": "Convert lint/test observations into Aider's next reflection decision",
+      "default": "Decide whether the applied edits satisfy the request. Accept only when the implementation is complete and relevant lint/tests pass. Relevant means required by the approved plan and appropriate for the changed file types: a documentation/comment-only change may be accepted from an exact diff without running source lint or tests. A concrete observed failure must become feedback for the next editor reflection. Never invent a failure, and never claim two quoted strings differ when they are byte-for-byte identical.\n\nRequest: {request}\nPlan: {edit_plan}\nApplied edits: {edit_apply}\nLint/test observations: {review_result}\n\nReturn ONLY JSON: {{\"accepted\":true,\"feedback\":\"specific remaining issue or empty\",\"summary\":\"final verification summary\"}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 70,
+    "max_node_steps": 260,
+    "timeout_seconds": 1800,
+    "budget_exceeded_to": "limit_has_transaction",
+    "limit_finalizer_max_steps": 5,
+    "workspace_preview": true,
+    "budget": {"max_model_calls": 70, "max_tool_calls": 160, "max_tokens": 500000},
+    "context": {
+      "request": "",
+      "edit_plan": {},
+      "read_only_answer": "",
+      "reflection_rounds": [1, 2, 3],
+      "reflection_round": 0,
+      "editor_response": "",
+      "proposed_edits": [],
+      "edit_parse": {},
+      "edit_apply": {"feedback": ""},
+      "review_result": "",
+      "review_accepted": false,
+      "review_feedback": "",
+      "review_summary": "",
+      "auto_accept_architect": true,
+      "auto_lint": true,
+      "auto_test": false,
+      "shell_commands_approved": false,
+      "aider_status": {},
+      "change_review": {}
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "plan"}]},
+      "plan": {
+        "id": "plan", "op": "模型", "agent": "architect", "prompt": "architect", "parse_as": "json",
+        "temperature": 0.2, "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {
+          "type": "object",
+          "required": ["action", "summary", "files", "steps", "tests"],
+          "properties": {
+            "action": {"type": "string", "enum": ["answer", "edit"]},
+            "summary": {"type": "string"},
+            "files": {"type": "array"},
+            "steps": {"type": "array"},
+            "tests": {"type": "array"}
+          }
+        },
+        "outputs": {"structured": "edit_plan"},
+        "edges": [{"condition": "has_text", "to": "request_kind"}]
+      },
+      "request_kind": {
+        "id": "request_kind", "op": "条件", "condition": "ctx.edit_plan.action == 'edit'",
+        "edges": [{"condition": "true", "to": "architect_accept_policy"}, {"condition": "false", "to": "answer"}]
+      },
+      "answer": {
+        "id": "answer", "op": "Agent", "agent": "architect", "tools": "all",
+        "visible_tools": ["read_file", "search_files"],
+        "inputs": {
+          "instructions": "Answer the user's request without modifying the workspace. Ground repository-specific claims in evidence: use read_file or search_files whenever the workspace preview is insufficient. Never propose SEARCH/REPLACE blocks and never claim a file was inspected unless you actually read or searched it. Give a concise, direct final answer in the user's language.\n\nRequest: ${ctx.request}"
+        },
+        "outputs": {"text": "read_only_answer"},
+        "retry": {"max_attempts": 2, "delay_seconds": 1},
+        "max_tool_calls_per_turn": 1,
+        "edges": [{"condition": "has_tool_calls", "to": "answer_tools"}, {"condition": "has_text", "to": "answer_output"}]
+      },
+      "answer_tools": {
+        "id": "answer_tools", "op": "工具", "agent": "architect",
+        "edges": [{"condition": "default", "to": "answer"}]
+      },
+      "answer_output": {
+        "id": "answer_output", "op": "结束", "value": "$ctx.read_only_answer", "record": true, "edges": []
+      },
+      "architect_accept_policy": {
+        "id": "architect_accept_policy", "op": "条件", "condition": "ctx.auto_accept_architect",
+        "edges": [{"condition": "true", "to": "begin_transaction"}, {"condition": "false", "to": "approve"}]
+      },
+      "approve": {
+        "id": "approve", "op": "人工审批", "prompt_text": "允许按以下架构方案编辑文件吗？\n${ctx.edit_plan}", "default": "approved",
+        "edges": [{"condition": "approved", "to": "begin_transaction"}, {"condition": "rejected", "to": "cancelled"}]
+      },
+      "begin_transaction": {
+        "id": "begin_transaction", "op": "工作区", "action": "begin_transaction",
+        "paths": "$ctx.edit_plan.files", "label": "aider-before-edit", "output_var": "edit_transaction",
+        "edges": [{"condition": "transaction_started", "to": "reflect"}]
+      },
+      "reflect": {
+        "id": "reflect", "op": "循环", "list_var": "reflection_rounds", "item_var": "reflection_round",
+        "counter_var": "reflection_index", "body_start": "edit", "max_count": 3,
+        "edges": [{"condition": "loop_done", "to": "reflection_limit"}]
+      },
+      "edit": {
+        "id": "edit", "op": "Agent", "agent": "editor", "tools": "all",
+        "visible_tools": ["read_file", "search_files", "glob_search", "ls"],
+        "inputs": {
+          "instructions": "Implement the approved change as Aider SEARCH/REPLACE edit blocks. Inspect the plan and use only workspace-relative filenames. Before proposing edits, inspect every relevant existing source file with the available read-only tools; never claim to have read a file that is absent from the transcript. You may issue at most one read/search action per turn, then continue after its result. Each edit must have the filename immediately before a block with <<<<<<< SEARCH, =======, and >>>>>>> REPLACE. SEARCH must copy the existing code exactly; use an empty SEARCH only to create a new file. Do not modify files through tools and do not return a prose-only answer.\n\nRequest: ${ctx.request}\nPlan: ${ctx.edit_plan}\nReflection round: ${ctx.reflection_round}\nPrevious edit application feedback: ${ctx.edit_apply.feedback}\nPrevious lint/test feedback: ${ctx.review_feedback}"
+        },
+        "outputs": {"text": "editor_response"},
+        "retry": {"max_attempts": 3, "delay_seconds": 1}, "timeout_seconds": 180,
+        "max_tokens": 4096, "temperature": 0.2, "max_tool_calls_per_turn": 1, "max_tool_rounds": 3,
+        "edges": [{"condition": "has_tool_calls", "to": "edit_tools"}, {"condition": "has_text", "to": "parse_edits"}]
+      },
+      "edit_tools": {
+        "id": "edit_tools", "op": "工具", "agent": "editor", "parallel": false,
+        "edges": [{"condition": "default", "to": "edit"}]
+      },
+      "parse_edits": {
+        "id": "parse_edits", "op": "文本处理", "mode": "aider_search_replace",
+        "inputs": {"text": "$ctx.editor_response"}, "valid_filenames": "$ctx.edit_plan.files",
+        "require_edits": true, "max_requeries": 3,
+        "outputs": {"edits": "proposed_edits", "shell_commands": "suggested_shell_commands", "value": "edit_parse"},
+        "edges": [
+          {"condition": "editblocks_parsed", "to": "apply_edits"},
+          {"condition": "format_error", "to": "reflect"},
+          {"condition": "format_error_exhausted", "to": "reflection_limit"}
+        ]
+      },
+      "apply_edits": {
+        "id": "apply_edits", "op": "工作区", "action": "apply_search_replace",
+        "inputs": {"edits": "$ctx.proposed_edits", "allowed_paths": "$ctx.edit_plan.files"},
+        "atomic": false, "fallback_to_allowed_paths": true, "output_var": "edit_apply",
+        "edges": [
+          {"condition": "edits_applied", "to": "has_shell_commands"},
+          {"condition": "edits_partial", "to": "reflect"},
+          {"condition": "edits_failed", "to": "reflect"},
+          {"condition": "no_edits", "to": "reflect"}
+        ]
+      },
+      "has_shell_commands": {
+        "id": "has_shell_commands", "op": "条件", "condition": "len(ctx.suggested_shell_commands) > 0",
+        "edges": [{"condition": "true", "to": "approve_shell_commands"}, {"condition": "false", "to": "review"}]
+      },
+      "approve_shell_commands": {
+        "id": "approve_shell_commands", "op": "人工审批", "name": "suggested_shell_commands",
+        "prompt_text": "Aider 建议运行以下命令。是否明确允许审查 Agent 运行？\n${ctx.suggested_shell_commands}",
+        "data": "$ctx.suggested_shell_commands", "editable": false, "default": "rejected",
+        "edges": [{"condition": "approved", "to": "shell_approved"}, {"condition": "rejected", "to": "shell_rejected"}]
+      },
+      "shell_approved": {
+        "id": "shell_approved", "op": "数据", "action": "set", "key": "shell_commands_approved", "value": true,
+        "edges": [{"condition": "default", "to": "review"}]
+      },
+      "shell_rejected": {
+        "id": "shell_rejected", "op": "数据", "action": "set", "key": "shell_commands_approved", "value": false,
+        "edges": [{"condition": "default", "to": "review"}]
+      },
+      "review": {
+        "id": "review", "op": "子流程", "harness": "aider_review_worker", "agent_map": {"reviewer": "reviewer"},
+        "inputs": {
+          "message": "Perform Aider's automatic post-edit validation. Inspect every changed file. Run lint only when auto_lint is true and lint is relevant to the changed file types; do not search for or run source lint/tests for documentation/comment-only edits unless the approved plan explicitly requires them. Run tests only when auto_test is true. Use commands that work in the current OS and prefer project-declared scripts over Unix-only shell pipelines. Never edit. Suggested shell commands may run only when shell_commands_approved is true. Report exact command output and concrete failures so the editor can reflect; absence of an irrelevant lint run is not a failure.\n\nRequest: ${ctx.request}\nPlan: ${ctx.edit_plan}\nApplied edits: ${ctx.edit_apply}\nauto_lint: ${ctx.auto_lint}\nauto_test: ${ctx.auto_test}\nSuggested shell commands: ${ctx.suggested_shell_commands}\nshell_commands_approved: ${ctx.shell_commands_approved}"
+        },
+        "output_var": "review_result",
+        "edges": [{"condition": "subflow_done", "to": "judge"}]
+      },
+      "judge": {
+        "id": "judge", "op": "模型", "agent": "reviewer", "prompt": "judge_review", "parse_as": "json",
+        "temperature": 0.1, "retry": {"max_attempts": 2, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["accepted", "feedback", "summary"]},
+        "outputs": {"structured.accepted": "review_accepted", "structured.feedback": "review_feedback", "structured.summary": "review_summary"},
+        "edges": [{"condition": "has_text", "to": "accepted"}]
+      },
+      "accepted": {
+        "id": "accepted", "op": "条件", "condition": "ctx.review_accepted",
+        "edges": [{"condition": "true", "to": "success_status"}, {"condition": "false", "to": "approve_reflection"}]
+      },
+      "approve_reflection": {
+        "id": "approve_reflection", "op": "人工审批", "name": "aider_reflection",
+        "prompt_text": "自动 lint/test 发现问题。是否让 Aider 再尝试修复？\n${ctx.review_feedback}",
+        "data": "$ctx.review_feedback", "editable": false, "default": "approved",
+        "edges": [{"condition": "approved", "to": "reflect"}, {"condition": "rejected", "to": "validation_rejected"}]
+      },
+      "validation_rejected": {
+        "id": "validation_rejected", "op": "数据", "action": "set", "key": "aider_status",
+        "value": {"status": "validation_failed", "message": "Validation failed and the user declined another repair attempt.", "review_feedback": "$ctx.review_feedback"},
+        "edges": [{"condition": "default", "to": "review_changes"}]
+      },
+      "success_status": {
+        "id": "success_status", "op": "数据", "action": "set", "key": "aider_status",
+        "value": {"status": "completed", "message": "$ctx.review_summary", "reflection_round": "$ctx.reflection_round", "edit_result": "$ctx.edit_apply"},
+        "edges": [{"condition": "default", "to": "review_changes"}]
+      },
+      "reflection_limit": {
+        "id": "reflection_limit", "op": "数据", "action": "set", "key": "aider_status",
+        "value": {"status": "reflection_limit", "message": "Aider stopped after three unsuccessful edit/review reflections.", "edit_feedback": "$ctx.edit_apply.feedback", "review_feedback": "$ctx.review_feedback"},
+        "edges": [{"condition": "default", "to": "review_changes"}]
+      },
+      "review_changes": {
+        "id": "review_changes", "op": "工作区", "action": "review_transaction", "pending_policy": "reject", "output_var": "change_review",
+        "edges": [
+          {"condition": "changes_accepted", "to": "output"}, {"condition": "changes_partial", "to": "output"},
+          {"condition": "changes_rejected", "to": "output"}, {"condition": "changes_resolved", "to": "output"}
+        ]
+      },
+      "output": {"id": "output", "op": "结束", "value": "${ctx.aider_status.message}\n\n${ctx.editor_response}", "record": true, "edges": []},
+      "cancelled": {"id": "cancelled", "op": "结束", "value": "编辑已取消；架构方案保留在本次运行结果中。", "record": true, "edges": []},
+      "limit_has_transaction": {
+        "id": "limit_has_transaction", "op": "条件", "condition": "exists(ctx._change_transaction)",
+        "edges": [{"condition": "true", "to": "limit_review"}, {"condition": "false", "to": "limit_output"}]
+      },
+      "limit_review": {
+        "id": "limit_review", "op": "工作区", "action": "review_transaction", "pending_policy": "reject", "output_var": "change_review",
+        "edges": [{"condition": "default", "to": "limit_output"}]
+      },
+      "limit_output": {"id": "limit_output", "op": "结束", "value": {"status": "limit_exceeded", "reason": "$ctx._termination.message", "last_response": "$ctx.editor_response"}, "edges": []}
+    }
+  }
+}

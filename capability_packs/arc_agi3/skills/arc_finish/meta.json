@@ -1,0 +1,12 @@
+{
+  "type": "function",
+  "title": "Finish ARC-AGI-3 Run",
+  "name": "arc_finish",
+  "description": "Close an ARC session, persist its final record and return the official scorecard when available.",
+  "permissions": ["network"],
+  "parameters": {
+    "type": "object",
+    "properties": {"session_id": {"type": "string"}},
+    "required": []
+  }
+}

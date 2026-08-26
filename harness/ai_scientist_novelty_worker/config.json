@@ -1,0 +1,99 @@
+{
+  "name": "ai_scientist_novelty_worker",
+  "description": "Source-shaped AI Scientist novelty loop: one decision-or-query turn at a time, sequential paper evidence, early decision, and conservative not-novel after ten rounds.",
+  "slots": {
+    "critic": {"description": "Scientific critic that chooses each query and decides novelty", "required": true, "identity": "dante"},
+    "researcher": {"description": "Research Identity/EGO that retrieves scholarly evidence", "required": true, "identity": "researcher"}
+  },
+  "prompts": {
+    "novelty_step": {
+      "description": "Pinned AI Scientist decision-or-query protocol",
+      "default": "You are an ambitious AI PhD student checking whether an idea is sufficiently novel for a conference or workshop paper. Be a harsh critic. You have at most 10 sequential rounds and may stop early. A missing result is not proof of novelty.\n\nRound {novelty_round}/10.\nCandidate idea:\n{idea}\n\nResults of the last query (empty on round one):\n{last_query_results}\n\nFirst reason briefly. If you have enough evidence, include exactly `Decision made: novel.` or `Decision made: not novel.` in your reasoning. Otherwise choose one precise paper query. End with a JSON object: {{\"Query\":\"paper title, author, method or task\"}}. Query is optional only after a decision."
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 75,
+    "max_node_steps": 420,
+    "timeout_seconds": 1800,
+    "workspace_preview": false,
+    "budget": {"max_model_calls": 40, "max_tool_calls": 100, "max_tokens": 360000},
+    "context": {
+      "idea": "", "novelty_rounds": [1,2,3,4,5,6,7,8,9,10], "novelty_round": 1,
+      "novelty_response": "", "novelty_step": {}, "last_query_results": "",
+      "search_history": [], "errors": [], "novel": false, "decision_made": false, "novelty": {}
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "idea"}, "edges": [{"condition": "input", "to": "novelty_loop"}]},
+      "novelty_loop": {
+        "id": "novelty_loop", "op": "循环", "list_var": "novelty_rounds", "item_var": "novelty_round",
+        "counter_var": "novelty_index", "body_start": "novelty_step", "max_count": 10,
+        "break_when": "ctx.decision_made", "result_var": "round_results",
+        "edges": [{"condition": "loop_break", "to": "finalize"}, {"condition": "loop_done", "to": "finalize"}]
+      },
+      "novelty_step": {
+        "id": "novelty_step", "op": "模型", "agent": "critic", "prompt": "novelty_step",
+        "parse_as": "json_object", "json_fallback": {}, "temperature": 0.1,
+        "retry": {"max_attempts": 1},
+        "outputs": {"text": "novelty_response", "structured": "novelty_step"},
+        "edges": [{"condition": "has_text", "to": "is_novel_decision"}, {"condition": "error", "to": "record_model_error"}]
+      },
+      "is_novel_decision": {
+        "id": "is_novel_decision", "op": "条件",
+        "condition": "contains(lower(ctx.novelty_response), 'decision made: novel')",
+        "edges": [{"condition": "true", "to": "mark_novel"}, {"condition": "false", "to": "is_not_novel_decision"}]
+      },
+      "is_not_novel_decision": {
+        "id": "is_not_novel_decision", "op": "条件",
+        "condition": "contains(lower(ctx.novelty_response), 'decision made: not novel')",
+        "edges": [{"condition": "true", "to": "mark_decided"}, {"condition": "false", "to": "has_query"}]
+      },
+      "mark_novel": {"id": "mark_novel", "op": "数据", "action": "set", "key": "novel", "value": true, "edges": [{"condition": "default", "to": "mark_decided"}]},
+      "mark_decided": {"id": "mark_decided", "op": "数据", "action": "set", "key": "decision_made", "value": true, "edges": [{"condition": "default", "to": "capture_round"}]},
+      "has_query": {
+        "id": "has_query", "op": "条件", "condition": "exists(ctx.novelty_step.Query) and not empty(ctx.novelty_step.Query)",
+        "edges": [{"condition": "true", "to": "research"}, {"condition": "false", "to": "record_format_error"}]
+      },
+      "research": {
+        "id": "research", "op": "子流程", "harness": "open_deep_research_worker", "agent_map": {"researcher": "researcher"},
+        "inputs": {"message": "Search scholarly sources for this exact novelty query: ${ctx.novelty_step.Query}\nCandidate: ${ctx.idea}\nReturn the closest papers with title, authors, year, URL, abstract-level contribution, citation signal when available, and exact overlap or distinction."},
+        "output_var": "paper_evidence",
+        "edges": [{"condition": "subflow_done", "to": "record_search"}, {"condition": "error", "to": "record_search_error"}]
+      },
+      "record_search": {
+        "id": "record_search", "op": "数据", "action": "append", "key": "search_history",
+        "value": {"round": "$ctx.novelty_round", "query": "$ctx.novelty_step.Query", "evidence": "$ctx.paper_evidence"},
+        "edges": [{"condition": "default", "to": "set_last_results"}]
+      },
+      "set_last_results": {"id": "set_last_results", "op": "数据", "action": "set", "key": "last_query_results", "value": "$ctx.paper_evidence", "edges": [{"condition": "default", "to": "capture_round"}]},
+      "record_search_error": {
+        "id": "record_search_error", "op": "数据", "action": "append", "key": "errors",
+        "value": {"round": "$ctx.novelty_round", "stage": "search", "error": "$ctx._error.message"},
+        "edges": [{"condition": "default", "to": "no_papers"}]
+      },
+      "no_papers": {"id": "no_papers", "op": "数据", "action": "set", "key": "last_query_results", "value": "No papers found or the search failed; this is not proof of novelty.", "edges": [{"condition": "default", "to": "capture_round"}]},
+      "record_format_error": {
+        "id": "record_format_error", "op": "数据", "action": "append", "key": "errors",
+        "value": {"round": "$ctx.novelty_round", "stage": "format", "error": "No decision marker and no valid Query."},
+        "edges": [{"condition": "default", "to": "capture_round"}]
+      },
+      "record_model_error": {
+        "id": "record_model_error", "op": "数据", "action": "append", "key": "errors",
+        "value": {"round": "$ctx.novelty_round", "stage": "model", "error": "$ctx._error.message"},
+        "edges": [{"condition": "default", "to": "capture_round"}]
+      },
+      "capture_round": {
+        "id": "capture_round", "op": "数据", "action": "set", "key": "_loop_result",
+        "value": {"round": "$ctx.novelty_round", "response": "$ctx.novelty_response", "query": "$ctx.novelty_step.Query", "decided": "$ctx.decision_made"},
+        "edges": [{"condition": "default", "to": "novelty_loop"}]
+      },
+      "finalize": {
+        "id": "finalize", "op": "数据", "action": "set", "key": "novelty",
+        "value": {"idea": "$ctx.idea", "novel": "$ctx.novel", "decision_made": "$ctx.decision_made", "rounds": "$ctx.novelty_round", "searches": "$ctx.search_history", "errors": "$ctx.errors"},
+        "edges": [{"condition": "default", "to": "output"}]
+      },
+      "output": {"id": "output", "op": "结束", "value": "$ctx.novelty", "edges": []}
+    }
+  }
+}

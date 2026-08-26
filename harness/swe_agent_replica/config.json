@@ -1,0 +1,120 @@
+{
+  "name": "swe_agent_replica",
+  "description": "Source-aligned SWE-agent loop: one thought/action per step, deterministic parsing and requery, ACI observations, last-N observation elision, explicit submission/autosubmit, trajectory checkpoints and budgets.",
+  "slots": {
+    "coder": {"description": "SWE task-solving Identity with repository tools", "required": true, "identity": "coder"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 30,
+    "max_node_steps": 140,
+    "timeout_seconds": 1800,
+    "workspace_preview": true,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "event_log": {"path": ".egoagent/events/{run_id}.jsonl"},
+    "budget": {
+      "max_model_calls": 30,
+      "max_tool_calls": 100,
+      "max_tokens": 320000
+    },
+    "budget_exceeded_to": "limit_status",
+    "limit_finalizer_max_steps": 8,
+    "context": {
+      "issue": "",
+      "working_messages": [],
+      "swe_step": {},
+      "swe_exit_status": "",
+      "submission": "",
+      "termination_reason": "",
+      "change_review": {}
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "issue"}, "edges": [{"condition": "input", "to": "begin_transaction"}]},
+      "begin_transaction": {"id": "begin_transaction", "op": "工作区", "action": "begin_transaction", "output_var": "edit_transaction", "edges": [{"condition": "transaction_started", "to": "context"}]},
+      "context": {
+        "id": "context",
+        "op": "上下文",
+        "action": "last_n_observations",
+        "source": "$session.messages",
+        "observation_last_n": 5,
+        "polling": 1,
+        "max_chars": 100000,
+        "output_var": "working_messages",
+        "edges": [{"condition": "context_ready", "to": "act"}]
+      },
+      "act": {
+        "id": "act",
+        "op": "Agent",
+        "agent": "coder",
+        "tools": "all",
+        "inputs": {
+          "messages": "$ctx.working_messages",
+          "instructions": "Follow the SWE-agent action protocol. Perform exactly one concrete action per turn. Prefer one function call when available. If you answer in text, write a short discussion followed by exactly one shell action in the final fenced code block. Never end with an ordinary prose answer. Use `submit concise verified summary` in the fenced block only when the task is complete; use `exit` only to forfeit. Inspect real observations, make minimal edits, and verify before submitting."
+        },
+        "max_tool_calls_per_turn": 1,
+        "tool_call_count_error_to": "context",
+        "timeout_seconds": 120,
+        "retry": {"max_attempts": 2, "delay_seconds": 1, "backoff": 2},
+        "edges": [
+          {"condition": "has_tool_calls", "to": "tools"},
+          {"condition": "has_text", "to": "parse_action"}
+        ]
+      },
+      "parse_action": {
+        "id": "parse_action",
+        "op": "文本处理",
+        "mode": "thought_action",
+        "inputs": {"text": "$node.act.text"},
+        "action_tool": "run_command",
+        "action_argument": "command",
+        "action_arguments": {"blocking": true, "timeout": 60},
+        "submission_commands": ["submit"],
+        "exit_commands": ["exit"],
+        "max_requeries": 3,
+        "output_var": "swe_step",
+        "outputs": {
+          "value": "swe_step",
+          "exit_status": "swe_exit_status",
+          "submission": "submission"
+        },
+        "edges": [
+          {"condition": "submission", "to": "review_changes"},
+          {"condition": "exit_command", "to": "review_changes"},
+          {"condition": "has_tool_calls", "to": "tools"},
+          {"condition": "format_error", "to": "context"},
+          {"condition": "format_error_exhausted", "to": "review_changes"}
+        ]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "coder",
+        "checkpoint": true,
+        "checkpoint_label": "swe-step",
+        "parallel": false,
+        "end_session_to": "mark_tool_submission",
+        "outputs": {"submission": "submission"},
+        "timeout_seconds": 240,
+        "edges": [
+          {"condition": "tools_executed", "to": "context"},
+          {"condition": "no_tool_calls", "to": "context"}
+        ]
+      },
+      "mark_tool_submission": {"id": "mark_tool_submission", "op": "数据", "action": "set", "key": "swe_exit_status", "value": "submitted", "edges": [{"condition": "default", "to": "review_changes"}]},
+      "limit_status": {"id": "limit_status", "op": "数据", "action": "set", "key": "swe_exit_status", "value": "exit_budget", "edges": [{"condition": "default", "to": "limit_reason"}]},
+      "limit_reason": {"id": "limit_reason", "op": "数据", "action": "set", "key": "termination_reason", "value": "$ctx._termination.message", "edges": [{"condition": "default", "to": "review_changes"}]},
+      "review_changes": {
+        "id": "review_changes", "op": "工作区", "action": "review_transaction", "pending_policy": "reject", "output_var": "change_review",
+        "edges": [{"condition": "changes_accepted", "to": "output"}, {"condition": "changes_partial", "to": "output"}, {"condition": "changes_rejected", "to": "output"}, {"condition": "changes_resolved", "to": "output"}]
+      },
+      "output": {
+        "id": "output",
+        "op": "结束",
+        "inputs": {"value": {"status": "$ctx.swe_exit_status", "submission": "$ctx.submission", "termination_reason": "$ctx.termination_reason", "last_response": "$node.act.text", "trajectory": "$ctx._trajectory", "change_review": "$ctx.change_review"}},
+        "edges": []
+      }
+    }
+  }
+}

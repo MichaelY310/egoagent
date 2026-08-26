@@ -9,9 +9,10 @@ Provides:
 import os
 import json
 import time
+from pathlib import Path
 from typing import List, Dict
 
-DEFAULT_WORKSPACE = "/home/tiger/egoagent"
+DEFAULT_WORKSPACE = str(Path(__file__).resolve().parent.parent)
 
 
 # =============================================================================
@@ -80,17 +81,94 @@ def delete_rule(workspace_path: str = DEFAULT_WORKSPACE, name: str = "") -> Dict
         return {"status": "error", "message": str(e)}
 
 
-def get_effective_rules_prompt(workspace_path: str = DEFAULT_WORKSPACE) -> str:
-    """Combines all rules into a single string suitable for injection into system prompts."""
-    rules = get_rules(workspace_path)
-    if not rules:
-        return ""
+def _agents_files_for_target(workspace_path: str, target_path: str = "") -> List[Path]:
+    """Return applicable ``AGENTS.md`` files from Workspace root to target.
+
+    An instruction file governs its containing directory and descendants.  The
+    ordered result mirrors the scoping model used by mature coding agents:
+    broad project policy first, increasingly specific policy last.
+    """
+
+    workspace = Path(workspace_path).resolve()
+    target = Path(target_path) if target_path else workspace
+    target = target.resolve() if target.is_absolute() else (workspace / target).resolve()
+    try:
+        relative = target.relative_to(workspace)
+    except ValueError:
+        return []
+    current = target if target.is_dir() else target.parent
+    directories = [workspace]
+    cursor = workspace
+    for part in relative.parts[: len(relative.parts) if target.is_dir() else max(0, len(relative.parts) - 1)]:
+        cursor = cursor / part
+        directories.append(cursor)
+    # A non-existent target may be a directory supplied by a search/list tool.
+    if not target.exists() and target.suffix == "" and target not in directories:
+        directories.append(target)
+    unique = []
+    seen = set()
+    for directory in directories:
+        candidate = directory / "AGENTS.md"
+        key = str(candidate).lower()
+        if key not in seen and candidate.is_file():
+            seen.add(key)
+            unique.append(candidate)
+    return unique
+
+
+def get_scoped_agents_prompt(
+    workspace_path: str = DEFAULT_WORKSPACE,
+    target_path: str = "",
+    *,
+    include_root: bool = True,
+) -> str:
+    """Render the ``AGENTS.md`` chain applicable to one target path."""
+
+    workspace = Path(workspace_path).resolve()
     parts = []
+    for agents_file in _agents_files_for_target(str(workspace), target_path):
+        if not include_root and agents_file.parent == workspace:
+            continue
+        try:
+            scope = agents_file.parent.relative_to(workspace).as_posix()
+            label = "workspace root" if scope == "." else scope
+            parts.append(
+                f"[Scoped Workspace Instructions: {label}/AGENTS.md]\n"
+                f"{agents_file.read_text(encoding='utf-8')}\n"
+            )
+        except (IOError, OSError, UnicodeDecodeError, ValueError):
+            continue
+    return "\n".join(parts)
+
+
+def get_effective_rules_prompt(
+    workspace_path: str = DEFAULT_WORKSPACE,
+    target_path: str = "",
+) -> str:
+    """Combine global project rules and target-scoped ``AGENTS.md`` files."""
+    rules = get_rules(workspace_path)
+    parts = []
+    scoped = get_scoped_agents_prompt(workspace_path, target_path)
+    if scoped:
+        parts.append(scoped)
     for rule in rules:
         name = rule["name"]
         content = rule["content"]
         parts.append(f"[Project Rule: {name}]\n{content}\n")
-    return "\n".join(parts)
+    prompt = "\n".join(parts)
+    try:
+        max_chars = max(4096, int(os.environ.get("EGOAGENT_PROJECT_RULES_MAX_CHARS", "16000")))
+    except (TypeError, ValueError):
+        max_chars = 16000
+    if len(prompt) <= max_chars:
+        return prompt
+    omitted = len(prompt) - max_chars
+    return (
+        prompt[:max_chars].rstrip()
+        + f"\n\n[Project instructions truncated: {omitted} additional characters. "
+        "Before editing a specialized area, use read_file/search_files to inspect "
+        "the relevant section of AGENTS.md and project rules.]"
+    )
 
 
 # =============================================================================

@@ -1,0 +1,4 @@
+# Optional dependency for the official ARC-AGI-3 experiments.
+# Keep it separate from the product runtime so installing EgoAgent does not
+# pull benchmark and visualization dependencies onto normal user machines.
+arc-agi==0.9.9

@@ -1,7 +1,7 @@
 {
     "type": "tool",
     "name": "create_tool",
-    "description": "Create a new tool (skill) for an identity. Writes meta.json and Python script. Available on next load.",
+    "description": "Create a reusable deterministic tool (Skill) for an identity. Writes meta.json and Python script; available on the next Agent load. For workspace files, the function may accept optional `_context=None` (do not put it in parameters_schema) and resolve paths from `Path(_context['workspace'])`; never assume the server working directory.",
     "parameters": {
         "type": "object",
         "properties": {

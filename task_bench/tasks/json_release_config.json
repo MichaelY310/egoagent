@@ -1,0 +1,28 @@
+{
+  "version": "ego.task.v1",
+  "id": "json_release_config",
+  "title": "整理发布配置",
+  "description": "验证 JSON 编辑、约束遵循与无需网络的确定性评分。",
+  "category": "configuration",
+  "difficulty": "starter",
+  "tags": ["json", "editing"],
+  "prompt": "修改 release.json：environment 设为 production，retries 设为 3，features.telemetry 设为 false。不要删除其他字段。",
+  "workspace": {
+    "files": {
+      "release.json": "{\n  \"environment\": \"staging\",\n  \"retries\": 1,\n  \"features\": {\n    \"telemetry\": true,\n    \"audit\": true\n  }\n}\n"
+    }
+  },
+  "selection": { "recommended_harness": "react_single", "recommended_identity": "dante" },
+  "environment": { "backend": "local", "network": "disabled" },
+  "execution": { "timeout_seconds": 240 },
+  "evolution": { "allowed": false },
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      { "type": "json_equals", "path": "release.json", "pointer": "/environment", "expected": "production" },
+      { "type": "json_equals", "path": "release.json", "pointer": "/retries", "expected": 3 },
+      { "type": "json_equals", "path": "release.json", "pointer": "/features/telemetry", "expected": false },
+      { "type": "json_equals", "path": "release.json", "pointer": "/features/audit", "expected": true }
+    ]
+  }
+}

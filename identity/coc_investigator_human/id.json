@@ -1,0 +1,88 @@
+{
+  "name": "coc_investigator_human",
+  "personality": {
+    "traits": [
+      "curious",
+      "resourceful",
+      "player-directed"
+    ],
+    "tone": "defined by the human player",
+    "language": "zh"
+  },
+  "role": "human-controlled CoC investigator",
+  "description": "这是人类玩家可反复使用的人物卡。模型不得替玩家决定行动；DAG 只使用人物卡验证玩家声明的能力、数值和装备。",
+  "llm": {
+    "type": "deepseek",
+    "base_url": "https://api.deepseek.com",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.5,
+    "max_tokens": 300
+  },
+  "game_profiles": {
+    "coc7": {
+      "format": "egoagent.coc7.character/v1",
+      "revision": 6,
+      "character": {
+        "name": "Alex Chen",
+        "occupation": "journalist",
+        "age": 30,
+        "backstory": "An investigative reporter drawn to contradictions in official stories."
+      },
+      "characteristics": {
+        "STR": 50,
+        "CON": 55,
+        "SIZ": 55,
+        "DEX": 60,
+        "APP": 60,
+        "INT": 70,
+        "POW": 60,
+        "EDU": 70
+      },
+      "derived": {
+        "hp": 11,
+        "hp_max": 11,
+        "san": 60,
+        "san_max": 99,
+        "mp": 12,
+        "mp_max": 12,
+        "luck": 50,
+        "move": 8,
+        "build": 0,
+        "alive": true,
+        "conscious": true
+      },
+      "skills": {
+        "spot_hidden": 55,
+        "library_use": 60,
+        "listen": 45,
+        "firearms_handgun": 50,
+        "first_aid": 45,
+        "persuade": 50,
+        "photography": 55
+      },
+      "conditions": [],
+      "notes": [],
+      "equipment": {
+        "flashlight": {
+          "label": "flashlight",
+          "action": "illuminate",
+          "charges": 100,
+          "present": true
+        },
+        "notebook": {
+          "label": "notebook",
+          "action": "take_notes",
+          "present": true
+        },
+        "revolver": {
+          "label": ".38 revolver",
+          "action": "firearm_attack",
+          "damage": "1d10",
+          "ammo": 6,
+          "present": true
+        }
+      }
+    }
+  }
+}

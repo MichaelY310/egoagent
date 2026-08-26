@@ -1,0 +1,19 @@
+{
+  "type": "function",
+  "title": "Act in ARC-AGI-3",
+  "name": "arc_act",
+  "description": "Execute exactly one available action in an official ARC-AGI-3 session and observe the exact next text grid. State a falsifiable prediction so failed hypotheses remain visible to the supervisor.",
+  "permissions": ["network"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "session_id": {"type": "string"},
+      "action": {"type": "string", "enum": ["RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6", "ACTION7"]},
+      "x": {"type": "integer", "minimum": 0, "maximum": 63},
+      "y": {"type": "integer", "minimum": 0, "maximum": 63},
+      "prediction": {"type": "string", "description": "What visible state change should occur if the current hypothesis is correct"},
+      "reasoning": {"type": "string", "description": "Concise evidence-based reason for this experiment/action"}
+    },
+    "required": ["action", "prediction", "reasoning"]
+  }
+}

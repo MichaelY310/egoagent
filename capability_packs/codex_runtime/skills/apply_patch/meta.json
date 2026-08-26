@@ -1,0 +1,14 @@
+{
+  "type": "function",
+  "title": "Apply Patch",
+  "name": "apply_patch",
+  "description": "Apply a Codex-style patch to one or more workspace files. Supports Add File, Update File, Delete File and Move to sections. Paths must be workspace-relative.",
+  "permissions": ["write"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "patch": {"type": "string", "description": "Complete patch from *** Begin Patch through *** End Patch"}
+    },
+    "required": ["patch"]
+  }
+}

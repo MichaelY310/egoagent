@@ -1,0 +1,15 @@
+{
+  "type": "function",
+  "title": "Start ARC-AGI-3 Environment",
+  "name": "arc_start",
+  "description": "Start one official ARC-AGI-3 environment. Returns an exact text grid and the currently available actions. Contains no game-specific hints.",
+  "permissions": ["network"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "game_id": {"type": "string", "description": "Official game id such as ls20"},
+      "seed": {"type": "integer", "minimum": 0}
+    },
+    "required": ["game_id"]
+  }
+}

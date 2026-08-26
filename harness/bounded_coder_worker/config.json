@@ -1,0 +1,78 @@
+{
+  "name": "bounded_coder_worker",
+  "description": "Reusable bounded coding ReAct loop with explicit submission, tool budget, context window management, retries and checkpoints.",
+  "slots": {
+    "coder": {"description": "Identity + EGO that performs the coding task", "required": true}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 18,
+    "max_node_steps": 80,
+    "timeout_seconds": 900,
+    "workspace_preview": true,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "budget": {
+      "max_model_calls": 18,
+      "max_tool_calls": 48,
+      "max_tokens": 180000
+    },
+    "nodes": {
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "outputs": {"text": "task"},
+        "edges": [{"condition": "input", "to": "context"}]
+      },
+      "context": {
+        "id": "context",
+        "op": "上下文",
+        "action": "select",
+        "source": "$session.messages",
+        "last_n": 24,
+        "max_chars": 50000,
+        "output_var": "working_messages",
+        "edges": [{"condition": "context_ready", "to": "act"}]
+      },
+      "act": {
+        "id": "act",
+        "op": "Agent",
+        "agent": "coder",
+        "tools": "all",
+        "inputs": {"messages": "$ctx.working_messages"},
+        "timeout_seconds": 120,
+        "retry": {"max_attempts": 2, "delay_seconds": 1, "backoff": 2},
+        "edges": [
+          {"condition": "has_tool_calls", "to": "tools"},
+          {"condition": "has_text", "to": "output"}
+        ]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "coder",
+        "parallel": false,
+        "stuck_threshold": 3,
+        "error_stuck_threshold": 3,
+        "alternating_stuck_threshold": 6,
+        "stuck_prompt": "The recent tool calls are repeating without progress. Inspect the latest observation or error, change strategy, and do not repeat the same call unchanged.",
+        "timeout_seconds": 180,
+        "checkpoint": true,
+        "checkpoint_label": "after-tool-round",
+        "edges": [
+          {"condition": "stuck", "to": "context"},
+          {"condition": "tools_executed", "to": "context"},
+          {"condition": "no_tool_calls", "to": "context"}
+        ]
+      },
+      "output": {
+        "id": "output",
+        "op": "结束",
+        "inputs": {"value": "$node.act.text"},
+        "record": true,
+        "edges": []
+      }
+    }
+  }
+}

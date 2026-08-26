@@ -1,0 +1,51 @@
+{
+  "name": "continue_plan_replica",
+  "description": "Continue plan-mode reproduction: write tools are excluded before the model request, the absolute mode policy still permits Bash and other non-write/MCP tools, and a second execution-time policy blocks injected writes.",
+  "slots": {
+    "planner": {"description": "Read-only coding planner Identity/EGO", "required": true, "identity": "coder"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 24,
+    "max_node_steps": 150,
+    "timeout_seconds": 1200,
+    "budget_exceeded_to": "limit_status",
+    "limit_finalizer_max_steps": 4,
+    "budget": {"max_model_calls": 26, "max_tool_calls": 80, "max_tokens": 260000},
+    "context": {"working_context": []},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "edges": [{"condition": "input", "to": "context"}]},
+      "context": {
+        "id": "context", "op": "上下文", "action": "auto_compact", "source": "$session.messages", "agent": "planner",
+        "context_limit_tokens": 128000, "max_output_tokens": 8192, "reserved_tokens": 12000,
+        "compaction_buffer_ratio": 0.2, "compaction_buffer_cap": 15000,
+        "summary_max_tokens": 2048, "persist_session": true,
+        "output_var": "working_context", "compacted_var": "context_compacted",
+        "edges": [{"condition": "context_ready", "to": "act"}]
+      },
+      "act": {
+        "id": "act", "op": "Agent", "agent": "planner", "tools": "all",
+        "hidden_tools": ["write*", "patch*", "*patch*", "multi_edit", "create_file"],
+        "inputs": {"messages": "$ctx.working_context", "compacted": "$ctx.context_compacted"},
+        "auto_continue_when": "compacted == true", "auto_continue_prompt": "continue", "auto_continue_to": "context", "max_auto_continuations": 1,
+        "duplicate_threshold": 2,
+        "edges": [{"condition": "has_tool_calls", "to": "permissions"}, {"condition": "auto_continue", "to": "context"}, {"condition": "has_text", "to": "output"}]
+      },
+      "permissions": {
+        "id": "permissions", "op": "工具审查", "agent": "planner", "review_mode": "policy", "policy_match": "first", "default_permission": "allow",
+        "policies": [
+          {"tool": "write*", "permission": "exclude"}, {"tool": "patch*", "permission": "exclude"},
+          {"tool": "*patch*", "permission": "exclude"}, {"tool": "multi_edit", "permission": "exclude"},
+          {"tool": "create_file", "permission": "exclude"}, {"tool": "run_command", "permission": "allow"}
+        ],
+        "edges": [{"condition": "default", "to": "tools"}]
+      },
+      "tools": {"id": "tools", "op": "工具", "agent": "planner", "parallel": true, "max_workers": 8, "edges": [{"condition": "tools_executed", "to": "context"}, {"condition": "no_tool_calls", "to": "context"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$node.act.text"}, "record": true, "edges": []},
+      "limit_status": {"id": "limit_status", "op": "数据", "action": "set", "key": "continue_limit_result", "value": {"status": "limit_exceeded", "reason": "$ctx._termination.message", "last_response": "$ctx.text", "trajectory": "$ctx._trajectory"}, "edges": [{"condition": "default", "to": "limit_output"}]},
+      "limit_output": {"id": "limit_output", "op": "结束", "value": "$ctx.continue_limit_result", "edges": []}
+    }
+  }
+}

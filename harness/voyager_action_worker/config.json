@@ -1,0 +1,41 @@
+{
+  "name": "voyager_action_worker",
+  "description": "Voyager-style bounded environment rollout that returns both the final summary and the executable tool trajectory.",
+  "slots": {"actor": {"description": "Acts through tools supplied by its Identity/EGO", "required": true}},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 18,
+    "max_node_steps": 96,
+    "timeout_seconds": 600,
+    "budget": {"max_model_calls": 12, "max_tool_calls": 48, "max_tokens": 120000},
+    "context": {"observations": [], "_trajectory": []},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "edges": [{"condition": "input", "to": "context"}]},
+      "context": {"id": "context", "op": "上下文", "action": "select", "last_n": 24, "max_chars": 60000, "output_var": "observations", "edges": [{"condition": "context_ready", "to": "act"}]},
+      "act": {
+        "id": "act",
+        "op": "Agent",
+        "agent": "actor",
+        "tools": "all",
+        "inputs": {"messages": "$ctx.observations"},
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "timeout_seconds": 120,
+        "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "output"}]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "actor",
+        "stuck_threshold": 3,
+        "error_stuck_threshold": 3,
+        "alternating_stuck_threshold": 6,
+        "stuck_prompt": "The rollout is repeating. Inspect the latest environment observation and change strategy.",
+        "timeout_seconds": 180,
+        "edges": [{"condition": "stuck", "to": "context"}, {"condition": "tools_executed", "to": "context"}]
+      },
+      "output": {"id": "output", "op": "结束", "inputs": {"value": {"summary": "$node.act.text", "trajectory": "$ctx._trajectory"}}, "edges": []}
+    }
+  }
+}

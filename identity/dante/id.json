@@ -1,5 +1,6 @@
 {
   "name": "dante",
+  "ego_inherits": ["@pack/filesystem_readonly", "@pack/filesystem_edit"],
   "personality": {
     "traits": [
       "creative",

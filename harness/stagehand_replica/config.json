@@ -1,0 +1,149 @@
+{
+  "name": "stagehand_replica",
+  "description": "Pinned Stagehand v3 reproduction: DOM/hybrid/CUA mode contracts, 20/10-step bounded execution, atomic browser actions, post-step evidence, forced structured done, deterministic cache replay with repair, and fused verification.",
+  "slots": {
+    "browser_agent": {"description": "Stagehand-style browser operator backed by Identity/EGO tools", "required": true, "identity": "browser_operator"},
+    "verifier": {"description": "Fuses action outcomes and terminal observations", "required": true, "identity": "verify_agent"}
+  },
+  "prompts": {
+    "ensure_done": {
+      "description": "Stagehand forced done finalizer",
+      "default": "The Stagehand browser loop ended without a valid done result. Summarize only facts established by the action/observation trajectory. Decide whether the requested task is complete. Never turn a tool success into proof unless the post-action observation confirms the requested state. Preserve structured output requested by the user under output.\n\nInstruction: {instruction}\nMode: {mode}\nLast agent text: {answer}\nTrajectory: {_trajectory}\n\nReturn ONLY JSON: {{\"reasoning\":\"brief factual summary\",\"taskComplete\":true,\"output\":{{}}}}"
+    },
+    "repair_cache": {
+      "description": "Repair one stale deterministic Stagehand cache step",
+      "default": "A deterministic Stagehand cache replay step failed. Inspect the current browser observation and the failed cached action, then issue at most one corrected browser tool call for the same intent. Do not restart the task, do not claim completion, and do not repeat the exact failed call.\n\nTask: {instruction}\nMode: {mode}\nFailed cached action: {replay_action}\nTrajectory: {_trajectory}"
+    },
+    "verify": {
+      "description": "Stagehand fused evidence judgment",
+      "default": "Evaluate the browser run using only action outcomes and post-action observations. Give each user requirement a pass/fail verdict, identify the first point of failure, and produce a fused outcome. A successful tool call or the agent's own claim is not proof of task success. The forced done result is a summary, not independent evidence.\n\nInstruction: {instruction}\nMode: {mode}\nCache replayed: {cache_hit}\nDone result: {done_result}\nFinal answer: {answer}\nEvidence events: {evidence_events}\n\nReturn ONLY JSON: {{\"success\":true,\"fused_outcome\":\"...\",\"first_failure\":\"\",\"criteria\":[{{\"criterion\":\"...\",\"passed\":true,\"evidence\":\"...\"}}]}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 520,
+    "max_node_steps": 1800,
+    "timeout_seconds": 3600,
+    "budget": {"max_model_calls": 80, "max_tool_calls": 500, "max_tokens": 900000},
+    "context": {
+      "instruction": "",
+      "mode": "dom",
+      "variables": {},
+      "exclude_tools": [],
+      "enable_cache": true,
+      "max_agent_steps": 20,
+      "agent_steps": [],
+      "agent_step": 0,
+      "mode_protocol": "",
+      "agent_context": [],
+      "answer": "",
+      "done_result": {},
+      "completed": false,
+      "evidence_events": [],
+      "human_required": {},
+      "cache_key": "",
+      "cache_entries": [],
+      "cache_matches": [],
+      "cached_entry": {},
+      "cached_actions": [],
+      "cache_hit": false,
+      "replay_tool_calls": [],
+      "cacheable_trajectory": [],
+      "success": false,
+      "fused_outcome": "",
+      "first_failure": "",
+      "criteria": []
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "instruction"}, "edges": [{"condition": "input", "to": "valid_mode"}]},
+      "valid_mode": {"id": "valid_mode", "op": "条件", "expression": "ctx.mode in ['dom', 'hybrid', 'cua']", "edges": [{"condition": "true", "to": "is_cua"}, {"condition": "false", "to": "default_mode"}]},
+      "default_mode": {"id": "default_mode", "op": "数据", "action": "set", "key": "mode", "value": "dom", "edges": [{"condition": "default", "to": "is_cua"}]},
+      "is_cua": {"id": "is_cua", "op": "条件", "expression": "ctx.mode == 'cua'", "edges": [{"condition": "true", "to": "configure_cua"}, {"condition": "false", "to": "is_hybrid"}]},
+      "is_hybrid": {"id": "is_hybrid", "op": "条件", "expression": "ctx.mode == 'hybrid'", "edges": [{"condition": "true", "to": "configure_hybrid"}, {"condition": "false", "to": "configure_dom"}]},
+      "configure_cua": {"id": "configure_cua", "op": "数据", "action": "set", "key": "max_agent_steps", "value": 10, "edges": [{"condition": "default", "to": "protocol_cua"}]},
+      "protocol_cua": {"id": "protocol_cua", "op": "数据", "action": "set", "key": "mode_protocol", "value": "CUA mode: reason from the current screenshot, use direct mouse/keyboard/scroll/browser navigation actions, wait for the resulting page state, and keep every action atomic.", "edges": [{"condition": "default", "to": "cache_key"}]},
+      "configure_hybrid": {"id": "configure_hybrid", "op": "数据", "action": "set", "key": "max_agent_steps", "value": 20, "edges": [{"condition": "default", "to": "protocol_hybrid"}]},
+      "protocol_hybrid": {"id": "protocol_hybrid", "op": "数据", "action": "set", "key": "mode_protocol", "value": "Hybrid mode: observe with a screenshot first, prefer precise coordinate click/type for visible elements, use the accessibility/DOM observation as secondary context, and keep every action atomic.", "edges": [{"condition": "default", "to": "cache_key"}]},
+      "configure_dom": {"id": "configure_dom", "op": "数据", "action": "set", "key": "max_agent_steps", "value": 20, "edges": [{"condition": "default", "to": "protocol_dom"}]},
+      "protocol_dom": {"id": "protocol_dom", "op": "数据", "action": "set", "key": "mode_protocol", "value": "DOM mode: inspect the accessibility/DOM observation before acting, prefer observed element index or selector actions over coordinates, use screenshots only for confirmation, and keep every action atomic.", "edges": [{"condition": "default", "to": "cache_key"}]},
+      "cache_key": {"id": "cache_key", "op": "数据", "action": "set", "key": "cache_key", "value": "${ctx.mode}::${ctx.instruction}::${ctx.variables}::${ctx.exclude_tools}", "edges": [{"condition": "default", "to": "cache_enabled"}]},
+      "cache_enabled": {"id": "cache_enabled", "op": "条件", "expression": "ctx.enable_cache", "edges": [{"condition": "true", "to": "list_cache"}, {"condition": "false", "to": "make_stop"}]},
+      "list_cache": {"id": "list_cache", "op": "记忆", "action": "list", "namespace": "stagehand_agent_cache", "memory_type": "agent_cache", "top_k": 500, "output_var": "cache_entries", "edges": [{"condition": "memory_found", "to": "filter_cache"}, {"condition": "memory_empty", "to": "make_stop"}]},
+      "filter_cache": {"id": "filter_cache", "op": "数据", "action": "filter", "key": "cache_matches", "source": "$ctx.cache_entries", "condition": "item.metadata.cache_key == ctx.cache_key", "edges": [{"condition": "default", "to": "has_cache"}]},
+      "has_cache": {"id": "has_cache", "op": "条件", "expression": "len(ctx.cache_matches) > 0", "edges": [{"condition": "true", "to": "select_cache"}, {"condition": "false", "to": "make_stop"}]},
+      "select_cache": {"id": "select_cache", "op": "数据", "action": "evaluate", "key": "cached_entry", "expression": "ctx.cache_matches[-1]", "edges": [{"condition": "default", "to": "select_cached_actions"}]},
+      "select_cached_actions": {"id": "select_cached_actions", "op": "数据", "action": "filter", "key": "cached_actions", "source": "$ctx.cached_entry.metadata.trajectory", "condition": "item.ok and item.action == 'browser' and item.arguments.get('action') in ['navigate', 'click', 'click_at', 'drag', 'type', 'press', 'scroll', 'wait', 'back', 'new_tab', 'switch_tab', 'accept_dialog', 'dismiss_dialog']", "edges": [{"condition": "default", "to": "mark_cache_hit"}]},
+      "mark_cache_hit": {"id": "mark_cache_hit", "op": "数据", "action": "set", "key": "cache_hit", "value": true, "edges": [{"condition": "default", "to": "replay_loop"}]},
+      "replay_loop": {"id": "replay_loop", "op": "循环", "list_var": "cached_actions", "item_var": "replay_action", "counter_var": "replay_index", "body_start": "build_replay_call", "max_count": 500, "edges": [{"condition": "loop_done", "to": "use_cached_answer"}]},
+      "build_replay_call": {"id": "build_replay_call", "op": "数据", "action": "set", "key": "replay_tool_calls", "value": [{"id": "stagehand-replay-${ctx.replay_index}", "type": "function", "function": {"name": "$ctx.replay_action.action", "arguments": "$ctx.replay_action.arguments"}}], "edges": [{"condition": "default", "to": "replay_tool"}]},
+      "replay_tool": {"id": "replay_tool", "op": "工具", "agent": "browser_agent", "inputs": {"tool_calls": "$ctx.replay_tool_calls"}, "parallel": false, "timeout_seconds": 240, "sensitive_fields": ["text"], "interrupt_when": "is_string(result) and starts_with(lower(result), 'tool ')", "edges": [{"condition": "tools_executed", "to": "replay_ok"}]},
+      "replay_ok": {"id": "replay_ok", "op": "条件", "expression": "ctx._trajectory[-1].ok", "edges": [{"condition": "true", "to": "replay_loop"}, {"condition": "false", "to": "repair_context"}]},
+      "repair_context": {"id": "repair_context", "op": "上下文", "action": "select", "source": "$session.messages", "last_n": 20, "max_chars": 50000, "output_var": "repair_messages", "edges": [{"condition": "context_ready", "to": "repair_cache"}]},
+      "repair_cache": {"id": "repair_cache", "op": "Agent", "agent": "browser_agent", "tools": "all", "inputs": {"messages": "$ctx.repair_messages", "instructions": "A deterministic Stagehand cache replay step failed. Inspect the current browser observation and issue at most one corrected browser tool call for the same intent. Do not restart the task, claim completion, or repeat the exact call. Task: ${ctx.instruction}. Mode: ${ctx.mode}. Failed cached action: ${ctx.replay_action}."}, "max_tool_calls_per_turn": 1, "tool_call_count_error_to": "repair_cache", "retry": {"max_attempts": 2}, "timeout_seconds": 180, "edges": [{"condition": "has_tool_calls", "to": "repair_tool"}, {"condition": "has_text", "to": "make_stop"}]},
+      "repair_tool": {"id": "repair_tool", "op": "工具", "agent": "browser_agent", "parallel": false, "timeout_seconds": 240, "sensitive_fields": ["text"], "edges": [{"condition": "human_required", "to": "human_approval"}, {"condition": "tools_executed", "to": "repair_ok"}]},
+      "repair_ok": {"id": "repair_ok", "op": "条件", "expression": "ctx._trajectory[-1].ok", "edges": [{"condition": "true", "to": "replay_loop"}, {"condition": "false", "to": "make_stop"}]},
+      "use_cached_answer": {"id": "use_cached_answer", "op": "数据", "action": "set", "key": "answer", "value": "$ctx.cached_entry.metadata.answer", "edges": [{"condition": "default", "to": "use_cached_done"}]},
+      "use_cached_done": {"id": "use_cached_done", "op": "数据", "action": "set", "key": "done_result", "value": "$ctx.cached_entry.metadata.done_result", "edges": [{"condition": "default", "to": "use_cached_completed"}]},
+      "use_cached_completed": {"id": "use_cached_completed", "op": "数据", "action": "evaluate", "key": "completed", "expression": "bool(ctx.done_result.get('taskComplete', false))", "edges": [{"condition": "default", "to": "capture_evidence"}]},
+      "make_stop": {"id": "make_stop", "op": "数据", "action": "evaluate", "key": "agent_stop", "expression": "ctx.max_agent_steps + 1", "edges": [{"condition": "default", "to": "make_steps"}]},
+      "make_steps": {"id": "make_steps", "op": "数据", "action": "range", "key": "agent_steps", "range_start": 1, "range_stop": "$ctx.agent_stop", "max_items": 40, "edges": [{"condition": "default", "to": "agent_loop"}]},
+      "agent_loop": {"id": "agent_loop", "op": "循环", "list_var": "agent_steps", "item_var": "agent_step", "body_start": "context", "max_count": "$ctx.max_agent_steps", "edges": [{"condition": "loop_done", "to": "ensure_done"}]},
+      "context": {"id": "context", "op": "上下文", "action": "compact", "source": "$session.messages", "last_n": 30, "keep_last": 12, "max_chars": 70000, "summarize": true, "agent": "browser_agent", "output_var": "agent_context", "edges": [{"condition": "context_ready", "to": "act"}]},
+      "act": {
+        "id": "act", "op": "Agent", "agent": "browser_agent", "tools": "all",
+        "inputs": {"messages": "$ctx.agent_context", "instructions": "Stagehand v3 step ${ctx.agent_step}/${ctx.max_agent_steps}. ${ctx.mode_protocol} Verify the concrete post-action state before taking the next action. Use extract only when the user requested structured data."},
+        "max_tool_calls_per_turn": 8,
+        "duplicate_threshold": 2,
+        "retry": {"max_attempts": 3, "delay_seconds": 1, "backoff": 2},
+        "timeout_seconds": 180,
+        "outputs": {"text": "answer"},
+        "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "ensure_done"}, {"condition": "stuck", "to": "agent_loop"}]
+      },
+      "tools": {
+        "id": "tools", "op": "工具", "agent": "browser_agent", "parallel": false, "timeout_seconds": 240,
+        "sensitive_fields": ["text"],
+        "truncate_after_tools": ["done", "submit_result"],
+        "terminal_tools_to": "ensure_done",
+        "end_session_to": "ensure_done",
+        "stuck_threshold": 3,
+        "error_stuck_threshold": 3,
+        "alternating_stuck_threshold": 6,
+        "stuck_prompt": "The browser actions are looping without new evidence. Observe the current page again and change the action, target, or strategy.",
+        "interrupt_when": "(is_string(result) and starts_with(lower(result), 'tool ')) or (tool == 'browser' and (arguments.get('action') in ['navigate', 'back', 'new_tab', 'switch_tab'] or (is_object(result) and bool(result.get('page_changed', false))) or (is_object(result) and is_object(result.get('observation', {})) and bool(result.get('observation', {}).get('page_changed', false)))))",
+        "outputs": {"human_required": "human_required"},
+        "edges": [{"condition": "human_required", "to": "human_approval"}, {"condition": "stuck", "to": "agent_loop"}, {"condition": "tools_executed", "to": "agent_loop"}, {"condition": "no_tool_calls", "to": "agent_loop"}]
+      },
+      "human_approval": {
+        "id": "human_approval", "op": "人工审批", "name": "browser human handoff", "data": "$ctx.human_required", "editable": false,
+        "prompt_text": "The browser encountered CAPTCHA or another human-only state. Complete it in the visible browser and approve to resume, or reject to finish with a blocked verifier result.",
+        "default": "rejected", "output_var": "human_handoff_decision",
+        "edges": [{"condition": "approved", "to": "agent_loop"}, {"condition": "rejected", "to": "ensure_done"}]
+      },
+      "ensure_done": {
+        "id": "ensure_done", "op": "模型", "agent": "browser_agent", "prompt": "ensure_done", "parse_as": "json_object", "temperature": 0.1,
+        "retry": {"max_attempts": 2, "delay_seconds": 1},
+        "json_fallback": {"reasoning": "$ctx.answer", "taskComplete": false, "output": {}},
+        "output_schema": {"type": "object", "required": ["reasoning", "taskComplete", "output"]},
+        "outputs": {"structured": "done_result", "structured.reasoning": "answer", "structured.taskComplete": "completed"},
+        "edges": [{"condition": "has_text", "to": "select_cacheable"}, {"condition": "json_fallback", "to": "select_cacheable"}]
+      },
+      "select_cacheable": {"id": "select_cacheable", "op": "数据", "action": "filter", "key": "cacheable_trajectory", "source": "$ctx._trajectory", "condition": "item.ok and item.action == 'browser' and item.arguments.get('action') in ['navigate', 'click', 'click_at', 'drag', 'type', 'press', 'scroll', 'wait', 'back', 'new_tab', 'switch_tab', 'accept_dialog', 'dismiss_dialog']", "edges": [{"condition": "default", "to": "store_cache_condition"}]},
+      "store_cache_condition": {"id": "store_cache_condition", "op": "条件", "expression": "ctx.enable_cache", "edges": [{"condition": "true", "to": "store_cache"}, {"condition": "false", "to": "capture_evidence"}]},
+      "store_cache": {
+        "id": "store_cache", "op": "记忆", "action": "upsert", "namespace": "stagehand_agent_cache", "memory_type": "agent_cache", "upsert_key": "metadata.cache_key",
+        "inputs": {"memory": {"text": "$ctx.instruction", "type": "agent_cache", "importance": 1, "metadata": {"cache_key": "$ctx.cache_key", "mode": "$ctx.mode", "variables": "$ctx.variables", "exclude_tools": "$ctx.exclude_tools", "trajectory": "$ctx.cacheable_trajectory", "answer": "$ctx.answer", "done_result": "$ctx.done_result"}}},
+        "edges": [{"condition": "memory_added", "to": "capture_evidence"}, {"condition": "memory_updated", "to": "capture_evidence"}]
+      },
+      "capture_evidence": {"id": "capture_evidence", "op": "数据", "action": "set", "key": "evidence_events", "value": "$ctx._trajectory", "edges": [{"condition": "default", "to": "verify"}]},
+      "verify": {
+        "id": "verify", "op": "模型", "agent": "verifier", "prompt": "verify", "parse_as": "json", "temperature": 0.1,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["success", "fused_outcome", "first_failure", "criteria"]},
+        "outputs": {"structured.success": "success", "structured.fused_outcome": "fused_outcome", "structured.first_failure": "first_failure", "structured.criteria": "criteria"},
+        "edges": [{"condition": "has_text", "to": "output"}]
+      },
+      "output": {"id": "output", "op": "结束", "inputs": {"value": {"success": "$ctx.success", "completed": "$ctx.completed", "answer": "$ctx.answer", "output": "$ctx.done_result.output", "mode": "$ctx.mode", "steps": "$ctx.agent_step", "cache_hit": "$ctx.cache_hit", "outcome": "$ctx.fused_outcome", "first_failure": "$ctx.first_failure", "criteria": "$ctx.criteria", "evidence_events": "$ctx.evidence_events"}}, "edges": []}
+    }
+  }
+}

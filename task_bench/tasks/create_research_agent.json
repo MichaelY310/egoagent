@@ -1,0 +1,23 @@
+{
+  "version": "ego.task.v1",
+  "id": "create_research_agent",
+  "title": "创建论文检索 Agent",
+  "description": "结构进化题：要求现有 Agent 通过 DAG 工具创建可视化的新 Agent/Harness，而不是手写 Python Agent。",
+  "category": "agent-creation",
+  "difficulty": "research",
+  "tags": ["agent-creation", "harness", "evolution"],
+  "prompt": "请使用 EgoAgent 的 create_agent_system / manage_harness 能力创建一个名为 taskbench_paper_scout 的论文检索 Agent。它的 Harness 至少要能接收问题、调用 Agent、处理工具并输出结果。不要通过手写独立 Python Agent 来绕过 DAG。",
+  "workspace": { "files": {} },
+  "selection": { "recommended_harness": "react_single", "recommended_identity": "dante" },
+  "environment": { "backend": "local", "network": "inherit" },
+  "execution": { "timeout_seconds": 600 },
+  "evolution": { "allowed": true, "targets": ["agent", "harness", "identity"] },
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      { "type": "identity_created", "name": "taskbench_paper_scout", "weight": 2 },
+      { "type": "harness_created", "name": "taskbench_paper_scout", "weight": 2 },
+      { "type": "event_emitted", "event": "agent_system_created", "weight": 1 }
+    ]
+  }
+}

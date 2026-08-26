@@ -1,0 +1,21 @@
+{
+  "type": "function",
+  "name": "fetch_urls",
+  "description": "Read up to six public web pages as one bounded evidence pack. Each page receives a stable source id and keeps its URL, title, retrieval time and truncation status. Local/private network targets and unsafe redirects are blocked.",
+  "permissions": ["network"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "urls": {
+        "type": "array",
+        "items": {"type": "string"},
+        "minItems": 1,
+        "maxItems": 6,
+        "description": "Public HTTP or HTTPS URLs, usually selected from web_search results"
+      },
+      "max_chars_per_url": {"type": "integer", "minimum": 1000, "maximum": 30000, "description": "Per-source text limit"},
+      "total_max_chars": {"type": "integer", "minimum": 2000, "maximum": 100000, "description": "Total evidence-pack text limit"}
+    },
+    "required": ["urls"]
+  }
+}

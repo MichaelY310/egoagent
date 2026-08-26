@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
+import { getAIStatus, probeAIProvider } from "../api/client";
+import ModelProfiles from "./ModelProfiles";
+import ProductSetupPanel from "./ProductSetupPanel";
+import SecuritySettings from "./SecuritySettings";
+import TrajectoryCollectionSettingsPanel from "./TrajectoryCollectionSettings";
 
-const BASE = `http://${window.location.hostname}:8765`;
+import { API_BASE as BASE } from '../api/runtime';
 
 interface SettingsData {
   analyzer_harness: string;
@@ -17,6 +22,9 @@ export default function Settings() {
   const [harnesses, setHarnesses] = useState<string[]>([]);
   const [identities, setIdentities] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
+  const [aiStatus, setAIStatus] = useState<any>(null);
+  const [probing, setProbing] = useState(false);
+  const [probeError, setProbeError] = useState("");
 
   useEffect(() => {
     // Load saved settings from localStorage
@@ -31,7 +39,22 @@ export default function Settings() {
     fetch(`${BASE}/api/identities`).then(r => r.json()).then(data => {
       setIdentities(data.map((i: any) => i.name || i));
     }).catch(() => {});
+    getAIStatus().then(setAIStatus).catch((error) => setProbeError(String(error)));
   }, []);
+
+  const runProbe = async () => {
+    setProbing(true);
+    setProbeError("");
+    try {
+      await probeAIProvider();
+      setAIStatus(await getAIStatus());
+    } catch (error) {
+      setProbeError(error instanceof Error ? error.message : String(error));
+      try { setAIStatus(await getAIStatus()); } catch {}
+    } finally {
+      setProbing(false);
+    }
+  };
 
   const save = () => {
     localStorage.setItem("ego_settings", JSON.stringify(settings));
@@ -42,6 +65,64 @@ export default function Settings() {
   return (
     <div style={{ padding: 32, maxWidth: 700, margin: "0 auto" }}>
       <h2 style={{ color: "#fff", marginBottom: 24, fontSize: 18 }}>⚙️ Settings</h2>
+
+      <div style={{
+        background: "#16213e",
+        borderRadius: 8,
+        padding: 20,
+        marginBottom: 20,
+        border: `1px solid ${aiStatus?.health === false ? "#7f1d1d" : aiStatus?.health === true ? "#166534" : "#1e3a5f"}`,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <h3 style={{ color: "#7ecfff", fontSize: 14, margin: "0 0 5px" }}>Model provider</h3>
+            <div style={{ color: "#cbd5e1", fontSize: 12 }}>
+              {aiStatus ? `${aiStatus.provider} · ${aiStatus.model || "no model"}` : "Loading…"}
+            </div>
+          </div>
+          <button
+            onClick={runProbe}
+            disabled={probing || !aiStatus?.configured}
+            style={{ padding: "8px 13px", border: 0, borderRadius: 5, cursor: "pointer", background: "#0369a1", color: "white", opacity: probing || !aiStatus?.configured ? 0.5 : 1 }}
+          >
+            {probing ? "Probing…" : "Probe capabilities"}
+          </button>
+        </div>
+        <div style={{ marginTop: 12, fontSize: 11, color: "#94a3b8", lineHeight: 1.7 }}>
+          <div>Configured: <b style={{ color: aiStatus?.configured ? "#86efac" : "#fca5a5" }}>{aiStatus?.configured ? "yes" : "no"}</b></div>
+          <div>API key: {aiStatus?.has_api_key ? "present (kept server-side)" : "not required / missing"}</div>
+          <div>Health: {aiStatus?.health === true ? "healthy" : aiStatus?.health === false ? "failed" : "not probed"}</div>
+        </div>
+        {aiStatus?.capabilities && Object.keys(aiStatus.capabilities).length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+            {Object.entries(aiStatus.capabilities).map(([role, enabled]) => (
+              <span key={role} style={{ padding: "3px 7px", borderRadius: 999, background: enabled ? "#14532d" : "#3f3f46", color: enabled ? "#bbf7d0" : "#a1a1aa", fontSize: 10 }}>
+                {enabled ? "✓" : "–"} {role}
+              </span>
+            ))}
+          </div>
+        )}
+        {aiStatus?.last_probe?.checks && (
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ cursor: "pointer", color: "#94a3b8", fontSize: 11 }}>Protocol checks and latency</summary>
+            <pre style={{ background: "#08111f", padding: 10, borderRadius: 4, color: "#cbd5e1", fontSize: 10, overflow: "auto" }}>{JSON.stringify(aiStatus.last_probe.checks, null, 2)}</pre>
+          </details>
+        )}
+        {aiStatus?.last_request && (
+          <div style={{ marginTop: 10, fontSize: 10, color: aiStatus.last_request.ok ? "#86efac" : "#fca5a5" }}>
+            Last request: {aiStatus.last_request.ok ? "ok" : aiStatus.last_request.error} · {aiStatus.last_request.latency_ms} ms · retries {aiStatus.last_request.retries || 0}
+          </div>
+        )}
+        {probeError && <div style={{ marginTop: 10, color: "#fca5a5", fontSize: 11 }}>{probeError}</div>}
+      </div>
+
+      <ProductSetupPanel />
+
+      <TrajectoryCollectionSettingsPanel />
+
+      <SecuritySettings />
+
+      <ModelProfiles />
 
       {/* Session Analyzer Config */}
       <div style={{

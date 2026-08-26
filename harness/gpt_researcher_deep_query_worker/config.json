@@ -1,0 +1,41 @@
+{
+  "name": "gpt_researcher_deep_query_worker",
+  "description": "One GPT Researcher deep-search branch: gather a normal research context, then extract cited learnings and follow-up questions as typed data.",
+  "slots": {
+    "researcher": {"description": "Searches and reads sources for one SERP query", "required": true},
+    "strategist": {"description": "Extracts learnings, citations and follow-up questions", "required": true}
+  },
+  "prompts": {
+    "extract": {
+      "description": "Deep Research result processing",
+      "default": "Extract up to three key learnings and up to three follow-up questions from this research context. Pair each learning with its source URL when available. Missing evidence is not a reason to invent a citation.\n\nQuery: {query}\nResearch goal: {research_goal}\nContext: {evidence}\n\nReturn ONLY JSON: {{\"learnings\":[\"...\"],\"follow_up_questions\":[\"...\"],\"citations\":{{\"exact learning\":\"https://...\"}}}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input", "max_steps": 16, "max_node_steps": 100, "timeout_seconds": 240,
+    "budget": {"max_model_calls": 12, "max_tool_calls": 24, "max_tokens": 90000},
+    "context": {"query": "", "research_goal": "", "evidence": "", "learnings": [], "follow_up_questions": [], "citations": {}},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "query"}, "edges": [{"condition": "input", "to": "search"}]},
+      "search": {
+        "id": "search", "op": "子流程", "harness": "gpt_researcher_query_worker",
+        "inputs": {"message": "Research this deep-research query thoroughly: ${ctx.query}\nGoal: ${ctx.research_goal}\nReturn source-grounded context with exact URLs."},
+        "output_var": "evidence", "edges": [{"condition": "subflow_done", "to": "extract"}]
+      },
+      "extract": {
+        "id": "extract", "op": "模型", "agent": "strategist", "prompt": "extract", "parse_as": "json_object",
+        "json_fallback": {"learnings": [], "follow_up_questions": [], "citations": {}}, "temperature": 0.1,
+        "retry": {"max_attempts": 2},
+        "output_schema": {"type": "object", "required": ["learnings", "follow_up_questions", "citations"], "properties": {"learnings": {"type": "array", "items": {"type": "string"}}, "follow_up_questions": {"type": "array", "items": {"type": "string"}}, "citations": {"type": "object"}}},
+        "outputs": {"structured.learnings": "learnings", "structured.follow_up_questions": "follow_up_questions", "structured.citations": "citations"},
+        "edges": [{"condition": "has_text", "to": "output"}]
+      },
+      "output": {
+        "id": "output", "op": "结束",
+        "inputs": {"value": {"query": "$ctx.query", "research_goal": "$ctx.research_goal", "learnings": "$ctx.learnings", "follow_up_questions": "$ctx.follow_up_questions", "citations": "$ctx.citations", "context": "$ctx.evidence"}},
+        "record": true, "edges": []
+      }
+    }
+  }
+}

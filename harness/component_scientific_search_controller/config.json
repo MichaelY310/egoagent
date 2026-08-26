@@ -1,0 +1,74 @@
+{
+  "name": "component_scientific_search_controller",
+  "description": "Reusable hypothesis-ledger and experiment-selection component for unknown long-horizon environments.",
+  "component": {
+    "name": "scientific_search_controller",
+    "display_name": "Scientific Search Controller",
+    "category": "Evolution",
+    "icon": "⌁",
+    "description": "A normal Model proposes beliefs and falsifiable experiments; a deterministic typed boundary reconciles evidence and selects the highest-value non-repeated experiment.",
+    "inputs": {
+      "context_messages": {"required": true, "schema": {"type": "array"}},
+      "memory": {"default": [], "schema": {"type": "array"}},
+      "ledger": {"default": {}, "schema": {"type": "object"}},
+      "trajectory": {"default": [], "schema": {"type": "array"}},
+      "allowed_actions": {"default": [], "schema": {"type": "array"}}
+    },
+    "outputs": {
+      "ledger": {"path": "belief_ledger", "default": {}},
+      "selected": {"path": "selected_experiment", "default": null},
+      "audit": {"path": "search_control.audit", "default": []},
+      "errors": {"path": "search_control.errors", "default": []}
+    }
+  },
+  "slots": {
+    "scientist": {"description": "Model that proposes hypotheses and experiments, but cannot mutate the ledger directly", "required": true, "identity": "arc_supervisor"}
+  },
+  "prompts": {
+    "propose": {
+      "default": "Act as a scientific search planner for an unknown interactive system. Do not take an action and do not assume a familiar game. Reconcile the prior ledger with ONLY the supplied observations. A hypothesis may be supported or falsified only with an exact evidence ref such as step:N or hash:VALUE. Preserve counterexamples. Propose 2-5 experiments that distinguish active hypotheses; each needs at least two predicted outcomes. Prefer high information gain and novel state coverage, penalize repeated actions, and use only currently available actions. Keep claims short.\n\nRecent exact context:\n{context_messages}\n\nDurable memory:\n{memory}\n\nPrior typed ledger:\n{ledger}\n\nRecent trajectory metadata:\n{trajectory}\n\nAdvertised actions (may be empty before derivation):\n{allowed_actions}\n\nReturn ONLY JSON: {{\"update_reason\":\"...\",\"hypotheses\":[{{\"id\":\"h_name\",\"claim\":\"...\",\"status\":\"candidate|supported|falsified|uncertain\",\"confidence\":0.0,\"evidence\":[{{\"kind\":\"observation|support|counterexample\",\"ref\":\"step:N\",\"summary\":\"...\"}}]}}],\"experiments\":[{{\"id\":\"e_name\",\"action\":{{\"name\":\"ACTION1\",\"x\":0,\"y\":0}},\"discriminates\":[\"h_name\"],\"predicted_outcomes\":[\"if H then ...\",\"if not H then ...\"],\"information_gain\":0.0,\"novelty\":0.0,\"cost\":0.0,\"repeat_risk\":0.0,\"rationale\":\"...\"}}]}}"
+    },
+    "repair": {
+      "default": "Repair the scientific-search proposal using the deterministic validator errors. Keep valid evidence and hypotheses; change only invalid fields. Do not insert a task answer or hidden rule.\n\nPrior proposal: {proposal}\nValidator errors: {errors}\nAvailable actions: {allowed_actions}\nReturn ONLY the complete proposal JSON object."
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "propose",
+    "max_steps": 8,
+    "budget": {"max_model_calls": 2, "max_tokens": 24000},
+    "context": {"belief_ledger": {}, "selected_experiment": null, "search_control": {}},
+    "nodes": {
+      "propose": {
+        "id": "propose", "op": "模型", "agent": "scientist", "prompt": "propose",
+        "parse_as": "json_object", "json_fallback": {"update_reason": "invalid model output", "hypotheses": [], "experiments": []},
+        "temperature": 0.1, "max_tokens": 2600,
+        "inputs": {"context_messages": "$ctx.context_messages", "memory": "$ctx.memory", "ledger": "$ctx.ledger", "trajectory": "$ctx.trajectory", "allowed_actions": "$ctx.allowed_actions"},
+        "outputs": {"structured": "proposal"},
+        "edges": [{"condition": "has_text", "to": "reconcile"}, {"condition": "json_fallback", "to": "reconcile"}]
+      },
+      "reconcile": {
+        "id": "reconcile", "op": "搜索控制", "max_hypotheses": 8, "max_experiments": 12,
+        "recent_action_limit": 12, "coordinate_min": 0, "coordinate_max": 63,
+        "inputs": {"ledger": "$ctx.ledger", "proposal": "$ctx.proposal", "trajectory": "$ctx.trajectory", "allowed_actions": "$ctx.allowed_actions"},
+        "output_var": "search_control", "ledger_var": "belief_ledger", "selected_var": "selected_experiment",
+        "edges": [{"condition": "controller_ready", "to": "done"}, {"condition": "controller_invalid", "to": "repair"}, {"condition": "no_experiment", "to": "repair"}]
+      },
+      "repair": {
+        "id": "repair", "op": "模型", "agent": "scientist", "prompt": "repair",
+        "parse_as": "json_object", "json_fallback": "$ctx.proposal", "temperature": 0.05, "max_tokens": 2200,
+        "inputs": {"proposal": "$ctx.proposal", "errors": "$ctx.search_control.errors", "allowed_actions": "$ctx.allowed_actions"},
+        "outputs": {"structured": "proposal"},
+        "edges": [{"condition": "has_text", "to": "reconcile_repair"}, {"condition": "json_fallback", "to": "reconcile_repair"}]
+      },
+      "reconcile_repair": {
+        "id": "reconcile_repair", "op": "搜索控制", "max_hypotheses": 8, "max_experiments": 12,
+        "recent_action_limit": 12, "coordinate_min": 0, "coordinate_max": 63,
+        "inputs": {"ledger": "$ctx.ledger", "proposal": "$ctx.proposal", "trajectory": "$ctx.trajectory", "allowed_actions": "$ctx.allowed_actions"},
+        "output_var": "search_control", "ledger_var": "belief_ledger", "selected_var": "selected_experiment",
+        "edges": [{"condition": "controller_ready", "to": "done"}, {"condition": "controller_invalid", "to": "done"}, {"condition": "no_experiment", "to": "done"}]
+      },
+      "done": {"id": "done", "op": "结束", "value": {"ledger": "$ctx.belief_ledger", "selected": "$ctx.selected_experiment", "audit": "$ctx.search_control.audit", "errors": "$ctx.search_control.errors"}, "edges": []}
+    }
+  }
+}

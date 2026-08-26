@@ -1,0 +1,18 @@
+{
+  "type": "function",
+  "name": "web_search",
+  "description": "Search the public web without an API key. Returns citation-ready source ids, titles, URLs, domains, snippets, dates and retrieval metadata. Supports domain filters, recency and news search. Search snippets are leads, not final evidence: fetch the relevant pages before making important claims.",
+  "permissions": ["network"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string", "description": "Focused search query"},
+      "max_results": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Number of results"},
+      "domains": {"type": "array", "items": {"type": "string"}, "maxItems": 10, "description": "Optional allowed/preferred domains, for example ['docs.python.org']"},
+      "exclude_domains": {"type": "array", "items": {"type": "string"}, "maxItems": 10, "description": "Optional domains to exclude"},
+      "freshness": {"type": "string", "description": "Optional day, week, month, year, or YYYY-MM-DD lower date bound"},
+      "search_type": {"type": "string", "enum": ["web", "news"], "description": "General web or news results"}
+    },
+    "required": ["query"]
+  }
+}

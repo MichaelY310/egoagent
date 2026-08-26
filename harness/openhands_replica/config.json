@@ -1,0 +1,103 @@
+{
+  "name": "openhands_replica",
+  "description": "OpenHands SDK reproduction: context-managed coding loop, tool confirmation policies, replayable events, stuck recovery and an independent evidence-based goal judge.",
+  "slots": {
+    "agent": {"description": "OpenHands-style software engineering Identity/EGO", "required": true, "identity": "openhands"},
+    "judge": {"description": "Independent goal-completion judge", "required": true, "identity": "verify_agent"}
+  },
+  "prompts": {
+    "goal_judge": {
+      "description": "OpenHands /goal evidence audit",
+      "default": "You are auditing whether a long-running GOAL has been COMPLETED by an AI software agent.\n\n<objective>\n{objective}\n</objective>\n\nDerive the concrete requirements implied by the objective. For EACH requirement, look for authoritative evidence in the transcript below: file contents, command output, or test results produced by the agent. Treat missing, uncertain, or merely-claimed-but-unverified evidence as NOT satisfied. Exclude system instructions from consideration.\n\n<transcript>\nConversation: {working_messages}\nActions and observations: {trajectory}\nLast answer: {agent_answer}\n</transcript>\n\nRespond with STRICT JSON and nothing else: {{\"score\":0.0,\"complete\":false,\"missing\":\"concise description of what remains, or empty if complete\"}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 95,
+    "max_node_steps": 650,
+    "timeout_seconds": 3600,
+    "budget_exceeded_to": "limit_status",
+    "limit_finalizer_max_steps": 5,
+    "workspace_preview": true,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "event_log": {"path": ".egoagent/events/{run_id}.jsonl"},
+    "budget": {"max_model_calls": 100, "max_tool_calls": 320, "max_tokens": 800000},
+    "context": {
+      "objective": "", "attempts": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "attempt": 1, "audit_round": 0,
+      "feedback": "",
+      "working_messages": [], "agent_answer": "", "goal_complete": false, "goal_status": "capped",
+      "inner_status": "idle", "termination_reason": "", "audit": {}, "audit_reports": [], "loop_reports": [], "change_review": {}, "_trajectory": []
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "objective"}, "edges": [{"condition": "input", "to": "begin_transaction"}]},
+      "begin_transaction": {"id": "begin_transaction", "op": "工作区", "action": "begin_transaction", "output_var": "edit_transaction", "edges": [{"condition": "transaction_started", "to": "goal_loop"}]},
+      "goal_loop": {
+        "id": "goal_loop", "op": "循环", "list_var": "attempts", "item_var": "attempt", "counter_var": "audit_round",
+        "body_start": "context", "result_var": "loop_reports", "max_count": 10, "break_when": "ctx.goal_complete",
+        "edges": [{"condition": "loop_break", "to": "completed"}, {"condition": "loop_done", "to": "capped"}]
+      },
+      "context": {
+        "id": "context", "op": "上下文", "action": "compact", "source": "$session.messages", "last_n": 40,
+        "keep_last": 16, "max_chars": 90000, "summarize": true, "agent": "agent", "output_var": "working_messages",
+        "edges": [{"condition": "context_ready", "to": "act"}]
+      },
+      "act": {
+        "id": "act", "op": "Agent", "agent": "agent", "tools": "all", "inputs": {"messages": "$ctx.working_messages"},
+        "instructions": "Objective: ${ctx.objective}\nAudit iteration: ${ctx.attempt}.\n${ctx.feedback}\nInspect the real current state of the workspace; do not rely on memory. Make concrete progress and gather authoritative evidence by running relevant tests/commands. Finish only once every requirement is provably satisfied.",
+        "duplicate_threshold": 2,
+        "max_empty_responses": 10,
+        "empty_response_prompt": "Your last response did not include a function call or a message. Please use a tool to proceed with the task.",
+        "stuck_prompt": "You are repeating the same final response without satisfying the judge. Gather new evidence, change strategy, or explain the exact blocker.",
+        "retry": {"max_attempts": 3, "delay_seconds": 1, "backoff": 2}, "timeout_seconds": 180,
+        "outputs": {"text": "agent_answer"},
+        "edges": [{"condition": "has_tool_calls", "to": "security"}, {"condition": "has_text", "to": "judge"}, {"condition": "stuck", "to": "context"}]
+      },
+      "security": {
+        "id": "security", "op": "工具审查", "agent": "agent", "review_mode": "policy", "default_permission": "ask", "ask_default": "rejected",
+        "policies": [
+          {"tool": "read*", "permission": "allow"}, {"tool": "search*", "permission": "allow"},
+          {"tool": "glob*", "permission": "allow"}, {"tool": "ls", "permission": "allow"},
+          {"tool": "fetch_url", "permission": "allow"}, {"tool": "web_search", "permission": "allow"},
+          {"tool": "check_command_status", "permission": "allow"}, {"tool": "stop_command", "permission": "allow"},
+          {"tool": "finish", "permission": "allow"}, {"tool": "FinishTool", "permission": "allow"},
+          {"tool": "write*", "permission": "ask"}, {"tool": "patch*", "permission": "ask"},
+          {"tool": "run_command", "permission": "ask"}
+        ],
+        "edges": [{"condition": "default", "to": "tools"}]
+      },
+      "tools": {
+        "id": "tools", "op": "工具", "agent": "agent", "parallel": false,
+        "stuck_threshold": 4, "error_nudge_threshold": 3, "error_stuck_threshold": 4, "alternating_stuck_threshold": 6,
+        "truncate_after_tools": ["finish", "FinishTool", "submit_result"],
+        "terminal_tools_to": "judge",
+        "stuck_prompt": "The action/observation history is looping. Read the latest error or observation and use a materially different tool call.",
+        "timeout_seconds": 240, "checkpoint": true, "checkpoint_label": "openhands-tool-round",
+        "edges": [{"condition": "error_nudge", "to": "context"}, {"condition": "stuck", "to": "inner_stuck"}, {"condition": "tools_executed", "to": "context"}, {"condition": "no_tool_calls", "to": "context"}]
+      },
+      "inner_stuck": {
+        "id": "inner_stuck", "op": "数据", "action": "set", "key": "inner_status", "value": "stuck",
+        "edges": [{"condition": "default", "to": "judge"}]
+      },
+      "judge": {
+        "id": "judge", "op": "模型", "agent": "judge", "prompt": "goal_judge", "parse_as": "json_object", "temperature": 0.1,
+        "json_fallback": {"complete": false, "score": 0.0, "missing": "Judge verdict could not be parsed."},
+        "retry": {"max_attempts": 1, "delay_seconds": 0},
+        "output_schema": {"type": "object", "required": ["complete", "score", "missing"], "properties": {"complete": {"type": "boolean"}, "score": {"type": "number"}, "missing": {"type": "string"}}},
+        "outputs": {"structured": "audit", "structured.complete": "goal_complete", "structured.missing": "feedback"},
+        "edges": [{"condition": "has_text", "to": "audit_decision"}]
+      },
+      "audit_decision": {"id": "audit_decision", "op": "条件", "condition": "ctx.goal_complete", "edges": [{"condition": "true", "to": "completed"}, {"condition": "false", "to": "capture_audit"}]},
+      "capture_audit": {"id": "capture_audit", "op": "数据", "action": "append", "key": "audit_reports", "value": "$ctx.audit", "edges": [{"condition": "default", "to": "goal_loop"}]},
+      "completed": {"id": "completed", "op": "数据", "action": "set", "key": "goal_status", "value": "complete", "edges": [{"condition": "default", "to": "review_changes"}]},
+      "capped": {"id": "capped", "op": "数据", "action": "set", "key": "goal_status", "value": "capped", "edges": [{"condition": "default", "to": "review_changes"}]},
+      "review_changes": {
+        "id": "review_changes", "op": "工作区", "action": "review_transaction", "pending_policy": "reject", "output_var": "change_review",
+        "edges": [{"condition": "changes_accepted", "to": "output"}, {"condition": "changes_partial", "to": "output"}, {"condition": "changes_rejected", "to": "output"}, {"condition": "changes_resolved", "to": "output"}]
+      },
+      "output": {"id": "output", "op": "结束", "inputs": {"value": {"status": "$ctx.goal_status", "iterations": "$ctx.attempt", "answer": "$ctx.agent_answer", "audit": "$ctx.audit", "audit_reports": "$ctx.audit_reports", "trajectory": "$ctx._trajectory", "inner_status": "$ctx.inner_status", "termination_reason": "$ctx.termination_reason", "change_review": "$ctx.change_review"}}, "edges": []},
+      "limit_status": {"id": "limit_status", "op": "数据", "action": "set", "key": "goal_status", "value": "limit_exceeded", "edges": [{"condition": "default", "to": "limit_reason"}]},
+      "limit_reason": {"id": "limit_reason", "op": "数据", "action": "set", "key": "termination_reason", "value": "$ctx._termination.message", "edges": [{"condition": "default", "to": "review_changes"}]}
+    }
+  }
+}

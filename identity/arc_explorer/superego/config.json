@@ -1,0 +1,9 @@
+{
+  "task_prompt": "Solve the requested unknown interactive environment using only its declared actions and exact observations. Do not assume it is a familiar game. First identify controllable objects and invariants, then run low-cost falsifiable experiments. Before every arc_act, state a concrete prediction and a concise reason. Compare the next grid to the prediction, explicitly retire contradicted hypotheses, and carry validated mechanics across levels. Prefer information-gaining actions until the goal is understood, then execute the shortest credible plan. Treat repeated states or no-change streaks as evidence to change strategy. When state is WIN, or the declared action budget is exhausted, call arc_finish exactly once.",
+  "tool_access": {"whitelist": ["arc_start", "arc_act", "arc_status", "arc_finish"], "blacklist": []},
+  "knowledge_access": {"whitelist": [], "blacklist": []},
+  "allow_create_agent": false,
+  "allow_create_identity": false,
+  "allow_modify_agent": false,
+  "allow_modify_identity": false
+}

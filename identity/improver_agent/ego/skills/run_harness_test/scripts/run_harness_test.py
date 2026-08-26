@@ -21,7 +21,7 @@ def run_harness_test(harness_name: str, agent_identity: str, task: str, max_step
     sys.path.insert(0, str(project_root))
     try:
         from agent import Agent
-        from harness import Harness, set_current_harness, get_current_harness
+        from harness import Harness, reset_current_harness, set_current_harness, get_current_harness
         
         # Determine which slot to fill
         config = json.loads((harness_dir / "config.json").read_text(encoding="utf-8"))
@@ -50,7 +50,7 @@ def run_harness_test(harness_name: str, agent_identity: str, task: str, max_step
         
         # Save parent harness and set this as current
         parent = get_current_harness()
-        set_current_harness(harness)
+        harness_token = set_current_harness(harness)
         
         # Inject task
         msg = {"role": "user", "content": task}
@@ -62,9 +62,8 @@ def run_harness_test(harness_name: str, agent_identity: str, task: str, max_step
             harness.run_func(harness)
         except Exception as run_err:
             pass
-        
-        # Restore parent
-        set_current_harness(parent)
+        finally:
+            reset_current_harness(harness_token)
         
         # Evaluate results
         messages = harness.session.messages

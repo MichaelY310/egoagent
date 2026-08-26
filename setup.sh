@@ -1,1 +1,0 @@
-uv add "mcp[cli]" httpx openai

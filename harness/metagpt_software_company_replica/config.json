@@ -1,0 +1,121 @@
+{
+  "name": "metagpt_software_company_replica",
+  "description": "MetaGPT software-company SOP reproduction: durable Identity/EGO role registration, acknowledged artifact messaging, typed PRD and architecture, dependency-aware engineering and iterative QA.",
+  "slots": {
+    "product": {"description": "Product Manager Identity/EGO that turns the requirement into a PRD", "required": true, "identity": "dante"},
+    "architect": {"description": "Architect Identity/EGO that converts the PRD into a system design", "required": true, "identity": "dante"},
+    "manager": {"description": "Project Manager Identity/EGO that creates an ordered task list", "required": true, "identity": "dante"},
+    "engineer": {"description": "Engineer Identity/EGO with repository tools", "required": true, "identity": "coder"},
+    "qa": {"description": "QA Identity/EGO that reviews artifacts and drives a bounded repair loop", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "prd": {
+      "description": "MetaGPT-style Product Manager handoff",
+      "default": "Act as a Product Manager. Turn the original requirement into a precise PRD in the same language as the user. Separate goals, personas, user stories, functional requirements, non-functional requirements, constraints, risks and acceptance criteria. Do not invent unavailable business facts.\n\nOriginal requirement:\n{requirement}\n\nReturn ONLY JSON: {{\"name\":\"...\",\"goals\":[\"...\"],\"user_stories\":[\"...\"],\"functional_requirements\":[\"...\"],\"non_functional_requirements\":[\"...\"],\"constraints\":[\"...\"],\"acceptance_criteria\":[\"...\"]}}"
+    },
+    "design": {
+      "description": "MetaGPT-style Architect handoff",
+      "default": "Act as a pragmatic software architect. Produce the smallest complete design that satisfies the PRD. Define modules, interfaces, data model, runtime flow, technology choices and verification strategy. Keep dependencies explicit and prefer established libraries. The role inbox is the durable handoff record; verify it agrees with the typed PRD before proceeding.\n\nRequirement: {requirement}\nPRD: {prd}\nArchitect inbox: {architect_inbox}\n\nReturn ONLY JSON: {{\"summary\":\"...\",\"modules\":[{{\"name\":\"...\",\"responsibility\":\"...\"}}],\"interfaces\":[\"...\"],\"data_model\":[\"...\"],\"runtime_flow\":[\"...\"],\"technology\":[\"...\"],\"verification\":[\"...\"]}}"
+    },
+    "tasks": {
+      "description": "MetaGPT-style dependency-ordered project plan",
+      "default": "Act as a Project Manager. Break the design into a small dependency-ordered implementation plan. Each task must own a concrete deliverable and acceptance check. Put prerequisites before dependents. The role inbox is the durable architecture handoff; verify it agrees with the typed design before proceeding.\n\nRequirement: {requirement}\nPRD: {prd}\nDesign: {design}\nManager inbox: {manager_inbox}\n\nReturn ONLY JSON: {{\"tasks\":[{{\"id\":\"T1\",\"title\":\"...\",\"deliverable\":\"path or artifact\",\"description\":\"...\",\"dependencies\":[],\"acceptance\":[\"...\"]}}]}}"
+    },
+    "qa": {
+      "description": "MetaGPT-style QA decision",
+      "default": "Act as a strict QA engineer. Review the original requirement, PRD, design, task list, implementation reports and any repair reports. Treat the durable role inbox as the authoritative artifact handoff, but do not accept a claim without workspace evidence. If rejected, give a concrete, minimal repair request for the engineer.\n\nRequirement: {requirement}\nPRD: {prd}\nDesign: {design}\nTasks: {tasks}\nImplementation reports: {implementation_reports}\nRepair reports: {repair_reports}\nDurable QA inbox: {qa_inbox}\nQA round: {qa_round}\n\nReturn ONLY JSON: {{\"accepted\":true,\"summary\":\"...\",\"feedback\":\"...\",\"tests\":[{{\"name\":\"...\",\"status\":\"pass|fail|not_run\",\"evidence\":\"...\"}}]}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 80,
+    "max_node_steps": 500,
+    "timeout_seconds": 3600,
+    "workspace_preview": true,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "budget": {"max_model_calls": 80, "max_tool_calls": 240, "max_tokens": 700000},
+    "context": {
+      "requirement": "",
+      "prd": {},
+      "design": {},
+      "tasks": [],
+      "implementation_reports": [],
+      "repair_reports": [],
+      "qa_rounds": [1, 2, 3],
+      "qa_round": 0,
+      "qa_accepted": false,
+      "qa_summary": "",
+      "qa_feedback": "",
+      "qa_tests": [],
+      "architect_inbox": [],
+      "manager_inbox": [],
+      "engineer_inbox": [],
+      "qa_inbox": []
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "requirement"}, "edges": [{"condition": "input", "to": "register_product"}]},
+      "register_product": {"id": "register_product", "op": "数据", "action": "agent_register", "agent_id": "product:${ctx._run_id}", "identity": "dante", "subscriptions": [], "metadata": {"role": "Product Manager"}, "edges": [{"condition": "agent_registered", "to": "register_architect"}]},
+      "register_architect": {"id": "register_architect", "op": "数据", "action": "agent_register", "agent_id": "architect:${ctx._run_id}", "identity": "dante", "subscriptions": ["metagpt.${ctx._run_id}.prd"], "metadata": {"role": "Architect"}, "edges": [{"condition": "agent_registered", "to": "register_manager"}]},
+      "register_manager": {"id": "register_manager", "op": "数据", "action": "agent_register", "agent_id": "manager:${ctx._run_id}", "identity": "dante", "subscriptions": ["metagpt.${ctx._run_id}.design"], "metadata": {"role": "Project Manager"}, "edges": [{"condition": "agent_registered", "to": "register_engineer"}]},
+      "register_engineer": {"id": "register_engineer", "op": "数据", "action": "agent_register", "agent_id": "engineer:${ctx._run_id}", "identity": "coder", "subscriptions": ["metagpt.${ctx._run_id}.tasks"], "metadata": {"role": "Engineer"}, "edges": [{"condition": "agent_registered", "to": "register_qa"}]},
+      "register_qa": {"id": "register_qa", "op": "数据", "action": "agent_register", "agent_id": "qa:${ctx._run_id}", "identity": "dante", "subscriptions": ["metagpt.${ctx._run_id}.*"], "metadata": {"role": "QA Engineer"}, "edges": [{"condition": "agent_registered", "to": "prd"}]},
+      "prd": {
+        "id": "prd", "op": "模型", "agent": "product", "prompt": "prd", "parse_as": "json", "temperature": 0.2,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["name", "goals", "user_stories", "functional_requirements", "non_functional_requirements", "constraints", "acceptance_criteria"]},
+        "outputs": {"structured": "prd"}, "edges": [{"condition": "has_text", "to": "publish_prd"}]
+      },
+      "publish_prd": {"id": "publish_prd", "op": "数据", "action": "message_publish", "topic": "metagpt.${ctx._run_id}.prd", "sender": "product:${ctx._run_id}", "payload": "$ctx.prd", "idempotency_key": "${ctx._run_id}:prd", "edges": [{"condition": "message_published", "to": "receive_prd"}]},
+      "receive_prd": {"id": "receive_prd", "op": "数据", "action": "message_receive", "agent_id": "architect:${ctx._run_id}", "topics": ["metagpt.${ctx._run_id}.prd"], "limit": 10, "output_var": "architect_inbox", "edges": [{"condition": "messages_received", "to": "design"}]},
+      "design": {
+        "id": "design", "op": "模型", "agent": "architect", "prompt": "design", "parse_as": "json", "temperature": 0.15,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["summary", "modules", "interfaces", "data_model", "runtime_flow", "technology", "verification"]},
+        "outputs": {"structured": "design"}, "edges": [{"condition": "has_text", "to": "publish_design"}]
+      },
+      "publish_design": {"id": "publish_design", "op": "数据", "action": "message_publish", "topic": "metagpt.${ctx._run_id}.design", "sender": "architect:${ctx._run_id}", "payload": "$ctx.design", "idempotency_key": "${ctx._run_id}:design", "edges": [{"condition": "message_published", "to": "ack_prd"}]},
+      "ack_prd": {"id": "ack_prd", "op": "数据", "action": "message_ack", "receipts": "$ctx.architect_inbox", "edges": [{"condition": "messages_acknowledged", "to": "receive_design"}]},
+      "receive_design": {"id": "receive_design", "op": "数据", "action": "message_receive", "agent_id": "manager:${ctx._run_id}", "topics": ["metagpt.${ctx._run_id}.design"], "limit": 10, "output_var": "manager_inbox", "edges": [{"condition": "messages_received", "to": "tasks"}]},
+      "tasks": {
+        "id": "tasks", "op": "模型", "agent": "manager", "prompt": "tasks", "parse_as": "json", "temperature": 0.1,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["tasks"], "properties": {"tasks": {"type": "array", "items": {"type": "object", "required": ["id", "title", "deliverable", "description", "dependencies", "acceptance"]}}}},
+        "outputs": {"structured.tasks": "tasks"}, "edges": [{"condition": "has_text", "to": "publish_tasks"}]
+      },
+      "publish_tasks": {"id": "publish_tasks", "op": "数据", "action": "message_publish", "topic": "metagpt.${ctx._run_id}.tasks", "sender": "manager:${ctx._run_id}", "payload": "$ctx.tasks", "idempotency_key": "${ctx._run_id}:tasks", "edges": [{"condition": "message_published", "to": "ack_design"}]},
+      "ack_design": {"id": "ack_design", "op": "数据", "action": "message_ack", "receipts": "$ctx.manager_inbox", "edges": [{"condition": "messages_acknowledged", "to": "receive_tasks"}]},
+      "receive_tasks": {"id": "receive_tasks", "op": "数据", "action": "message_receive", "agent_id": "engineer:${ctx._run_id}", "topics": ["metagpt.${ctx._run_id}.tasks"], "limit": 10, "output_var": "engineer_inbox", "edges": [{"condition": "messages_received", "to": "implement"}]},
+      "implement": {"id": "implement", "op": "循环", "list_var": "tasks", "item_var": "current_task", "body_start": "engineer", "result_var": "implementation_reports", "max_count": 100, "edges": [{"condition": "loop_done", "to": "checkpoint"}]},
+      "engineer": {
+        "id": "engineer", "op": "子流程", "harness": "bounded_coder_worker", "agent_map": {"coder": "engineer"},
+        "inputs": {"message": "Implement this MetaGPT project task in the current workspace. Inspect existing files first, respect dependencies, make the smallest coherent change, run relevant verification, and explicitly report changed artifacts plus test evidence.\n\nOriginal requirement: ${ctx.requirement}\nPRD: ${ctx.prd}\nSystem design: ${ctx.design}\nDurable task inbox: ${ctx.engineer_inbox}\nCurrent ordered task: ${ctx.current_task}\nPrior implementation reports: ${ctx.implementation_reports}"},
+        "output_var": "current_implementation", "edges": [{"condition": "subflow_done", "to": "publish_implementation"}]
+      },
+      "publish_implementation": {"id": "publish_implementation", "op": "数据", "action": "message_publish", "topic": "metagpt.${ctx._run_id}.implementation.${ctx.current_task.id}", "sender": "engineer:${ctx._run_id}", "payload": {"task": "$ctx.current_task", "report": "$ctx.current_implementation"}, "idempotency_key": "${ctx._run_id}:implementation:${ctx.current_task.id}", "edges": [{"condition": "message_published", "to": "capture_implementation"}]},
+      "capture_implementation": {"id": "capture_implementation", "op": "数据", "action": "set", "key": "_loop_result", "value": "$ctx.current_implementation", "edges": [{"condition": "default", "to": "implement"}]},
+      "checkpoint": {"id": "checkpoint", "op": "检查点", "action": "save", "label": "metagpt-implementation", "edges": [{"condition": "checkpoint_saved", "to": "ack_tasks"}]},
+      "ack_tasks": {"id": "ack_tasks", "op": "数据", "action": "message_ack", "receipts": "$ctx.engineer_inbox", "edges": [{"condition": "messages_acknowledged", "to": "reset_qa"}]},
+      "reset_qa": {"id": "reset_qa", "op": "数据", "action": "set", "key": "qa_accepted", "value": false, "edges": [{"condition": "default", "to": "qa_loop"}]},
+      "qa_loop": {"id": "qa_loop", "op": "循环", "list_var": "qa_rounds", "item_var": "qa_round", "body_start": "receive_qa_messages", "break_when": "ctx.qa_accepted", "max_count": 5, "edges": [{"condition": "loop_break", "to": "output"}, {"condition": "loop_done", "to": "output"}]},
+      "receive_qa_messages": {"id": "receive_qa_messages", "op": "数据", "action": "message_receive", "agent_id": "qa:${ctx._run_id}", "topics": ["metagpt.${ctx._run_id}.*"], "limit": 100, "lease_seconds": 300, "output_var": "qa_inbox", "edges": [{"condition": "messages_received", "to": "qa_review"}, {"condition": "message_empty", "to": "qa_review"}]},
+      "qa_review": {
+        "id": "qa_review", "op": "模型", "agent": "qa", "prompt": "qa", "parse_as": "json", "temperature": 0.1,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["accepted", "summary", "feedback", "tests"]},
+        "outputs": {"structured.accepted": "qa_accepted", "structured.summary": "qa_summary", "structured.feedback": "qa_feedback", "structured.tests": "qa_tests"},
+        "edges": [{"condition": "has_text", "to": "ack_qa_messages"}]
+      },
+      "ack_qa_messages": {"id": "ack_qa_messages", "op": "数据", "action": "message_ack", "receipts": "$ctx.qa_inbox", "edges": [{"condition": "messages_acknowledged", "to": "qa_decision"}]},
+      "qa_decision": {"id": "qa_decision", "op": "条件", "condition": "ctx.qa_accepted", "edges": [{"condition": "true", "to": "qa_loop"}, {"condition": "false", "to": "repair"}]},
+      "repair": {
+        "id": "repair", "op": "子流程", "harness": "bounded_coder_worker", "agent_map": {"coder": "engineer"},
+        "inputs": {"message": "Repair the current project according to the QA finding. Inspect the real workspace, make only necessary changes, and run verification.\n\nOriginal requirement: ${ctx.requirement}\nPRD: ${ctx.prd}\nSystem design: ${ctx.design}\nTasks: ${ctx.tasks}\nQA feedback: ${ctx.qa_feedback}\nQA tests: ${ctx.qa_tests}"},
+        "output_var": "current_repair", "edges": [{"condition": "subflow_done", "to": "publish_repair"}]
+      },
+      "publish_repair": {"id": "publish_repair", "op": "数据", "action": "message_publish", "topic": "metagpt.${ctx._run_id}.repair.${ctx.qa_round}", "sender": "engineer:${ctx._run_id}", "payload": {"qa_feedback": "$ctx.qa_feedback", "report": "$ctx.current_repair"}, "idempotency_key": "${ctx._run_id}:repair:${ctx.qa_round}", "edges": [{"condition": "message_published", "to": "capture_repair"}]},
+      "capture_repair": {"id": "capture_repair", "op": "数据", "action": "append", "key": "repair_reports", "value": "$ctx.current_repair", "edges": [{"condition": "default", "to": "qa_loop"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": {"accepted": "$ctx.qa_accepted", "summary": "$ctx.qa_summary", "tests": "$ctx.qa_tests", "implementation_reports": "$ctx.implementation_reports", "repair_reports": "$ctx.repair_reports", "prd": "$ctx.prd", "design": "$ctx.design", "tasks": "$ctx.tasks"}}, "edges": []}
+    }
+  }
+}

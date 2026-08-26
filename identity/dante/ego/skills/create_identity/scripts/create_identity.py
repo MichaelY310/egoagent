@@ -2,6 +2,7 @@
 从零创建一个新的 agent identity，包含完整目录结构。
 """
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -31,8 +32,17 @@ def create_identity(name: str, role: str, description: str,
         return f"Error: identity '{name}' already exists at {identity_dir}."
 
     # 获取默认 LLM 配置
-    default_base_url = CONFIG.get("default_llm_base_url", "http://[fdbd:dc05:10:10a::27]:9638/v1")
-    default_model = CONFIG.get("default_llm_model", "Qwen3-8B-yangyuan")
+    # Persist the active runtime provider in newly created identities while
+    # keeping credentials out of id.json. CustomLLM will resolve the key from
+    # the environment when the identity is loaded.
+    default_base_url = (
+        os.environ.get("EGOAGENT_LLM_BASE_URL", "").strip()
+        or CONFIG.get("default_llm_base_url", "http://[fdbd:dc05:10:10a::27]:9638/v1")
+    )
+    default_model = (
+        os.environ.get("EGOAGENT_LLM_MODEL", "").strip()
+        or CONFIG.get("default_llm_model", "Qwen3-8B-yangyuan")
+    )
 
     # 构建 id.json
     id_data = {

@@ -5,85 +5,463 @@ Session = 运行记录器，存对话历史、状态，提供查询方法
 import json
 import os
 import time
+import uuid
+import contextvars
+import threading
+import copy
+from contextlib import contextmanager
 from pathlib import Path
 from utils import load_script
+from trajectory import SessionHealth, TrajectoryReader, TrajectoryRecorder, messages_sha256, payload_sha256
 
 
 class EndSession(Exception):
     """skill 调用此异常来终止当前 session，回到父 harness"""
     pass
 
-# 全局 harness 栈，支持嵌套子 harness
-_current_harness: "Harness" = None
-
-# 全局 output 回调：供子 harness 在 server 流式模式下推送事件到 WebSocket
-_output_callback = None
+# Context-local state preserves the original API while isolating nested,
+# parallel and server-side runs from each other.
+_current_harness = contextvars.ContextVar("egoagent_current_harness", default=None)
+_output_callback = contextvars.ContextVar("egoagent_output_callback", default=None)
+_current_run_context = contextvars.ContextVar("egoagent_current_run_context", default=None)
+_UNSET = object()
 
 
 def get_current_harness():
-    return _current_harness
+    return _current_harness.get()
 
 
 def set_current_harness(harness):
-    global _current_harness
-    _current_harness = harness
+    return _current_harness.set(harness)
+
+
+def reset_current_harness(token):
+    _current_harness.reset(token)
 
 
 def get_output_callback():
     """获取当前全局 output 回调（用于子 harness 推送事件）"""
-    return _output_callback
+    return _output_callback.get()
 
 
 def set_output_callback(cb):
     """设置全局 output 回调"""
-    global _output_callback
-    _output_callback = cb
+    return _output_callback.set(cb)
+
+
+def reset_output_callback(token):
+    _output_callback.reset(token)
+
+
+def get_current_run_context():
+    return _current_run_context.get()
+
+
+def set_current_run_context(context):
+    return _current_run_context.set(context)
+
+
+def reset_current_run_context(token):
+    _current_run_context.reset(token)
+
+
+@contextmanager
+def runtime_scope(*, harness=_UNSET, output_callback=_UNSET, run_context=_UNSET):
+    """Bind run-local state and restore the exact previous ContextVar values."""
+    tokens = []
+    try:
+        if harness is not _UNSET:
+            tokens.append((_current_harness, _current_harness.set(harness)))
+        if output_callback is not _UNSET:
+            tokens.append((_output_callback, _output_callback.set(output_callback)))
+        if run_context is not _UNSET:
+            tokens.append((_current_run_context, _current_run_context.set(run_context)))
+        yield
+    finally:
+        for variable, token in reversed(tokens):
+            variable.reset(token)
 
 
 class Session:
     """纯记录器，不控制任何 agent"""
 
-    def __init__(self, workspace: Path = None, save_dir: Path = None):
+    def __init__(self, workspace: Path = None, save_dir: Path = None, session_id: str = None):
         self.messages = []
         self.full_messages = []  # 包含 system prompt 的完整版本
         self.workspace = workspace
         self.state = {}
-        self.save_dir = save_dir
+        self.save_dir = Path(save_dir) if save_dir else None
+        self.session_id = str(session_id or f"session_{uuid.uuid4().hex}")
+        self._lock = threading.RLock()
+        self.trajectory = TrajectoryRecorder(
+            self.save_dir / "trajectory.jsonl" if self.save_dir else None,
+            project_name=(Path(workspace).resolve().name if workspace else None),
+        )
+        self._context_generation = 0
+
+    def attach_trajectory(self, recorder: TrajectoryRecorder) -> None:
+        """Join a parent root trace while retaining this Session's own surface."""
+        if recorder is not None:
+            self.trajectory = recorder
+
+    def set_save_dir(self, save_dir, *, preserve_trace_id=True) -> None:
+        """Relocate an unstarted Session and keep its recorder aligned.
+
+        Task Bench used to assign ``save_dir`` directly after construction,
+        which left the native trajectory writing to the old default Session.
+        """
+        target = Path(save_dir) if save_dir else None
+        if target == self.save_dir:
+            return
+        old_path = self.trajectory.native_path
+        if old_path is not None and old_path.is_file() and old_path.stat().st_size:
+            raise RuntimeError("Cannot relocate a Session after trajectory events have been written")
+        trace_id = self.trajectory.trace_id if preserve_trace_id else None
+        self.save_dir = target
+        self.trajectory = TrajectoryRecorder(
+            target / "trajectory.jsonl" if target else None,
+            trace_id=trace_id,
+            project_name=(Path(self.workspace).resolve().name if self.workspace else None),
+        )
+
+    def _trajectory_context(self, *, agent_name=None):
+        run_context = get_current_run_context()
+        harness = get_current_harness()
+        if run_context is not None:
+            harness = run_context.harness
+        node_id = getattr(run_context, "current_node", None)
+        node_op = None
+        if run_context is not None and node_id:
+            node = (getattr(run_context, "graph", {}) or {}).get("nodes", {}).get(node_id, {})
+            node_op = node.get("op") if isinstance(node, dict) else None
+        identity_name = None
+        if harness is not None:
+            requested_agent = agent_name
+            if not requested_agent and node_id:
+                node = (getattr(run_context, "graph", {}) or {}).get("nodes", {}).get(node_id, {})
+                requested_agent = node.get("agent") if isinstance(node, dict) else None
+            agent = getattr(harness, "agents", {}).get(str(requested_agent or ""))
+            identity = getattr(agent, "identity", None)
+            identity_path = getattr(identity, "identity_path", None)
+            if identity_path:
+                identity_name = Path(identity_path).name
+        return {
+            "run_id": getattr(run_context, "run_id", None),
+            "parent_run_id": getattr(run_context, "parent_run_id", None),
+            "harness": getattr(harness, "name", None),
+            "node_id": node_id,
+            "node_op": node_op,
+            "agent": agent_name,
+            "identity": identity_name,
+        }
+
+    @staticmethod
+    def _resolve_runtime_agent(agent_name):
+        run_context = get_current_run_context()
+        harness = run_context.harness if run_context is not None else get_current_harness()
+        agents = getattr(harness, "agents", {}) if harness is not None else {}
+        instance = agents.get(str(agent_name or ""))
+        if instance is None and len(agents) == 1:
+            instance = next(iter(agents.values()))
+        return harness, instance
+
+    def trace(self, event_type, data=None, **metadata):
+        """Append an exact, secret-redacted event to the root trajectory."""
+        context = self._trajectory_context(agent_name=metadata.get("agent"))
+        context.update({key: value for key, value in metadata.items() if value is not None})
+        run_context = get_current_run_context()
+        safe_data = copy.deepcopy(data if data is not None else {})
+        secret_view = getattr(run_context, "secret_view", None)
+        if secret_view is not None:
+            safe_data = secret_view.redact_value(safe_data)
+        return self.trajectory.append(
+            event_type,
+            safe_data,
+            session_id=self.session_id,
+            **context,
+        )
+
+    def begin_model_call(
+        self,
+        *,
+        messages,
+        tools,
+        agent,
+        model=None,
+        provider=None,
+        parameters=None,
+        purpose="agent",
+    ):
+        model_call_id = f"call_{uuid.uuid4().hex}"
+        exact_messages = copy.deepcopy(messages or [])
+        harness, agent_instance = self._resolve_runtime_agent(agent)
+        capability_snapshot_id = None
+        if agent_instance is not None and callable(getattr(agent_instance, "capability_snapshot", None)):
+            snapshot = agent_instance.capability_snapshot()
+            capability_snapshot_id = snapshot.get("snapshot_id")
+            context = self._trajectory_context(agent_name=agent)
+            self.trajectory.register_capability_snapshot(
+                snapshot,
+                session_id=self.session_id,
+                run_id=context.get("run_id"),
+                harness=getattr(harness, "name", None),
+                agent=str(agent or getattr(agent_instance, "name", "Agent")),
+                identity=context.get("identity"),
+            )
+        self.trace(
+            "model.request",
+            {
+                "messages": exact_messages,
+                "tools": copy.deepcopy(tools or []),
+                "parameters": copy.deepcopy(parameters or {}),
+                "model": model,
+                "provider": provider,
+                "purpose": str(purpose or "agent"),
+                "messages_sha256": messages_sha256(exact_messages),
+                "tools_sha256": payload_sha256(tools or []),
+                "context_generation": self._context_generation,
+                "capability_snapshot_id": capability_snapshot_id,
+            },
+            agent=agent,
+            model_call_id=model_call_id,
+        )
+        return model_call_id
+
+    def finish_model_call(
+        self,
+        model_call_id,
+        *,
+        agent,
+        content="",
+        reasoning="",
+        tool_calls=None,
+        finish_reason=None,
+        usage=None,
+        metadata=None,
+    ):
+        return self.trace(
+            "model.response",
+            {
+                "content": content,
+                "reasoning": reasoning,
+                "tool_calls": copy.deepcopy(tool_calls or []),
+                "finish_reason": finish_reason,
+                "usage": copy.deepcopy(usage or {}),
+                "provider_metadata": copy.deepcopy(metadata or {}),
+            },
+            agent=agent,
+            model_call_id=model_call_id,
+        )
+
+    def fail_model_call(self, model_call_id, *, agent, error, error_type=None):
+        return self.trace(
+            "model.error",
+            {"error": str(error), "error_type": str(error_type or type(error).__name__)},
+            agent=agent,
+            model_call_id=model_call_id,
+        )
 
     def record(self, msg):
         """记录一条消息"""
-        self.messages.append(msg)
+        with self._lock:
+            msg.setdefault("_message_id", f"msg_{uuid.uuid4().hex}")
+            self.messages.append(msg)
+            self._context_generation += 1
+            self.trace(
+                "conversation.working.append",
+                {"message": copy.deepcopy(msg), "context_generation": self._context_generation},
+                agent=msg.get("name"),
+            )
 
     def record_full(self, msg):
         """记录一条含 system prompt 的消息到 full log"""
-        self.full_messages.append(msg)
+        with self._lock:
+            msg.setdefault("_message_id", f"msg_{uuid.uuid4().hex}")
+            self.full_messages.append(msg)
+            self.trace(
+                "conversation.audit.append",
+                {"message": copy.deepcopy(msg), "context_generation": self._context_generation},
+                agent=msg.get("name"),
+            )
 
     def get_history(self, agent_name=None):
         """查看对话记录，可选按 agent 过滤"""
-        if agent_name is None:
-            return self.messages
-        return [m for m in self.messages if m.get("name") == agent_name]
+        with self._lock:
+            if agent_name is None:
+                return list(self.messages)
+            return [m for m in self.messages if m.get("name") == agent_name]
+
+    def get_full_history(self, agent_name=None):
+        """Return the UI/audit transcript, including context-elided turns."""
+        with self._lock:
+            source = self.full_messages or self.messages
+            if agent_name is None:
+                return copy.deepcopy(source)
+            return [copy.deepcopy(message) for message in source if message.get("name") == agent_name]
+
+    def apply_context_result(self, result):
+        """Commit an auditable context-policy result atomically."""
+        if not isinstance(result, dict) or not isinstance(result.get("messages"), list):
+            raise ValueError("Invalid context policy result")
+        with self._lock:
+            before_messages = copy.deepcopy(self.messages)
+            before_full_messages = copy.deepcopy(self.full_messages)
+            if isinstance(result.get("full_messages"), list):
+                self.full_messages = copy.deepcopy(result["full_messages"])
+            self.messages = copy.deepcopy(result["messages"])
+            self._context_generation += 1
+            governance = self.state.setdefault("context_governance", {})
+            governance["ledger"] = copy.deepcopy(result.get("ledger", []))
+            governance["stats"] = copy.deepcopy(result.get("stats", {}))
+            governance["last_updated_at"] = time.time()
+            self.trace(
+                "conversation.surface.replace",
+                {
+                    "before_messages_sha256": messages_sha256(before_messages),
+                    "before_full_messages_sha256": messages_sha256(before_full_messages),
+                    "after_messages": copy.deepcopy(self.messages),
+                    "after_full_messages": copy.deepcopy(self.full_messages),
+                    "after_full_messages_sha256": messages_sha256(self.full_messages),
+                    "after_messages_sha256": messages_sha256(self.messages),
+                    "ledger": copy.deepcopy(result.get("ledger", [])),
+                    "stats": copy.deepcopy(result.get("stats", {})),
+                    "context_generation": self._context_generation,
+                },
+            )
+
+    def health(self) -> SessionHealth:
+        """Return an explicit replay/training readiness assessment."""
+
+        path = self.trajectory.native_path
+        if path is not None and path.is_file():
+            return TrajectoryReader(path).health(
+                durability_error=self.trajectory.last_error,
+                mirror_error=self.trajectory.mirror_error,
+            )
+        status = "invalid" if self.trajectory.last_error else "empty"
+        blockers = (
+            (f"trajectory persistence failed: {self.trajectory.last_error}",)
+            if self.trajectory.last_error else ()
+        )
+        return SessionHealth(
+            status=status,
+            replayable=False,
+            training_ready=False,
+            event_count=self.trajectory.event_count,
+            model_calls=0,
+            tool_calls=0,
+            blockers=blockers,
+            durability_error=self.trajectory.last_error,
+            mirror_error=self.trajectory.mirror_error,
+        )
 
     def save(self, path=None):
         """持久化到文件"""
         save_dir = Path(path) if path else self.save_dir
         if not save_dir:
             return
+        with self._lock:
+            messages = list(self.messages)
+            full_messages = list(self.full_messages)
+            state = dict(self.state)
         os.makedirs(save_dir, exist_ok=True)
         with open(save_dir / "messages.json", "w", encoding="utf-8") as f:
-            json.dump(self.messages, f, ensure_ascii=False, indent=2)
+            json.dump(messages, f, ensure_ascii=False, indent=2)
         with open(save_dir / "full_messages.json", "w", encoding="utf-8") as f:
-            json.dump(self.full_messages, f, ensure_ascii=False, indent=2)
+            json.dump(full_messages, f, ensure_ascii=False, indent=2)
         with open(save_dir / "state.json", "w", encoding="utf-8") as f:
-            json.dump(self.state, f, ensure_ascii=False, indent=2)
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        health = self.health()
+        metadata = {
+            "schema": "ego.session.v2",
+            "session_id": self.session_id,
+            "trace_id": self.trajectory.trace_id,
+            # Workspace attribution is a first-class part of Session identity.
+            # Older builds only emitted it in ``trace.started``, forcing every
+            # project/session view to parse a potentially large trajectory.
+            "workspace": str(Path(self.workspace).expanduser().resolve()) if self.workspace else "",
+            "project_name": Path(self.workspace).expanduser().resolve().name if self.workspace else "",
+            "context_generation": self._context_generation,
+            "trajectory": str(self.trajectory.native_path) if self.trajectory.native_path else None,
+            "trajectory_error": self.trajectory.last_error,
+            "mirror": str(self.trajectory.location.mirror_path) if self.trajectory.location.mirror_path else None,
+            "mirror_error": self.trajectory.mirror_error,
+            "trajectory_events": self.trajectory.event_count,
+            "trajectory_agents": list(self.trajectory.agents),
+            "capability_snapshots": list(self.trajectory.capability_snapshot_ids),
+            "health": health.as_dict(),
+        }
+        with open(save_dir / "session.json", "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
 
     def load(self, path):
-        """从文件恢复"""
+        """Restore a Session, preferring a validated event projection."""
         path = Path(path)
+        self.save_dir = path
+        metadata_file = path / "session.json"
+        metadata = {}
+        local_trajectory_path = path / "trajectory.jsonl"
+        trajectory_path = local_trajectory_path
+        if metadata_file.is_file():
+            try:
+                metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+                self.session_id = str(metadata.get("session_id") or self.session_id)
+                self._context_generation = int(metadata.get("context_generation", 0))
+                recorded_path = str(metadata.get("trajectory") or "").strip()
+                recorded_trajectory = Path(recorded_path) if recorded_path else None
+                # A session directory may have been copied or moved. Prefer the
+                # recorded location only while it still exists; the colocated
+                # immutable log is otherwise the portable source of truth.
+                if recorded_trajectory is not None and recorded_trajectory.is_file():
+                    trajectory_path = recorded_trajectory
+            except (OSError, ValueError, TypeError):
+                pass
         if (path / "messages.json").exists():
-            self.messages = json.load(open(path / "messages.json"))
+            with open(path / "messages.json", encoding="utf-8") as stream:
+                self.messages = json.load(stream)
+        if (path / "full_messages.json").exists():
+            with open(path / "full_messages.json", encoding="utf-8") as stream:
+                self.full_messages = json.load(stream)
+        elif self.messages:
+            # Legacy sessions predate the append-only audit transcript.
+            self.full_messages = copy.deepcopy(self.messages)
         if (path / "state.json").exists():
-            self.state = json.load(open(path / "state.json"))
+            with open(path / "state.json", encoding="utf-8") as stream:
+                self.state = json.load(stream)
+        if trajectory_path.is_file():
+            reader = TrajectoryReader(trajectory_path)
+            validation = reader.validate()
+            if validation.get("valid"):
+                events = reader.read_all(strict=False)
+                if not metadata.get("session_id"):
+                    inferred_session_id = next(
+                        (
+                            str(event.get("session_id"))
+                            for event in events
+                            if event.get("session_id")
+                            and event.get("type") in {
+                                "conversation.working.append",
+                                "conversation.audit.append",
+                                "conversation.surface.replace",
+                            }
+                        ),
+                        None,
+                    )
+                    if inferred_session_id:
+                        self.session_id = inferred_session_id
+                self.trajectory = TrajectoryRecorder(
+                    trajectory_path,
+                    trace_id=validation.get("trace_id") or metadata.get("trace_id"),
+                    project_name=(Path(self.workspace).resolve().name if self.workspace else None),
+                )
+                projection = reader.reconstruct_session(self.session_id)
+                if projection.get("applied_events", 0):
+                    self.messages = projection["messages"]
+                    self.full_messages = projection["full_messages"]
+                    self._context_generation = max(
+                        self._context_generation,
+                        int(projection.get("context_generation", 0)),
+                    )
 
     def get_result(self, mode="last"):
         """
@@ -114,7 +492,12 @@ class Harness:
         return_mode: "all" 返回所有消息 / "last" 只返回最后一条非 tool 消息，覆盖 config 默认值
         """
         self.dir = Path(harness_dir)
-        self.config = json.load(open(self.dir / "config.json"))
+        with open(self.dir / "config.json", encoding="utf-8") as config_stream:
+            self.config = json.load(config_stream)
+        from pipeline_schema import validate_component_manifest
+        component_errors = validate_component_manifest(self.config.get("component"))
+        if component_errors:
+            raise ValueError("Invalid component manifest:\n- " + "\n- ".join(component_errors))
         self.name = self.config["name"]
         self.agents = {}  # {slot_name: Agent}
         self.workspace = workspace
@@ -157,7 +540,12 @@ class Harness:
                     self.hooks[f.stem] = hook_func
 
         # 创建 session（harness 私有属性）
-        session_dir = Path("sessions") / f"{self.name}_{time.strftime('%Y%m%d_%H%M%S')}"
+        # Session storage must not depend on the caller's current working
+        # directory. The HTTP backend runs from `harness_editor/` while the CLI
+        # normally runs from the repository root; a relative path split their
+        # histories into two invisible catalogs.
+        session_root = Path(__file__).resolve().parent / "sessions"
+        session_dir = session_root / f"{self.name}_{time.strftime('%Y%m%d_%H%M%S')}"
         self.session = Session(workspace=workspace, save_dir=session_dir)
 
         # 如果初始化时传了 agents，直接设置
@@ -223,28 +611,39 @@ class Harness:
                 assert slot_name in self.agents, \
                     f"Harness {self.name} 启动失败，缺少必填 slot: {slot_name}"
 
-        # 栈式保存 parent，设置 self 为 current
+        # ContextVar token restoration keeps nested and concurrent runs isolated.
         parent = get_current_harness()
         if parent:
-            self.parent = parent
-            parent.children.append(self)
-        set_current_harness(self)
-
-        self.fire_hook("pre_session")
-        try:
-            self.run_func(self)
-        except EndSession as e:
-            # EndSession 只终止当前 harness，不向上传播
-            if str(e):
-                print(f"\n[EndSession] {e}")
-        finally:
-            self.fire_hook("post_session")
-            self.session.save()
-            # 恢复 parent
-            set_current_harness(parent)
+            from subagent_lifecycle import link_subagent
+            if self.parent is None:
+                link_subagent(parent, self, share_session=self.session is parent.session, purpose="harness_run")
+            elif self not in parent.children:
+                parent.children.append(self)
+        failure = None
+        with runtime_scope(harness=self):
+            self.fire_hook("pre_session")
+            try:
+                self.run_func(self)
+            except EndSession as e:
+                # EndSession 只终止当前 harness，不向上传播
+                if str(e):
+                    print(f"\n[EndSession] {e}")
+            except Exception as error:
+                failure = error
+                if parent:
+                    from subagent_lifecycle import finish_subagent
+                    finish_subagent(self, status="failed", error=error)
+                raise
+            finally:
+                self.fire_hook("post_session")
+                self.session.save()
 
         # 返回 session 结果
-        return self.session.get_result(self.return_mode)
+        result = self.session.get_result(self.return_mode)
+        if parent:
+            from subagent_lifecycle import finish_subagent
+            finish_subagent(self, status="failed" if failure else "completed", result=result, error=failure)
+        return result
 
     def fire_hook(self, hook_name, **kwargs):
         """触发 harness 级 hook"""

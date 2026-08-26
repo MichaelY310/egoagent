@@ -1,0 +1,19 @@
+{
+  "type": "function",
+  "title": "Activate Capability",
+  "name": "activate_capability",
+  "description": "Activate one result returned by search_capabilities. Skills, tools, and knowledge become available on the next reasoning step. Identity results return a slot binding. Harness results return exact create_harness and visual SubDAG contracts instead of silently changing the running topology.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "capability_id": {
+        "type": "string",
+        "description": "Exact capability id returned by search_capabilities."
+      }
+    },
+    "required": ["capability_id"]
+  },
+  "tags": ["capability", "activation", "reuse", "progressive-disclosure"],
+  "author": "EgoAgent",
+  "version": "1.0.0"
+}

@@ -1,0 +1,61 @@
+{
+  "name": "component_agent_designer",
+  "description": "Reusable Agent-factory SubDAG. A normal Model authors an inspectable Agent Spec, approval gates the mutation, then a bounded Agent searches the catalog and materializes the Identity and visual Harness.",
+  "component": {
+    "name": "agent_designer",
+    "display_name": "Agent Designer",
+    "category": "Evolution",
+    "icon": "◇",
+    "description": "Turn a role request into an approved Agent Spec and runnable Agent without asking the model to hand-write DAG JSON.",
+    "share_session": false,
+    "inputs": {
+      "request": {"description": "Desired role, environment, constraints and success criteria", "required": true, "schema": {"type": "string", "minLength": 3}},
+      "require_approval": {"default": true, "schema": {"type": "boolean"}}
+    },
+    "outputs": {
+      "spec": {"path": "agent_spec", "default": {}},
+      "result": {"path": "creation_result", "default": ""},
+      "completed": {"path": "creation_completed", "default": false}
+    }
+  },
+  "slots": {
+    "architect": {"description": "Identity that designs and materializes the Agent", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "design": {
+      "description": "Editable Agent-Spec policy; no archetype keywords are hidden in runtime code",
+      "default": "Design the smallest reusable Agent for this request:\n{request}\n\nChoose only capabilities that should be permanently installed. Skills are existing folder names discovered in the local catalog; do not invent a Skill name here. Keep behavior in the system_prompt and keep the Harness generic. Return ONLY JSON with this shape: {{\"name\":\"snake_case\",\"description\":\"...\",\"role\":\"...\",\"traits\":[\"...\"],\"tone\":\"...\",\"language\":\"zh|en\",\"temperature\":0.4,\"system_prompt\":\"...\",\"skills\":[\"read\",\"search\"],\"knowledge_topics\":[\"domain_name\"],\"allow_self_evolution\":true,\"acceptance_test\":\"one concrete task and expected evidence\"}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "design",
+    "max_steps": 22,
+    "budget": {"max_model_calls": 8, "max_tool_calls": 12, "max_tokens": 64000},
+    "context": {"creation_completed": false, "creation_result": ""},
+    "nodes": {
+      "design": {
+        "id": "design", "op": "模型", "agent": "architect", "prompt": "design",
+        "parse_as": "json_object", "json_fallback": {"invalid": true}, "temperature": 0.2, "max_tokens": 2400,
+        "outputs": {"structured": "agent_spec"},
+        "edges": [{"condition": "json_fallback", "to": "invalid"}, {"condition": "has_text", "to": "approval_policy"}]
+      },
+      "approval_policy": {"id": "approval_policy", "op": "条件", "condition": "ctx.require_approval == true", "edges": [{"condition": "true", "to": "approve"}, {"condition": "false", "to": "materialize"}]},
+      "approve": {
+        "id": "approve", "op": "人工审批", "prompt_text": "创建下面这个 Identity + Harness 吗？你可以先检查模型生成的 Agent Spec。\n${ctx.agent_spec}", "data": "$ctx.agent_spec", "default": "rejected",
+        "edges": [{"condition": "approved", "to": "materialize"}, {"condition": "rejected", "to": "done"}]
+      },
+      "materialize": {
+        "id": "materialize", "op": "Agent", "agent": "architect", "tools": "all", "max_tool_rounds": 8,
+        "visible_tools": ["search_capabilities", "activate_capability", "create_agent_system"],
+        "instructions": "Materialize this approved Agent Spec: ${ctx.agent_spec}\nFirst search_capabilities for each proposed Skill or equivalent complete Agent. Reuse existing exact folder names and remove invented or redundant Skills from the spec. If an equivalent complete Identity/Harness already exists, report it instead of duplicating it. Otherwise call create_agent_system once, passing both a concise description and the corrected structured spec. Finish with the created Identity, Harness and acceptance test.",
+        "outputs": {"text": "creation_result"},
+        "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "mark_completed"}]
+      },
+      "tools": {"id": "tools", "op": "工具", "agent": "architect", "edges": [{"condition": "default", "to": "materialize"}]},
+      "mark_completed": {"id": "mark_completed", "op": "数据", "action": "set", "key": "creation_completed", "value": true, "edges": [{"condition": "default", "to": "done"}]},
+      "invalid": {"id": "invalid", "op": "数据", "action": "set", "key": "creation_result", "value": "Agent Spec JSON was invalid; no files were changed.", "edges": [{"condition": "default", "to": "done"}]},
+      "done": {"id": "done", "op": "结束", "value": {"completed": "$ctx.creation_completed", "spec": "$ctx.agent_spec", "result": "$ctx.creation_result"}, "edges": []}
+    }
+  }
+}

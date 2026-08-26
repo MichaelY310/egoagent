@@ -22,9 +22,14 @@ from typing import List, Dict, Optional
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from llm.env_config import load_local_env
+
+load_local_env(PROJECT_ROOT)
+
 # LLM config
-LLM_BASE_URL = "http://[fdbd:dc05:10:10a::27]:9638/v1"
-LLM_MODEL = "Qwen3-8B-yangyuan"
+LLM_BASE_URL = os.environ.get("EGOAGENT_LLM_BASE_URL", "http://[fdbd:dc05:10:10a::27]:9638/v1").rstrip("/")
+LLM_MODEL = os.environ.get("EGOAGENT_LLM_MODEL", "Qwen3-8B-yangyuan")
+LLM_API_KEY = os.environ.get("EGOAGENT_LLM_API_KEY", "") or os.environ.get("DEEPSEEK_API_KEY", "") or os.environ.get("SILICONFLOW_API_KEY", "")
 
 OUTPUT_DIR = Path(__file__).parent / "_v2_multi_test"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -99,7 +104,10 @@ def llm_call(messages: List[Dict], max_tokens=2048, temperature=0.7, tools=None)
     if tools:
         payload["tools"] = tools
     try:
-        resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=90)
+        headers = {"Content-Type": "application/json"}
+        if LLM_API_KEY:
+            headers["Authorization"] = f"Bearer {LLM_API_KEY}"
+        resp = requests.post(url, json=payload, headers=headers, timeout=90)
         resp.raise_for_status()
         result = resp.json()
         msg = result["choices"][0]["message"]

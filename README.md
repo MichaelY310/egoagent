@@ -1,18 +1,46 @@
 # EgoAgent
 
+Runtime trajectory/replay design and training validation:
+
+- [DeepSeek Harness runtime refactor plan](docs/DEEPSEEK_HARNESS_RUNTIME_REFACTOR_PLAN.md)
+- [DeepSeek Harness Flow Graph replica](docs/DEEPSEEK_HARNESS_FLOW_REPLICATION.md)
+- [Exact trajectory SFT/RL validation](docs/TRAJECTORY_TRAINING_VALIDATION.md)
+- [Human feedback and curated training-data workflow](docs/TRAINING_DATA_COLLECTION_ZH.md)
+- [Session fork and provenance-preserving merge](docs/SESSION_FORK_AND_MERGE.md)
+- [Multi-project and multi-Session portfolio](docs/PROJECT_PORTFOLIO.md)
+
+> Start with the [repository guide](docs/REPOSITORY_GUIDE.md), then see the
+> current [architecture contract](ARCHITECTURE.md),
+> [Capability Library](docs/CAPABILITY_LIBRARY.md), [reversible context
+> governance](docs/CONTEXT_GOVERNANCE.md), [self-evolution](docs/SELF_EVOLUTION_INTEGRATION.md),
+> [evidence-driven Self-Evolution V2](docs/SELF_EVOLUTION_V2.md),
+> [composable DAG components](docs/DAG_COMPONENT_ARCHITECTURE.md),
+> and [verification guide](docs/RESEARCH_AND_PRODUCT_VERIFICATION.md).
+
 A self-evolving DAG-based Agent system with browser-accessible IDE interface.
 
 EgoAgent combines a code editor (Void, a VSCode fork) with a management panel for orchestrating AI agents through configurable DAG pipelines. Agents can self-evolve their own pipeline structure and reasoning strategies through built-in evolution mechanisms.
 
 ## Features
 
-- **DAG Pipeline Engine** — Define agent workflows as directed acyclic graphs with conditional routing
+- **Typed DAG Pipeline Engine** — Explicit data ports, conditions, loops, Map/Join, approvals, retries, budgets, checkpoints and resumable execution; Subflow can also run persisted repeated/static port-event graphs
+- **Source-aligned Coding Loops** — Native one-thought/one-action parsing, observation history elision, explicit submit/exit and budget-safe finalization without requiring Python nodes
 - **Multi-Agent Orchestration** — Run multiple agents (e.g., creative brainstorm + critic) in a single pipeline
+- **Durable Agent Collaboration** — Workspace-local role registry and leased, acknowledged, retryable cross-run messages without adding another DAG component
 - **Self-Evolution** — Agents improve their own pipeline structure and principles over time
-- **18 Built-in Harnesses** — ReAct, creative roundtable, debate, evolution cycles, and more
+- **55 Built-in Harnesses** — 42 user-facing workflows/components by default, including 19 tested open-source replicas; 13 internal workers are available on demand
 - **Identity System** — Each agent has configurable personality, tools, knowledge base, and LLM settings
+- **Progressive Capability Library** — Workspace-first search and on-demand activation for Skills, Tools, Knowledge, Identities, and Harnesses, with real usage/success telemetry and no required search daemon
+- **Reproducible Capability Snapshots** — Every model call references the exact content revisions of its Identity, Tools, Skills, and Knowledge for replay and training
+- **Reversible Context Governance** — Periodic relevance curation and protocol-safe tool-output compression while retaining an inspectable full history
+- **Composable SubDAG Library** — Typed input/output contracts, draggable reusable components, explicit shared-conversation effects, and ordinary Model nodes for summarization/evolution policy instead of hidden runtime calls
+- **Identity-backed CoC Table** — Reusable character-card Identities, item-as-Tool ownership, bounded Keeper transactions, deterministic checks and a Workbench character desk
 - **Browser IDE** — Integrated code editor + management panel accessible via single URL
+- **Browser Agent Runtime** — Typed DOM/viewport observations, real coordinate and keyboard actions, screenshots, verified downloads, dialogs and CAPTCHA human handoff
 - **SSE Streaming** — Real-time token-by-token output with multi-agent markers
+- **Project & Session Portfolio** — Durable workspace attribution, several live
+  Sessions per project, pinned projects/Sessions, project-scoped history, and
+  provenance-preserving cross-project Summary/Dialogue merges
 
 ---
 
@@ -22,34 +50,51 @@ EgoAgent combines a code editor (Void, a VSCode fork) with a management panel fo
 
 - Python 3.10+
 - Node.js 20+ (for frontend development)
-- A running LLM service (vLLM recommended, OpenAI-compatible endpoint)
+- Optional: a running LLM service (vLLM or another OpenAI-compatible endpoint).
+  The IDE's local Tab completion, inline edit, code review, code map, preview,
+  commit-message draft and multi-hunk change review work without an API key.
 
 ### 1. Setup
 
 ```bash
 git clone https://github.com/MichaelY310/egoagent.git
 cd egoagent
-pip install pyyaml requests
+python -m pip install -r requirements.txt
 ```
 
 ### 2. Configure LLM
 
-Edit identity configs to point to your LLM endpoint. Example (`identity/dante/id.json`):
+Provider credentials are read from environment variables and never need to be
+saved in an Identity or committed to Git. SiliconFlow example:
 
-```json
-{
-  "llm": {
-    "type": "openai",
-    "base_url": "http://your-llm-server:8000/v1",
-    "model": "your-model-name",
-    "api_key": "your-key",
-    "temperature": 0.7,
-    "max_tokens": 8192
-  }
-}
+```bash
+export SILICONFLOW_API_KEY="your-key"
+export EGOAGENT_LLM_MODEL="Qwen/Qwen3-8B"
+export EGOAGENT_LLM_ENABLE_THINKING="false"
 ```
 
-### 3. Start the Backend API Only
+PowerShell:
+
+```powershell
+$env:SILICONFLOW_API_KEY="your-key"
+$env:EGOAGENT_LLM_MODEL="Qwen/Qwen3-8B"
+$env:EGOAGENT_LLM_ENABLE_THINKING="false"
+```
+
+`SILICONFLOW_API_KEY` automatically selects
+`https://api.siliconflow.cn/v1`. Generic OpenAI-compatible providers can use
+`EGOAGENT_LLM_BASE_URL`, `EGOAGENT_LLM_MODEL`, and
+`EGOAGENT_LLM_API_KEY`. These process-level values safely override the legacy
+LLM address in every Identity, so single-Agent, multi-Agent, evolution, Tab
+completion, inline edit, review, and commit-message features share one model.
+`EGOAGENT_LLM_MAX_RETRIES`, `EGOAGENT_LLM_RETRY_BACKOFF`,
+`EGOAGENT_LLM_TIMEOUT`, and `EGOAGENT_LLM_STREAM_RESUME` tune the shared
+transport. Retryable status codes honor `Retry-After`; provider-reported token,
+cache and request metadata is propagated into DAG run statistics and budgets.
+
+### Contributor: start the backend API only
+
+This is an API-development command, not a second user-facing application:
 
 ```bash
 cd harness_editor
@@ -57,18 +102,64 @@ python server.py
 # Starts on port 8765
 ```
 
-### 4. Start with IDE (Full Mode)
+Long-running DAGs can use the durable API instead of holding one HTTP request:
 
-```bash
-# Terminal 1: Start Void Editor
-cd void-web && ./node out/server-main.js --port 8869 --host 0.0.0.0
-
-# Terminal 2: Start unified proxy
-python start-all.py
-# Access at http://localhost:8880
+```text
+POST /api/runs
+GET  /api/runs/<run-id>
+GET  /api/runs/<run-id>/events?after=<sequence>
+POST /api/runs/<run-id>/cancel
 ```
 
-### 5. Frontend-Only Development (React)
+The server persists queue state, results, cancellation, checkpoint pointers
+and redacted ordered events in `.egoagent/runs.sqlite3`. Worker ownership uses
+renewable leases, so an expired worker is safely retried up to `max_attempts`.
+
+Process nodes may run locally or through an isolated Docker/Podman backend:
+
+```json
+{
+  "op": "进程",
+  "backend": "container",
+  "container": {
+    "engine": "docker",
+    "image": "python:3.12-slim",
+    "network": "none",
+    "read_only_root": true,
+    "workspace_access": "rw",
+    "pids_limit": 256,
+    "memory": "512m",
+    "cpus": 1,
+    "pull_policy": "never"
+  },
+  "command": "python",
+  "args": ["experiment.py"]
+}
+```
+
+`GET /api/runtime/container?engine=docker` reports daemon availability. Images
+are never pulled implicitly by the secure default; prepare an approved image
+before running the graph.
+
+### 3. Start EgoAgent (one IDE)
+
+```bash
+# One command installs the native extension and starts Void, backend and proxy.
+python start-all.py
+# Access at:
+# http://127.0.0.1:8880/?folder=/C%3A/Users/<you>/path/to/egoagent  (Windows)
+# http://127.0.0.1:8880/?folder=/absolute/path/to/egoagent       (Linux/macOS)
+```
+
+Void and the proxy bind to `127.0.0.1`. The launcher disables Void's changing
+remote connection token only on this localhost-only link so Chat Webviews and
+the Extension Host survive restarts without exposing the IDE to the LAN. The
+launcher deliberately rejects a non-local `EGOAGENT_HOST` in this mode.
+
+### Contributor: Workbench frontend preview
+
+The preview is only for frontend iteration. Product users open the Workbench
+inside Void at port `8880`.
 
 ```bash
 cd harness_editor
@@ -78,6 +169,9 @@ npm run dev
 # Backend must be running on port 8765
 ```
 
+After a frontend change, package the production assets into the native Void
+extension with `npm run package:extension`.
+
 ---
 
 ## Architecture
@@ -85,8 +179,8 @@ npm run dev
 ```
 Browser (localhost:8880)
 +--------------------+-----------------------------+
-|   Void Editor      |     EgoAgent Panel          |
-|   (Code IDE)       |  Chat | Identity | DAG |... |
+|   Void Editor      |  EgoAgent native surfaces   |
+|   Code + Diff      |  Chat + Agent Workbench     |
 +--------------------+-----------------------------+
          |                         |
     Void Web (8869)         Backend API (8765)
@@ -144,13 +238,18 @@ This means agents can **self-modify** — they write files to evolve their own i
 
 ### DAG Pipeline Engine
 
-Every agent workflow is a DAG (Directed Acyclic Graph). Each node is either:
-- **wait_input** — Pauses for user message
-- **inference** — Calls an LLM agent (specified by slot name)
-- **tool_execution** — Runs tools from a previous inference
-- **script** — Executes a Python script
+Every Agent workflow is a typed DAG. Identity + EGO controls behavior; normal
+components control orchestration: Input, Agent/Model, Tool policy/execution,
+If, Data (including durable Agent messages), Context, Memory, Loop, Parallel, Map, Join, Human approval, Subflow,
+deterministic Process, recoverable Workspace, Checkpoint and Output. Python is
+kept only as an advanced escape hatch.
 
-Edges have conditions: `has_tool_calls`, `has_text`, `default`.
+Values move explicitly through `$ctx`, `$node`, `$last` and typed ports. A
+Subflow can switch to port-event mode for repeated named outputs, reusable
+static pins, dynamic fan-in, concurrent ready executions and port-level resume
+without adding another component to the editor. Edges
+can follow normal tags, safe expressions, errors or timeouts. The same runner
+powers sync, streaming, WebSocket and OpenAI-compatible API paths.
 
 Example — creative_roundtable (4-step multi-agent):
 ```
@@ -186,7 +285,7 @@ This separation prevents the evolving agent from accidentally breaking its own i
 
 ---
 
-## Harness Library (18 Pipelines)
+## Harness Library (49 Pipelines)
 
 | Harness | Description | Nodes |
 |---------|-------------|-------|
@@ -198,16 +297,22 @@ This separation prevents the evolving agent from accidentally breaking its own i
 | `dual_guardian` | Double safety layer | pre_guard -> inference -> post_guard |
 | `evolution_cycle` | Basic self-evolution | evaluate -> analyze -> propose -> gate |
 | `meta_evolution_cycle` | Meta-level evolution | inner_cycle -> analyze -> meta_gradient -> meta_gate |
-| `research_loop` | Literature search | search -> read -> synthesize -> loop |
 | `text_review_react` | Writing review | draft -> critique -> revise |
 | `session_analyzer` | Analyze past sessions | load -> analyze -> report |
-| `self_improve` | Prompt self-improvement | evaluate -> improve -> verify |
-| `turn_based` | Multi-turn with state | inference with state tracking |
 | `improver` | Generic improvement | evaluate -> propose -> validate |
-| `new_harness` | Template for new ones | minimal single node |
-| `quick_test` | Fast testing | single inference, no tools |
-| `verify_test` | Verification pipeline | solve -> verify -> report |
-| `test_react` | Testing ReAct | inference with test tools |
+
+The additional 32 replica/worker Harnesses reproduce the loop and stop
+conditions of OpenHands, Aider, SWE-agent, Continue, AI Scientist, GPT
+Researcher, Open Deep Research, Voyager, Generative Agents, MetaGPT, Browser
+Use, Stagehand, OpenManus, AutoGPT and Devika. See
+`docs/OPEN_SOURCE_HARNESS_REPLICATION.md` for pinned source revisions, the
+source-to-DAG mapping, contract coverage and honest external-infrastructure
+limits.
+
+The current library passes schema validation for all 32 replica/worker graphs;
+45 offline replication contracts cover their core transitions and stop
+conditions. The complete Python suite contains 161 tests, and the Harness
+editor passes its production TypeScript/Vite build.
 
 ---
 
@@ -354,16 +459,15 @@ Scores reflect empirical success rate (usage_count vs success_count). Low scores
 
 ## IDE Integration Details
 
-### Script Injection Flow
+### Native Extension Flow
 
 ```
 1. Browser requests http://localhost:8880/
 2. Proxy fetches from Void (8869)
-3. Proxy detects HTML response with 'workbench' keyword
-4. Replaces remoteAuthority: 127.0.0.1:8869 -> 127.0.0.1:8880
-5. Injects 4 scripts before </html>
-6. Returns modified HTML to browser
-7. Scripts create the right-side panel overlay
+3. `start-all.py` installs the tracked `egoagent-dag-chat` extension into the local Void runtime
+4. The proxy keeps Void's remote/WebSocket traffic on the unified port and serves local Webview resources
+5. The extension contributes `EgoAgent DAG Chat` directly into Void's native Chat container
+6. Agent chat, execution trace, context, and change review render as native IDE views; no overlay covers the editor
 ```
 
 ### Multi-Agent Streaming Protocol
@@ -399,26 +503,30 @@ Void Editor uses WebSocket for real-time features (terminal, file watching). The
 
 4. **Identity Persona (Dir 2) failing** — The personality probe system is too strict. Needs calibration of probe questions and acceptance thresholds.
 
-### Partially Implemented
+### Implemented in the native Void extension
 
 - **Evolve panel user features** — The UI for multi-session harness evolution is built but backend integration for "user provides sessions -> evolver modifies harness" flow needs completion.
 
 - **Exp panel research automation** — Dataset-based evolution benchmarking UI exists but lacks one-click experiment launching.
 
-- **File diff view** — The design exists in EGOAGENT_IDE_DESIGN.md but is not yet implemented in the panel.
+- **Per-hunk change review** — Real DAG writes and local mock edits are split into independently reviewable hunks with Accept/Reject, file-level actions, CodeLens controls, and native red/green Diff editors.
 
-- **@ context references** — Designed but not implemented (requires deeper Void Editor integration).
+- **Editor context** — Current file, selection, symbols, workspace rules, `AGENTS.md`, checkpoints, memory, and sessions are available from the native Chat view. `@file` and `@selection` are attached to DAG input.
 
-- **Tab completion / inline edit (Cmd+K)** — Requires Void extension API access, not started.
+- **No-key local intelligence** — Multi-line Tab ghost text, `Ctrl+I` inline edits, deterministic multi-hunk mock Agent, Quick Review diagnostics, code map, preview, terminal approval, and commit-message drafts work without an AI API key.
+
+- **Rules and memory injection** — `.egoagent/rules`, root `AGENTS.md`, and cross-session memory are now added to each workspace Agent's system context instead of only appearing in a dashboard.
 
 ### Not Started (Future)
 
 - Mobile-responsive UI
 - MCP tool marketplace integration
-- Multi-model routing per node
+- Full next-edit prediction across files (current local provider covers inline/multi-line completion)
+- Semantic repository indexing and remote repository indexing
+- Background/cloud agents and automatic Git worktrees
 - Production deployment hardening
 - Agent evaluation reports (automated)
-- Cross-session memory system
+- MCP marketplace UI (the underlying Agent tool architecture remains available)
 
 ---
 
@@ -484,9 +592,9 @@ Void Editor uses WebSocket for real-time features (terminal, file watching). The
   - Think-tag double-filtering causing empty outputs
   - Tab switching state management (hiding typing area, context area)
 
-### Current State (August 7, 2026)
+### Current State (August 8, 2026)
 
-All core infrastructure is in place. The system is functional end-to-end: a user can open the browser, select a harness, chat with multi-agent pipelines, manage identities, view DAG configurations, trigger evolution, and browse session history. Remaining work is primarily polish, verification, and completing partially-implemented features.
+The system is functional end-to-end as a native AI IDE: a user can open Void, run or inspect a DAG, attach editor context, work with local completions without a key, propose multi-location edits, review every hunk, run local diagnostics, and restore changes. The detailed competitor matrix and remaining product gaps are tracked in `docs/AI_IDE_PRODUCT_GAP_ANALYSIS.md`.
 
 ---
 
@@ -548,6 +656,11 @@ egoagent/
 +-- EGOAGENT_IDE_DESIGN.md  # IDE feature design spec
 +-- PROGRESS.md           # Development progress tracker
 ```
+
+## Harness research reproductions
+
+- [Codex Harness → EgoAgent Flow implementation](docs/CODEX_FLOW_REPLICATION.md)
+- [AVO / ARC-AGI-3 Flow and self-evolution experiments](docs/AVO_ARC_AGI3_REPLICATION.md)
 
 ## License
 

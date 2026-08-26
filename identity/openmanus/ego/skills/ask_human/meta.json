@@ -1,0 +1,13 @@
+{
+  "type": "function",
+  "name": "ask_human",
+  "description": "Ask the user for one concrete fact, decision, credential, or manual action only when the task cannot safely continue without it. The DAG pauses and resumes with the user's response.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "question": {"type": "string", "description": "The single focused question or manual action request."},
+      "context": {"type": "string", "description": "Brief explanation of why this input is required."}
+    },
+    "required": ["question"]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "aider_review_worker",
+  "description": "Read/test review pass used by the Aider-style reflection loop.",
+  "slots": {
+    "reviewer": {"description": "Inspects the edit and runs focused validation", "required": true}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 8,
+    "max_node_steps": 32,
+    "timeout_seconds": 360,
+    "budget": {"max_model_calls": 8, "max_tool_calls": 18, "max_tokens": 70000},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "edges": [{"condition": "input", "to": "review"}]},
+      "review": {
+        "id": "review",
+        "op": "Agent",
+        "agent": "reviewer",
+        "tools": "all",
+        "max_tool_rounds": 4,
+        "edges": [
+          {"condition": "has_tool_calls", "to": "tools"},
+          {"condition": "has_text", "to": "output"}
+        ]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "reviewer",
+        "edges": [{"condition": "tools_executed", "to": "review"}]
+      },
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$node.review.text"}, "edges": []}
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "name": "component_flow_evolver",
+  "description": "Reusable propose-and-validate component for typed Flow evolution. It produces an isolated candidate and never promotes it without an external evaluator.",
+  "component": {
+    "name": "flow_evolver",
+    "display_name": "Flow Variant Designer",
+    "category": "Evolution",
+    "icon": "↗",
+    "description": "Review empirical trajectory evidence, propose a minimal typed topology/parameter change, and validate the resulting Flow copy.",
+    "inputs": {
+      "base_config": {"required": true, "schema": {"type": "object"}},
+      "evaluation_evidence": {"required": true, "schema": {"type": "object"}},
+      "allowed_paths": {"required": true, "schema": {"type": "array", "items": {"type": "string"}}},
+      "diversity_exclusions": {"default": [], "schema": {"type": "array"}},
+      "mutation_catalog": {"default": [], "schema": {"type": "array"}},
+      "available_evidence_paths": {"default": [], "schema": {"type": "array"}}
+    },
+    "outputs": {
+      "proposal": {"path": "proposal", "default": {}},
+      "variant": {"path": "flow_variant", "default": {}},
+      "valid": {"path": "flow_variant.ok", "default": false}
+    }
+  },
+  "slots": {
+    "evolver": {"description": "Model that proposes minimal typed changes", "required": true, "identity": "flow_evolver"}
+  },
+  "prompts": {
+    "propose": {
+      "default": "You are designing ONE candidate variant of an INTERACTIVE BLACK-BOX CONTROL Flow. This is NOT web search, document retrieval, or final-answer generation: an Agent repeatedly observes state, chooses an environment action, receives feedback, and is scored by the environment. The measured_failure object is authoritative. In particular, if action_budget_completed=true and premature_termination_observed=false, you MUST NOT diagnose premature termination. If the environment advertised only one action class, do not blame the Flow for low action-class diversity. Optimize in the supplied optimization_order: improve the official outcome first; when it ties, measured token/model-call efficiency is a valid target. Do not encode a task ID, coordinate, action sequence, hidden answer, discovered mechanic, or environment-specific tool. Infer one causal runtime failure and propose the SMALLEST generic change that can falsify that diagnosis. Prefer one set_field on an existing cadence, threshold, budget, context size, or prompt when that tests the hypothesis; introduce topology only when an existing field cannot express it. Every set_field path MUST be copied exactly from Mutation catalog. Respect each field's semantics: max_tokens is output length, max_chars/last_n shape context, and a routing condition changes call cadence. The operation's numeric direction must match the prose (reducing means after < current; increasing means after > current), and the mutated field must causally control the cited metric. Every evidence_ref path MUST be copied exactly from Available evidence paths. Every operation must change the catalog's current value; no no-op writes are allowed. A separate paired validation/held-out evaluator decides promotion. Use at most 3 operations. Your candidate must differ materially from the excluded candidates below. Supply 1-4 evidence_refs whose predicates are TRUE against the displayed current value and directly support the diagnosis. Example of syntax only: if the catalog says runtime.model_calls current=26, {\"path\":\"runtime.model_calls\",\"operator\":\"gt\",\"value\":10} is true. Never assert gt 0 for a current value of 0, or eq true for current=false. Operators are eq, ne, gt, gte, lt, lte, in. The runtime evaluates them and rejects contradicted claims.\n\nAvailable evidence paths and current values:\n{available_evidence_paths}\n\nMutation catalog (exact path/current value and semantics):\n{mutation_catalog}\n\nExcluded prior proposals:\n{diversity_exclusions}\n\nAllowed operation vocabulary:\n1. {\"op\":\"set_field\",\"path\":\"existing.dotted.path\",\"value\":...}\n2. {\"op\":\"insert_node_on_edge\",\"source\":\"node_id\",\"condition\":\"edge_condition\",\"node_id\":\"new_id\",\"node\":{\"op\":\"one of 输入|Agent|工具审查|工具|模型|上下文|记忆|条件|数据|循环|并行|映射|合并|子流程|检查点|搜索控制|输出|结束\",\"edges\":[{\"condition\":\"default\",\"to\":\"existing_node_id\"}]}}. IMPORTANT: insertion already rewires source:condition to the new node, so NEVER add a redirect_edge for the same source and condition. Node edges use the key 'to', never 'target'. A 条件 node MUST include a safe \"condition\" expression and emits only \"true\" or \"false\". A 工具 node must receive tool_calls directly from Agent/工具审查 or via inputs.tool_calls; it cannot invent an action.\n3. {\"op\":\"remove_node_and_bypass\",\"node_id\":\"node_id\",\"bypass_condition\":\"default\"}\n4. {\"op\":\"redirect_edge\",\"source\":\"node_id\",\"condition\":\"edge_condition\",\"target\":\"existing_node_id\"}\nOnly paths under this allowlist may change: {allowed_paths}\n\nBase Flow:\n{base_config}\n\nMeasured evidence:\n{evaluation_evidence}\n\nReturn ONLY JSON: {\"hypothesis\":\"...\",\"failure_mechanism\":\"...\",\"evidence_refs\":[{\"path\":\"runtime.model_calls\",\"operator\":\"gt\",\"value\":10}],\"operations\":[...],\"expected_effect\":\"...\",\"risk\":\"...\",\"evaluation_plan\":{\"validation_cases\":2,\"heldout_cases\":2,\"ablation\":\"what isolates the proposed mechanism\",\"promotion_rule\":\"paired official outcome first; no held-out regressions\"}}"
+    },
+    "repair": {
+      "default": "The typed Flow validator rejected the proposal below. Repair only the reported evidence/structural/interface defect while preserving the same minimal hypothesis when measurements still support it; otherwise replace the hypothesis. Copy evidence paths and set_field paths exactly from the catalogs. Do not add task-specific knowledge. If insertion already rewired an edge, delete the redundant redirect. Every node edge must use 'to'; 'target' is only valid on a redirect_edge operation.\n\nProposal: {proposal}\nValidator result: {flow_variant}\nAvailable evidence paths: {available_evidence_paths}\nMutation catalog: {mutation_catalog}\nAllowed paths: {allowed_paths}\nBase Flow: {base_config}\n\nReturn ONLY the same JSON proposal schema with corrected evidence_refs and operations."
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "propose",
+    "max_steps": 8,
+    "budget": {"max_model_calls": 2, "max_tool_calls": 0, "max_tokens": 12000},
+    "context": {"base_config": {}, "evaluation_evidence": {}, "allowed_paths": [], "diversity_exclusions": [], "mutation_catalog": [], "available_evidence_paths": [], "proposal": {}, "flow_variant": {}},
+    "nodes": {
+      "propose": {
+        "id": "propose", "op": "模型", "agent": "evolver", "prompt": "propose", "parse_as": "json_object",
+        "json_fallback": {"hypothesis": "invalid model proposal", "operations": []}, "temperature": 0.15, "max_tokens": 3000,
+        "inputs": {"base_config": "$ctx.base_config", "evaluation_evidence": "$ctx.evaluation_evidence", "allowed_paths": "$ctx.allowed_paths", "diversity_exclusions": "$ctx.diversity_exclusions", "mutation_catalog": "$ctx.mutation_catalog", "available_evidence_paths": "$ctx.available_evidence_paths"},
+        "outputs": {"structured": "proposal"}, "edges": [{"condition": "has_text", "to": "validate"}, {"condition": "json_fallback", "to": "validate"}]
+      },
+      "validate": {
+        "id": "validate", "op": "流程变体", "persist": false, "max_operations": 8,
+        "inputs": {"base_config": "$ctx.base_config", "proposal": "$ctx.proposal", "evidence": "$ctx.evaluation_evidence"}, "allowed_paths": "$ctx.allowed_paths", "output_var": "flow_variant",
+        "edges": [{"condition": "variant_valid", "to": "done"}, {"condition": "variant_invalid", "to": "repair"}]
+      },
+      "repair": {
+        "id": "repair", "op": "模型", "agent": "evolver", "prompt": "repair", "parse_as": "json_object",
+        "json_fallback": "$ctx.proposal", "temperature": 0.1, "max_tokens": 2400,
+        "inputs": {"base_config": "$ctx.base_config", "proposal": "$ctx.proposal", "flow_variant": "$ctx.flow_variant", "allowed_paths": "$ctx.allowed_paths", "mutation_catalog": "$ctx.mutation_catalog", "available_evidence_paths": "$ctx.available_evidence_paths"},
+        "outputs": {"structured": "proposal"}, "edges": [{"condition": "has_text", "to": "validate_repair"}, {"condition": "json_fallback", "to": "validate_repair"}]
+      },
+      "validate_repair": {
+        "id": "validate_repair", "op": "流程变体", "persist": false, "max_operations": 8,
+        "inputs": {"base_config": "$ctx.base_config", "proposal": "$ctx.proposal", "evidence": "$ctx.evaluation_evidence"}, "allowed_paths": "$ctx.allowed_paths", "output_var": "flow_variant",
+        "edges": [{"condition": "variant_valid", "to": "done"}, {"condition": "variant_invalid", "to": "done"}]
+      },
+      "done": {"id": "done", "op": "结束", "value": {"proposal": "$ctx.proposal", "variant": "$ctx.flow_variant"}, "edges": []}
+    }
+  }
+}

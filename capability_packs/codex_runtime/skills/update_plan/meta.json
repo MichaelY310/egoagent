@@ -1,0 +1,25 @@
+{
+  "type": "function",
+  "title": "Update Plan",
+  "name": "update_plan",
+  "description": "Publish the current task plan. Use only for multi-step work. At most one item may be in_progress.",
+  "permissions": [],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "explanation": {"type": "string"},
+      "plan": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "step": {"type": "string"},
+            "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}
+          },
+          "required": ["step", "status"]
+        }
+      }
+    },
+    "required": ["plan"]
+  }
+}

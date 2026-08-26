@@ -30,6 +30,8 @@ from typing import List, Dict, Any, Optional
 class DummyLLM:
     def __init__(self, config: Dict):
         self.config = config
+        self.model = str(config.get("model") or "dummy")
+        self.last_response_metadata = {}
         self.mode = config.get("mode", "scripted")
         self._step_idx = 0
         self._replay_entries = []

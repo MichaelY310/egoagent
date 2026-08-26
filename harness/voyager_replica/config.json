@@ -1,0 +1,138 @@
+{
+  "name": "voyager_replica",
+  "description": "Source-shaped Voyager reproduction: persistent automatic curriculum, four-attempt environment rollouts, strict critic, progress cleanup and upserted executable skill trajectories.",
+  "slots": {
+    "curriculum": {"description": "Proposes the next achievable task after the hard-coded first task", "required": true, "identity": "dante"},
+    "action": {"description": "Acts through environment tools supplied by its Identity/EGO", "required": true, "identity": "coder"},
+    "critic": {"description": "Verifies success from environment observations", "required": true, "identity": "dante"},
+    "skill_manager": {"description": "Names and describes a reusable executable trajectory", "required": true, "identity": "coder"}
+  },
+  "prompts": {
+    "curriculum": {
+      "description": "Voyager automatic curriculum prompt",
+      "default": "Propose exactly one next task that is novel, useful and achievable in the current environment. Increase difficulty gradually. Never repeat completed tasks and avoid recently failed tasks.\n\nOverall goal: {goal}\nIteration: {learning_iteration}\nCompleted: {completed_tasks}\nFailed: {failed_tasks}\nRelevant reusable skills: {retrieved_skills}\nPrevious critique: {critique}\n\nReturn ONLY JSON: {{\"task\":\"...\",\"context\":\"constraints and useful environment knowledge\"}}"
+    },
+    "critic": {
+      "description": "Voyager environment-grounded success critic",
+      "default": "Judge whether the task actually succeeded using only the returned environment observations and tool trajectory. A plausible claim is not evidence. Any terminal execution error means failure.\n\nTask: {current_task}\nContext: {task_context}\nAttempt: {task_attempt}\nRollout: {action_result}\n\nReturn ONLY JSON: {{\"success\":true,\"critique\":\"brief evidence or exact reason for failure\"}}"
+    },
+    "skill": {
+      "description": "Describe the successful reusable skill",
+      "default": "Turn this successful environment rollout into a reusable skill. The stored trajectory is the executable procedure; your description should say when it applies and what it achieves. Choose a stable short snake_case name so learning the same skill again updates it.\n\nTask: {current_task}\nContext: {task_context}\nRollout: {action_result}\n\nReturn ONLY JSON: {{\"name\":\"stable_skill_name\",\"description\":\"...\",\"importance\":5}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 4000,
+    "max_node_steps": 12000,
+    "timeout_seconds": 86400,
+    "budget": {"max_model_calls": 2500, "max_tool_calls": 8000, "max_tokens": 16000000},
+    "context": {
+      "goal": "",
+      "max_iterations": 160,
+      "learning_iterations": [],
+      "learning_iteration": 0,
+      "task_attempts": [1, 2, 3, 4],
+      "task_attempt": 0,
+      "completed_tasks": [],
+      "failed_tasks": [],
+      "retrieved_skills": [],
+      "current_task": "",
+      "task_context": "",
+      "task_success": false,
+      "critique": "",
+      "action_result": {},
+      "skill": {}
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "goal"}, "edges": [{"condition": "input", "to": "load_completed"}]},
+      "load_completed": {"id": "load_completed", "op": "数据", "action": "get", "scope": "file", "path": ".egoagent/voyager-progress.json", "key": "completed_tasks", "default": [], "output_var": "completed_tasks", "edges": [{"condition": "default", "to": "load_failed"}]},
+      "load_failed": {"id": "load_failed", "op": "数据", "action": "get", "scope": "file", "path": ".egoagent/voyager-progress.json", "key": "failed_tasks", "default": [], "output_var": "failed_tasks", "edges": [{"condition": "default", "to": "make_stop"}]},
+      "make_stop": {"id": "make_stop", "op": "数据", "action": "evaluate", "key": "learning_stop", "expression": "ctx.max_iterations + 1", "edges": [{"condition": "default", "to": "make_slots"}]},
+      "make_slots": {"id": "make_slots", "op": "数据", "action": "range", "key": "learning_iterations", "range_start": 1, "range_stop": "$ctx.learning_stop", "max_items": 1000, "edges": [{"condition": "default", "to": "learn"}]},
+      "learn": {"id": "learn", "op": "循环", "list_var": "learning_iterations", "item_var": "learning_iteration", "body_start": "retrieve_skills", "max_count": "$ctx.max_iterations", "edges": [{"condition": "loop_done", "to": "list_skills"}]},
+      "retrieve_skills": {"id": "retrieve_skills", "op": "记忆", "action": "search", "namespace": "voyager_skills", "memory_type": "skill", "query": "${ctx.goal} ${ctx.current_task} ${ctx.critique}", "top_k": 5, "output_var": "retrieved_skills", "edges": [{"condition": "memory_found", "to": "first_task"}, {"condition": "memory_empty", "to": "first_task"}]},
+      "first_task": {"id": "first_task", "op": "条件", "expression": "empty(ctx.completed_tasks) and ctx.learning_iteration == 1", "edges": [{"condition": "true", "to": "set_first_task"}, {"condition": "false", "to": "curriculum"}]},
+      "set_first_task": {"id": "set_first_task", "op": "数据", "action": "set", "key": "current_task", "value": "Mine 1 wood log", "edges": [{"condition": "default", "to": "set_first_context"}]},
+      "set_first_context": {"id": "set_first_context", "op": "数据", "action": "set", "key": "task_context", "value": "Bootstrap task from Voyager's automatic curriculum.", "edges": [{"condition": "default", "to": "reset_success"}]},
+      "curriculum": {
+        "id": "curriculum",
+        "op": "模型",
+        "agent": "curriculum",
+        "prompt": "curriculum",
+        "parse_as": "json",
+        "temperature": 0.2,
+        "retry": {"max_attempts": 5, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["task", "context"]},
+        "outputs": {"structured.task": "current_task", "structured.context": "task_context"},
+        "edges": [{"condition": "has_text", "to": "reset_success"}]
+      },
+      "reset_success": {"id": "reset_success", "op": "数据", "action": "set", "key": "task_success", "value": false, "edges": [{"condition": "default", "to": "reset_critique"}]},
+      "reset_critique": {"id": "reset_critique", "op": "数据", "action": "set", "key": "critique", "value": "", "edges": [{"condition": "default", "to": "attempt"}]},
+      "attempt": {
+        "id": "attempt",
+        "op": "循环",
+        "list_var": "task_attempts",
+        "item_var": "task_attempt",
+        "body_start": "act",
+        "break_when": "ctx.task_success",
+        "max_count": 4,
+        "edges": [{"condition": "loop_break", "to": "distill_skill"}, {"condition": "loop_done", "to": "record_failure"}]
+      },
+      "act": {
+        "id": "act",
+        "op": "子流程",
+        "harness": "voyager_action_worker",
+        "agent_map": {"actor": "action"},
+        "result_mode": "result",
+        "inputs": {"message": "Soft-reset or inspect the environment, then complete the task with available tools. Reuse retrieved skills when applicable. Stop only with a factual observation-grounded summary.\n\nTask: ${ctx.current_task}\nContext: ${ctx.task_context}\nAttempt: ${ctx.task_attempt}\nRetrieved skills: ${ctx.retrieved_skills}\nPrevious critique: ${ctx.critique}"},
+        "output_var": "action_result",
+        "edges": [{"condition": "subflow_done", "to": "critic"}]
+      },
+      "critic": {
+        "id": "critic",
+        "op": "模型",
+        "agent": "critic",
+        "prompt": "critic",
+        "parse_as": "json",
+        "temperature": 0.1,
+        "retry": {"max_attempts": 5, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["success", "critique"]},
+        "outputs": {"structured.success": "task_success", "structured.critique": "critique"},
+        "edges": [{"condition": "has_text", "to": "attempt"}]
+      },
+      "distill_skill": {
+        "id": "distill_skill",
+        "op": "模型",
+        "agent": "skill_manager",
+        "prompt": "skill",
+        "parse_as": "json",
+        "temperature": 0.1,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["name", "description", "importance"]},
+        "outputs": {"structured": "skill"},
+        "edges": [{"condition": "has_text", "to": "remember_skill"}]
+      },
+      "remember_skill": {
+        "id": "remember_skill",
+        "op": "记忆",
+        "action": "upsert",
+        "upsert_key": "id",
+        "namespace": "voyager_skills",
+        "inputs": {"memory": {"id": "$ctx.skill.name", "text": "$ctx.skill.description", "type": "skill", "importance": "$ctx.skill.importance", "keywords": ["$ctx.current_task"], "metadata": {"task": "$ctx.current_task", "trajectory": "$ctx.action_result.trajectory", "summary": "$ctx.action_result.summary"}}},
+        "edges": [{"condition": "memory_added", "to": "record_success"}, {"condition": "memory_updated", "to": "record_success"}]
+      },
+      "record_success": {"id": "record_success", "op": "数据", "action": "append", "scope": "file", "path": ".egoagent/voyager-progress.json", "key": "completed_tasks", "value": "$ctx.current_task", "output_var": "completed_tasks", "edges": [{"condition": "default", "to": "unique_completed"}]},
+      "unique_completed": {"id": "unique_completed", "op": "数据", "action": "unique", "key": "completed_tasks", "source": "$ctx.completed_tasks", "edges": [{"condition": "default", "to": "save_completed"}]},
+      "save_completed": {"id": "save_completed", "op": "数据", "action": "set", "scope": "file", "path": ".egoagent/voyager-progress.json", "key": "completed_tasks", "value": "$ctx.completed_tasks", "edges": [{"condition": "default", "to": "remove_completed_failures"}]},
+      "remove_completed_failures": {"id": "remove_completed_failures", "op": "数据", "action": "filter", "key": "failed_tasks", "source": "$ctx.failed_tasks", "condition": "item not in ctx.completed_tasks", "edges": [{"condition": "default", "to": "save_failed_after_success"}]},
+      "save_failed_after_success": {"id": "save_failed_after_success", "op": "数据", "action": "set", "scope": "file", "path": ".egoagent/voyager-progress.json", "key": "failed_tasks", "value": "$ctx.failed_tasks", "edges": [{"condition": "default", "to": "learn"}]},
+      "record_failure": {"id": "record_failure", "op": "数据", "action": "append", "scope": "file", "path": ".egoagent/voyager-progress.json", "key": "failed_tasks", "value": "$ctx.current_task", "output_var": "failed_tasks", "edges": [{"condition": "default", "to": "unique_failed"}]},
+      "unique_failed": {"id": "unique_failed", "op": "数据", "action": "unique", "key": "failed_tasks", "source": "$ctx.failed_tasks", "edges": [{"condition": "default", "to": "save_failed"}]},
+      "save_failed": {"id": "save_failed", "op": "数据", "action": "set", "scope": "file", "path": ".egoagent/voyager-progress.json", "key": "failed_tasks", "value": "$ctx.failed_tasks", "edges": [{"condition": "default", "to": "learn"}]},
+      "list_skills": {"id": "list_skills", "op": "记忆", "action": "list", "namespace": "voyager_skills", "memory_type": "skill", "top_k": 100, "edges": [{"condition": "memory_found", "to": "output"}, {"condition": "memory_empty", "to": "output"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": {"skills": "$node.list_skills.items", "completed_tasks": "$ctx.completed_tasks", "failed_tasks": "$ctx.failed_tasks"}}, "edges": []}
+    }
+  }
+}

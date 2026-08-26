@@ -1,0 +1,79 @@
+{
+  "name": "openmanus_replica",
+  "description": "Pinned OpenManus Manus reproduction: 20-step ReAct lifecycle, sequential composite EGO/MCP-style tools, 10k observations, browser-aware evidence, explicit ask_human/terminate, cleanup-safe checkpoints and stuck recovery.",
+  "slots": {
+    "manus": {"description": "OpenManus Identity with coding, research, browser, human handoff and termination EGO tools", "required": true, "identity": "openmanus"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 180,
+    "max_node_steps": 720,
+    "timeout_seconds": 3600,
+    "workspace_preview": true,
+    "budget": {"max_model_calls": 24, "max_tool_calls": 160, "max_tokens": 320000},
+    "context": {
+      "request": "",
+      "max_agent_steps": 20,
+      "agent_stop": 21,
+      "agent_steps": [],
+      "agent_step": 0,
+      "observations": [],
+      "answer": "",
+      "termination": {},
+      "termination_results": [],
+      "human_required": {},
+      "status": "running"
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "make_steps"}]},
+      "make_steps": {"id": "make_steps", "op": "数据", "action": "range", "key": "agent_steps", "range_start": 1, "range_stop": "$ctx.agent_stop", "max_items": 20, "edges": [{"condition": "default", "to": "agent_loop"}]},
+      "agent_loop": {"id": "agent_loop", "op": "循环", "list_var": "agent_steps", "item_var": "agent_step", "body_start": "context", "max_count": "$ctx.max_agent_steps", "edges": [{"condition": "loop_done", "to": "max_steps_status"}]},
+      "context": {"id": "context", "op": "上下文", "action": "select", "source": "$session.messages", "last_n": 36, "max_chars": 70000, "output_var": "observations", "edges": [{"condition": "context_ready", "to": "act"}]},
+      "act": {
+        "id": "act", "op": "Agent", "agent": "manus", "tools": "all",
+        "inputs": {"messages": "$ctx.observations", "instructions": "OpenManus ReAct step ${ctx.agent_step}/${ctx.max_agent_steps}. Proactively choose the smallest appropriate tool or combination. Explain observed results before the next step. If browsing was used recently, ground the next action in the latest page observation. Use ask_human only when truly blocked. When the request is met or cannot proceed, call terminate with success or failure instead of merely saying you are done."},
+        "max_tool_calls_per_turn": 12,
+        "duplicate_threshold": 2,
+        "stuck_to": "agent_loop",
+        "stuck_prompt": "Observed duplicate responses. Consider a new strategy and avoid repeating ineffective paths already attempted. If no safe path remains, call terminate with failure.",
+        "retry": {"max_attempts": 2, "delay_seconds": 1},
+        "timeout_seconds": 180,
+        "outputs": {"text": "answer"},
+        "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "agent_loop"}, {"condition": "stuck", "to": "agent_loop"}]
+      },
+      "tools": {
+        "id": "tools", "op": "工具", "agent": "manus", "parallel": false,
+        "max_observation_chars": 10000,
+        "truncate_after_tools": ["terminate", "submit_result"],
+        "terminal_tools_to": "capture_termination",
+        "end_session_to": "capture_submission",
+        "stuck_threshold": 3,
+        "error_stuck_threshold": 3,
+        "alternating_stuck_threshold": 6,
+        "stuck_prompt": "The recent tool calls are repeating without progress. Review the observations and use different arguments, a different tool, ask_human, or terminate honestly.",
+        "timeout_seconds": 300,
+        "checkpoint": true,
+        "checkpoint_label": "openmanus-tool-round",
+        "interrupt_when": "tool == 'browser' and (arguments.get('action') in ['navigate', 'back', 'new_tab', 'switch_tab'] or (is_object(result) and bool(result.get('page_changed', false))) or (is_object(result) and is_object(result.get('observation', {})) and bool(result.get('observation', {}).get('page_changed', false))))",
+        "outputs": {"results": "termination_results", "human_required": "human_required"},
+        "edges": [{"condition": "human_required", "to": "human_approval"}, {"condition": "stuck", "to": "agent_loop"}, {"condition": "tools_executed", "to": "agent_loop"}, {"condition": "no_tool_calls", "to": "agent_loop"}]
+      },
+      "human_approval": {
+        "id": "human_approval", "op": "人工审批", "name": "OpenManus ask_human", "data": "$ctx.human_required", "editable": true,
+        "prompt_text": "OpenManus requires one human fact, decision or manual browser action. Provide the requested value/action and approve to resume, or reject to stop as blocked.",
+        "default": "rejected", "output_var": "human_decision",
+        "edges": [{"condition": "approved", "to": "agent_loop"}, {"condition": "rejected", "to": "human_rejected_status"}]
+      },
+      "human_rejected_status": {"id": "human_rejected_status", "op": "数据", "action": "set", "key": "status", "value": "human_rejected", "edges": [{"condition": "default", "to": "output"}]},
+      "capture_termination": {"id": "capture_termination", "op": "数据", "action": "evaluate", "key": "termination", "expression": "ctx.termination_results[-1].result if len(ctx.termination_results) > 0 else {'status':'success','summary':ctx.answer}", "edges": [{"condition": "default", "to": "termination_status"}]},
+      "termination_status": {"id": "termination_status", "op": "数据", "action": "evaluate", "key": "status", "expression": "ctx.termination.get('status', 'success')", "edges": [{"condition": "default", "to": "termination_answer"}]},
+      "termination_answer": {"id": "termination_answer", "op": "数据", "action": "evaluate", "key": "answer", "expression": "ctx.termination.get('summary') if ctx.termination.get('summary') else ctx.answer", "edges": [{"condition": "default", "to": "output"}]},
+      "capture_submission": {"id": "capture_submission", "op": "数据", "action": "set", "key": "status", "value": "success", "edges": [{"condition": "default", "to": "submission_answer"}]},
+      "submission_answer": {"id": "submission_answer", "op": "数据", "action": "set", "key": "answer", "value": "$ctx._submission", "edges": [{"condition": "default", "to": "output"}]},
+      "max_steps_status": {"id": "max_steps_status", "op": "数据", "action": "set", "key": "status", "value": "max_steps", "edges": [{"condition": "default", "to": "output"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": {"status": "$ctx.status", "answer": "$ctx.answer", "steps": "$ctx.agent_step", "trajectory": "$ctx._trajectory", "human_required": "$ctx.human_required"}}, "record": false, "edges": []}
+    }
+  }
+}

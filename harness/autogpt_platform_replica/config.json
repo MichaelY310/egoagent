@@ -1,0 +1,125 @@
+{
+  "name": "autogpt_platform_replica",
+  "description": "AutoGPT Platform persisted port-graph reproduction. A planner compiles typed blocks and named links; the existing Subflow component schedules repeated output events, static input reuse, dynamic fan-in, bounded cycles, concurrent ready executions, editable per-block review, schema validation, cancellation and deterministic execution records while preserving Identity/EGO workers.",
+  "slots": {
+    "planner": {"description": "Compiles requests into typed persisted port graphs", "required": true, "identity": "dante"},
+    "worker": {"description": "Runs an individual graph block through its Identity/EGO harness", "required": true, "identity": "openmanus"},
+    "verifier": {"description": "Checks terminal events and execution records", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "compile_graph": {
+      "description": "Compile a request into an AutoGPT-style named-port graph",
+      "default": "Compile the request into a small typed port graph. Each block has a stable unique id, an instruction, required_inputs, defaults, output_port, sensitive, output_schema and output_schemas. Each link connects source_id/source_name to sink_id/sink_name. is_static=true means the value is cached and reused by every later sink execution; false means each source event fills the earliest incomplete execution or creates a new one. Independent root blocks have no incoming links and run concurrently. A block may intentionally emit the same named output several times. Use cycles only when an upstream root starts them and make their termination condition explicit in the instruction. sensitive is true only for publishing, deleting, purchasing, sending, credential exposure, or another consequential external side effect. Use output_schema for the ordinary output_port and output_schemas for any additional named ports.\n\nRequest: {request}\n\nReturn ONLY JSON: {{\"goal\":\"...\",\"blocks\":[{{\"id\":\"T1\",\"instruction\":\"...\",\"required_inputs\":[],\"defaults\":{{}},\"output_port\":\"output\",\"sensitive\":false,\"output_schema\":{{\"type\":\"string\",\"minLength\":1}},\"output_schemas\":{{}}}}],\"links\":[{{\"source_id\":\"T1\",\"source_name\":\"output\",\"sink_id\":\"T2\",\"sink_name\":\"source\",\"is_static\":false}}]}}"
+    },
+    "verify_graph": {
+      "description": "Validate event-driven executions and terminal evidence",
+      "default": "Act as the final AutoGPT graph verifier. Compare the compiled named-port graph with every execution record and ordered output event. Account for repeated executions, reused static values, rejected reviews, failed schemas, blocked fan-in and terminal outputs. Report only evidence present in the records.\n\nRequest: {request}\nCompiled graph: {plan}\nGraph status: {port_graph_result}\nBlock records: {block_results}\nOrdered port events: {port_events}\n\nReturn ONLY JSON: {{\"success\":true,\"summary\":\"...\",\"completed_tasks\":[\"T1\"],\"failed_tasks\":[],\"evidence\":[\"...\"]}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 20,
+    "max_node_steps": 900,
+    "timeout_seconds": 3600,
+    "workspace_preview": true,
+    "budget": {"max_model_calls": 80, "max_tool_calls": 300, "max_tokens": 600000},
+    "context": {"request": "", "plan": {}, "block_results": [], "port_events": [], "port_graph_result": {}, "final": {}},
+    "nodes": {
+      "input": {
+        "id": "input", "op": "输入", "outputs": {"text": "request"},
+        "edges": [{"condition": "input", "to": "compile"}]
+      },
+      "compile": {
+        "id": "compile", "op": "模型", "agent": "planner", "prompt": "compile_graph", "parse_as": "json", "temperature": 0.1,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {
+          "type": "object", "required": ["goal", "blocks", "links"],
+          "properties": {
+            "goal": {"type": "string", "minLength": 1},
+            "blocks": {
+              "type": "array", "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["id", "instruction", "required_inputs", "defaults", "output_port", "sensitive", "output_schema", "output_schemas"],
+                "properties": {
+                  "id": {"type": "string", "minLength": 1},
+                  "instruction": {"type": "string", "minLength": 1},
+                  "required_inputs": {"type": "array", "items": {"type": "string"}},
+                  "defaults": {"type": "object"},
+                  "output_port": {"type": "string", "minLength": 1},
+                  "sensitive": {"type": "boolean"},
+                  "output_schema": {"type": "object"},
+                  "output_schemas": {"type": "object"}
+                }
+              }
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["source_id", "source_name", "sink_id", "sink_name", "is_static"],
+                "properties": {
+                  "source_id": {"type": "string", "minLength": 1},
+                  "source_name": {"type": "string", "minLength": 1},
+                  "sink_id": {"type": "string", "minLength": 1},
+                  "sink_name": {"type": "string", "minLength": 1},
+                  "is_static": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        },
+        "outputs": {"structured": "plan"},
+        "edges": [{"condition": "has_text", "to": "before_execution"}]
+      },
+      "before_execution": {
+        "id": "before_execution", "op": "检查点", "action": "save", "label": "autogpt-before-execution",
+        "edges": [{"condition": "checkpoint_saved", "to": "execute_graph"}]
+      },
+      "execute_graph": {
+        "id": "execute_graph", "op": "子流程", "mode": "port_graph",
+        "block_harness": "bounded_action_worker", "agent_map": {"actor": "worker"},
+        "block_message": "Execute exactly one persisted AutoGPT block using only the declared port inputs. Use the minimum necessary tools, obey safety policy and satisfy all output schemas. For one ordinary event return its value directly. To emit repeated or multiple named events, return ONLY JSON {{\"outputs\":[{{\"name\":\"port_name\",\"value\":\"...\"}}]}}.\n\nOverall request: {request}\nBlock: {block}\nAccumulated port inputs: {inputs}",
+        "inputs": {
+          "port_graph": {
+            "blocks": "$ctx.plan.blocks", "links": "$ctx.plan.links",
+            "max_workers": 4, "max_executions": 500, "max_events": 5000, "fail_fast": false
+          },
+          "data": {"request": "$ctx.request", "goal": "$ctx.plan.goal"}
+        },
+        "output_var": "port_graph_result", "records_var": "block_results", "events_var": "port_events",
+        "state_path": ".egoagent/port-graphs/autogpt-${ctx._run_id}.json", "resume_state": true,
+        "review_default": "rejected",
+        "edges": [
+          {"condition": "port_graph_completed", "to": "verify"},
+          {"condition": "port_graph_completed_with_errors", "to": "verify"},
+          {"condition": "port_graph_blocked", "to": "verify"},
+          {"condition": "port_graph_failed", "to": "verify"},
+          {"condition": "port_graph_limit_exceeded", "to": "verify"},
+          {"condition": "subflow_done", "to": "verify"}
+        ]
+      },
+      "verify": {
+        "id": "verify", "op": "模型", "agent": "verifier", "prompt": "verify_graph", "parse_as": "json", "temperature": 0.1,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {
+          "type": "object", "required": ["success", "summary", "completed_tasks", "failed_tasks", "evidence"],
+          "properties": {
+            "success": {"type": "boolean"}, "summary": {"type": "string"},
+            "completed_tasks": {"type": "array", "items": {"type": "string"}},
+            "failed_tasks": {"type": "array", "items": {"type": "string"}},
+            "evidence": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "outputs": {"structured": "final"},
+        "edges": [{"condition": "has_text", "to": "after_execution"}]
+      },
+      "after_execution": {
+        "id": "after_execution", "op": "检查点", "action": "save", "label": "autogpt-after-execution",
+        "edges": [{"condition": "checkpoint_saved", "to": "output"}]
+      },
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$ctx.final"}, "edges": []}
+    }
+  }
+}

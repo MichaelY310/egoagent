@@ -1,0 +1,39 @@
+{
+  "type": "function",
+  "title": "Search Capability Library",
+  "name": "search_capabilities",
+  "description": "Search the local workspace-first capability library for reusable skills, tools, knowledge, identities, and DAG Harnesses. Use this before inventing a capability or child Agent. Results include a compact reuse contract: executable capabilities can be activated, identities can bind to slots, and Harnesses can be invoked as child sessions or inserted as SubDAG nodes.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "What capability is needed, using a concise task description or keywords."
+      },
+      "kinds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["skill", "tool", "knowledge", "identity", "harness"]
+        },
+        "description": "Optional capability kinds to search."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "default": 6
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["auto", "hybrid", "semantic", "lexical"],
+        "default": "auto",
+        "description": "auto/hybrid fuse keyword and vector rankings; semantic uses vectors only; lexical never loads an embedding model."
+      }
+    },
+    "required": ["query"]
+  },
+  "tags": ["capability", "discovery", "reuse", "workspace", "token-saving"],
+  "author": "EgoAgent",
+  "version": "1.0.0"
+}

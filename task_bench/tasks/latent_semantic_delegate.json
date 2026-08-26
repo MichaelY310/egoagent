@@ -1,0 +1,38 @@
+{
+  "version": "ego.task.v1",
+  "id": "latent_semantic_delegate",
+  "title": "开放语义研究队列",
+  "description": "弱提示委派题：开放问题无法用固定解析器覆盖，观察 Agent 是否把长检索轨迹隔离为 result-only worker。",
+  "category": "self-evolution",
+  "difficulty": "research",
+  "tags": ["semantic-search", "delegation", "context-isolation", "latent-evolution"],
+  "prompt": "不得使用网页或外部资料（模型 API 连接本身不在此限制内）。请从当前工作区 archive/ 的异构研究记录中回答三点并引用文件：1) Project ASTER 在网络分区时选择的写入原则；2) ORCHID 试验认定灌溉成功的阈值；3) LANTERN 复盘中建议的发布回滚触发条件。\n\n这是一个长期开放语义研究队列：后续问题、术语和文件结构每天都会变化，无法预先写死关键词、正则或字段解析器；每个请求可能经历 5–20 次搜索、改写查询和失败尝试。主 Agent 的长期上下文不得接收这些过程，只能收到带来源路径的最终结论、未决缺口和置信度。请完成今天的请求，并让今后请求天然满足这个隔离边界。具体采用何种产品能力由你判断。",
+  "workspace": {
+    "files": {
+      "archive/aster_design.md": "Project ASTER consistency note: during a network partition, reject minority-side writes and preserve quorum-confirmed history. Availability is secondary to avoiding divergent committed state.",
+      "archive/aster_chat.txt": "An early brainstorm proposed accepting all writes, but the final design rejected that idea.",
+      "archive/orchid_protocol.md": "ORCHID irrigation trial success criterion: median soil moisture must remain at or above 37 percent for six consecutive hours without manual watering.",
+      "archive/orchid_raw.txt": "Sensor samples: 36, 38, 39. Raw samples alone do not define the success criterion.",
+      "archive/lantern_postmortem.md": "LANTERN release policy: trigger automatic rollback when the five-minute error-budget burn rate exceeds 2.5x baseline in two consecutive windows.",
+      "archive/lantern_notes.txt": "A single transient spike should be observed but should not trigger rollback.",
+      "archive/unrelated_a.txt": "Museum lighting notes and paint colors.",
+      "archive/unrelated_b.md": "A recipe uses three orchids as decoration; unrelated to the trial."
+    }
+  },
+  "selection": {"recommended_harness": "react_single", "recommended_identity": "dante"},
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 360},
+  "evolution": {"allowed": true, "targets": ["harness", "identity", "skill", "knowledge"]},
+  "evaluation": {
+    "pass_score": 0.75,
+    "checks": [
+      {"type": "response_contains", "value": "少数", "weight": 1},
+      {"type": "response_contains", "value": "37", "weight": 1},
+      {"type": "response_contains", "value": "2.5", "weight": 1},
+      {"type": "identity_created", "weight": 2},
+      {"type": "tool_called", "name": "create_harness", "weight": 2},
+      {"type": "capability_added", "weight": 1},
+      {"type": "event_emitted", "event": "identity_evolution", "weight": 1}
+    ]
+  }
+}

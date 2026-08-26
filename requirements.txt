@@ -1,1 +1,4 @@
 pyyaml
+requests
+websocket-client
+fastembed>=0.7,<1

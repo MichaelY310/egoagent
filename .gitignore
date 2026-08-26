@@ -1,5 +1,6 @@
 # === Python ===
 __pycache__/
+.venv/
 *.py[cod]
 *$py.class
 *.so
@@ -15,9 +16,11 @@ harness_editor/node_modules/
 harness_editor/dist/
 harness_editor/tsconfig.tsbuildinfo
 .vite/
+.pnpm-store/
 
 # === IDE / Editor ===
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
@@ -85,13 +88,18 @@ void-web.tar.gz
 .vscode-data/
 
 # === EgoAgent runtime data ===
+.runtime/
 .egoagent/
 .egoagent_checkpoints/
 
 # === Temporary/test files ===
+tmp/
 _delete_test.txt
 _patch_*.py
 pas_output/
+experiments/**/_runs/
+experiments/external/
+experiments/archive/*.zip
 
 # === Misc ===
 *.bak

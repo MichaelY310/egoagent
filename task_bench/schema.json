@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://egoagent.local/schemas/task-v1.json",
+  "title": "EgoAgent Task Bench v1",
+  "type": "object",
+  "required": ["version", "id", "title", "prompt", "evaluation"],
+  "properties": {
+    "version": { "const": "ego.task.v1" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "category": { "type": "string" },
+    "difficulty": { "enum": ["starter", "easy", "medium", "hard", "research"] },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "prompt": { "type": "string", "minLength": 1 },
+    "workspace": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": {
+                  "content": { "type": "string" },
+                  "content_base64": { "type": "string" },
+                  "binary": { "type": "boolean" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "properties": {
+        "recommended_harness": { "type": "string" },
+        "recommended_identity": { "type": "string" },
+        "compatible_harnesses": { "type": "array", "items": { "type": "string" } },
+        "compatible_identities": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "backend": { "enum": ["local", "container"] },
+        "network": { "enum": ["inherit", "disabled", "required"] },
+        "container": {
+          "type": "object",
+          "properties": {
+            "dockerfile": { "type": "string" },
+            "build_context": { "type": "string" },
+            "workdir": { "type": "string" },
+            "cpus": { "type": "number", "exclusiveMinimum": 0 },
+            "memory_mb": { "type": "number", "minimum": 16 }
+          }
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "properties": { "timeout_seconds": { "type": "number", "minimum": 1 } }
+    },
+    "evolution": {
+      "type": "object",
+      "properties": {
+        "allowed": { "type": "boolean" },
+        "targets": { "type": "array", "items": { "enum": ["harness", "identity", "skill", "knowledge", "agent"] } }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "required": ["checks"],
+      "properties": {
+        "pass_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "checks": { "type": "array", "items": { "type": "object", "required": ["type"] } }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "prompt", "evaluation"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+          "title": { "type": "string" },
+          "prompt": { "type": "string", "minLength": 1 },
+          "resume_trajectory": { "type": "boolean" },
+          "workspace": { "type": "object" },
+          "evaluation": { "type": "object", "required": ["checks"] },
+          "artifacts": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "external_format": {
+      "type": "object",
+      "properties": {
+        "type": { "enum": ["harbor", "terminal-bench"] },
+        "schema_version": { "type": "string" },
+        "task_version": { "type": "string" },
+        "authors": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

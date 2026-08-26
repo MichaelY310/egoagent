@@ -1,0 +1,40 @@
+{
+  "type": "tool",
+  "name": "manage_harness",
+  "description": "Create or structurally evolve a visual, runnable Harness through the compact Harness Blueprint protocol. For edits: inspect first, then patch with the returned revision. Prefer small patch operations over replacing raw pipeline JSON. Use guide when unsure.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["guide", "contract", "inspect", "validate", "create", "patch", "rollback"],
+        "description": "guide=get the compact format; contract=get the small port/event contract for one node type; inspect=read a Harness and revision; validate=compile without writing; create=create a new Harness; patch=apply structural operations atomically; rollback=undo one patch transaction"
+      },
+      "harness_name": {
+        "type": "string",
+        "description": "Existing Harness directory name for inspect/patch, or optional name override for validate"
+      },
+      "blueprint": {
+        "type": "object",
+        "description": "For validate/create: {name, description, roles, start, steps}. Each step is {id,type,role?,next?|on?|routes?|config?}. Use action=guide for the full compact vocabulary."
+      },
+      "operations": {
+        "type": "array",
+        "description": "For patch: a short list using add_step, update_step, replace_step, remove_step, connect, disconnect, set_start, set_role, remove_role, set_prompt, remove_prompt or set_fields",
+        "items": {"type": "object"}
+      },
+      "expected_revision": {
+        "type": "string",
+        "description": "Revision returned by inspect. Required by convention for safe model edits."
+      },
+      "transaction_id": {
+        "type": "string",
+        "description": "Patch transaction id to rollback"
+      },
+      "reason": {"type": "string", "description": "Why this change is useful"},
+      "dry_run": {"type": "boolean", "description": "Validate and return the diff without writing"}
+      ,"node_type": {"type": "string", "description": "For contract: canonical node type such as Agent, 模型, 上下文 or 子流程"}
+    },
+    "required": ["action"]
+  }
+}

@@ -1,0 +1,236 @@
+{
+  "name": "deepseek_harness_replica",
+  "description": "DeepSeek Harness core runtime reproduced as an editable EgoAgent Flow Graph: persistent turn/step tool loop, exact trajectory, checkpoints, approvals, parallel tools, advisory repeat guard, deterministic tool-output pruning, passive model compaction, steering, web/capability tools and sub-harness delegation.",
+  "slots": {
+    "operator": {"description": "Main DeepSeek-style operator Identity", "required": true, "identity": "deepseek_operator"},
+    "compactor": {"description": "Identity used only when passive context compaction is due", "required": true, "identity": "deepseek_operator"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 220,
+    "max_node_steps": 2000,
+    "timeout_seconds": 7200,
+    "workspace_preview": true,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "budget_exceeded_to": "limit_status",
+    "limit_finalizer_max_steps": 4,
+    "budget": {"max_model_calls": 220, "max_tool_calls": 900, "max_tokens": 1800000},
+    "context": {
+      "request": "",
+      "_trajectory": [],
+      "pre_prune_stats": {},
+      "post_prune_stats": {},
+      "pre_compaction_stats": {},
+      "post_compaction_stats": {},
+      "repeat_guard": {}
+    },
+    "nodes": {
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "outputs": {"text": "request"},
+        "edges": [{"condition": "input", "to": "reset_repeat_guard"}]
+      },
+      "reset_repeat_guard": {
+        "id": "reset_repeat_guard",
+        "op": "子流程",
+        "harness": "component_repeat_tool_guard",
+        "share_session": true,
+        "component_inputs": {
+          "action": "reset",
+          "trajectory": "$ctx._trajectory",
+          "thresholds": [3, 5, 8],
+          "namespace": "deepseek_main"
+        },
+        "component_outputs": {"state": "repeat_guard"},
+        "result_mode": "data",
+        "edges": [{"condition": "subflow_done", "to": "pre_tool_prune"}]
+      },
+      "pre_tool_prune": {
+        "id": "pre_tool_prune",
+        "op": "子流程",
+        "harness": "component_tool_result_pruner",
+        "share_session": true,
+        "component_inputs": {"threshold_chars": 8192, "head_chars": 4096, "tail_chars": 1024},
+        "component_outputs": {"stats": "pre_prune_stats"},
+        "result_mode": "data",
+        "edges": [{"condition": "subflow_done", "to": "pre_turn_compaction"}]
+      },
+      "pre_turn_compaction": {
+        "id": "pre_turn_compaction",
+        "op": "子流程",
+        "harness": "component_context_compactor",
+        "share_session": true,
+        "agent_map": {"compactor": "compactor"},
+        "component_inputs": {
+          "context_limit_tokens": 128000,
+          "high_watermark": 0.8,
+          "target_ratio": 0.16,
+          "reserved_output_tokens": 8192,
+          "protect_recent_turns": 2
+        },
+        "component_outputs": {"stats": "pre_compaction_stats"},
+        "result_mode": "data",
+        "edges": [{"condition": "subflow_done", "to": "before_model_checkpoint"}]
+      },
+      "before_model_checkpoint": {
+        "id": "before_model_checkpoint",
+        "op": "检查点",
+        "action": "save",
+        "label": "deepseek-before-model",
+        "edges": [{"condition": "checkpoint_saved", "to": "act"}]
+      },
+      "act": {
+        "id": "act",
+        "op": "Agent",
+        "agent": "operator",
+        "tools": "all",
+        "max_tool_rounds": 180,
+        "reject_identical_tool_call": false,
+        "repetition_ngram_size": 0,
+        "instructions": "Complete the current user objective in this workspace. Continue the same turn after tool observations without repeating previous prose. Read scoped project instructions before editing. Use explicit evidence, update_plan for complex work, capability search before reinvention, and a bounded sub-harness for independent work that would pollute the main context. Independent read-only calls may be issued together. If output or execution limits interrupt the task, say so explicitly instead of presenting a partial sentence as completion.",
+        "retry": {"max_attempts": 4, "delay_seconds": 1, "backoff": 2},
+        "timeout_seconds": 300,
+        "edges": [
+          {"condition": "output_truncated", "to": "truncated_status"},
+          {"condition": "has_tool_calls", "to": "permissions"},
+          {"condition": "has_text", "to": "output"},
+          {"condition": "stuck", "to": "stuck_output"}
+        ]
+      },
+      "permissions": {
+        "id": "permissions",
+        "op": "工具审查",
+        "agent": "operator",
+        "review_mode": "policy",
+        "policy_match": "first",
+        "default_permission": "ask",
+        "ask_default": "rejected",
+        "policies": [
+          {"tool": "read*", "permission": "allow"},
+          {"tool": "search*", "permission": "allow"},
+          {"tool": "glob*", "permission": "allow"},
+          {"tool": "ls", "permission": "allow"},
+          {"tool": "update_plan", "permission": "allow"},
+          {"tool": "activate_capability", "permission": "allow"},
+          {"tool": "fetch*", "permission": "allow"},
+          {"tool": "web_search", "permission": "allow"},
+          {"tool": "browser", "permission": "ask"},
+          {"tool": "create_harness", "permission": "ask"},
+          {"tool": "apply_patch", "permission": "ask"},
+          {"tool": "patch*", "permission": "ask"},
+          {"tool": "write*", "permission": "ask"},
+          {"tool": "multi_edit", "permission": "ask"},
+          {"tool": "exec_command", "permission": "ask"},
+          {"tool": "run_command", "permission": "ask"}
+        ],
+        "edges": [{"condition": "default", "to": "tools"}]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "operator",
+        "parallel": true,
+        "max_workers": 8,
+        "timeout_seconds": 300,
+        "checkpoint": true,
+        "checkpoint_label": "deepseek-tool-batch",
+        "error_nudge_threshold": 0,
+        "stuck_threshold": 0,
+        "error_stuck_threshold": 0,
+        "edges": [
+          {"condition": "human_required", "to": "repeat_guard"},
+          {"condition": "tools_executed", "to": "repeat_guard"},
+          {"condition": "no_tool_calls", "to": "repeat_guard"},
+          {"condition": "stuck", "to": "stuck_output"}
+        ]
+      },
+      "repeat_guard": {
+        "id": "repeat_guard",
+        "op": "子流程",
+        "harness": "component_repeat_tool_guard",
+        "share_session": true,
+        "component_inputs": {
+          "action": "observe",
+          "trajectory": "$ctx._trajectory",
+          "thresholds": [3, 5, 8],
+          "arguments_preview_chars": 500,
+          "inject_message": true,
+          "namespace": "deepseek_main"
+        },
+        "component_outputs": {"state": "repeat_guard"},
+        "result_mode": "data",
+        "edges": [{"condition": "subflow_done", "to": "post_tool_prune"}]
+      },
+      "post_tool_prune": {
+        "id": "post_tool_prune",
+        "op": "子流程",
+        "harness": "component_tool_result_pruner",
+        "share_session": true,
+        "component_inputs": {"threshold_chars": 8192, "head_chars": 4096, "tail_chars": 1024},
+        "component_outputs": {"stats": "post_prune_stats"},
+        "result_mode": "data",
+        "edges": [{"condition": "subflow_done", "to": "post_tool_compaction"}]
+      },
+      "post_tool_compaction": {
+        "id": "post_tool_compaction",
+        "op": "子流程",
+        "harness": "component_context_compactor",
+        "share_session": true,
+        "agent_map": {"compactor": "compactor"},
+        "component_inputs": {
+          "context_limit_tokens": 128000,
+          "high_watermark": 0.8,
+          "target_ratio": 0.16,
+          "reserved_output_tokens": 8192,
+          "protect_recent_turns": 2
+        },
+        "component_outputs": {"stats": "post_compaction_stats"},
+        "result_mode": "data",
+        "edges": [{"condition": "subflow_done", "to": "steer_poll"}]
+      },
+      "steer_poll": {
+        "id": "steer_poll",
+        "op": "输入",
+        "mode": "poll",
+        "reuse_last": false,
+        "edges": [
+          {"condition": "input", "to": "reset_repeat_guard"},
+          {"condition": "no_input", "to": "before_model_checkpoint"}
+        ]
+      },
+      "output": {
+        "id": "output",
+        "op": "结束",
+        "inputs": {"value": "$node.act.text"},
+        "record": true,
+        "edges": []
+      },
+      "truncated_status": {
+        "id": "truncated_status",
+        "op": "数据",
+        "action": "set",
+        "key": "deepseek_truncated_result",
+        "value": {
+          "status": "output_truncated",
+          "message": "The model provider stopped at its output limit; the partial answer is preserved.",
+          "partial": "$node.act.text"
+        },
+        "edges": [{"condition": "default", "to": "truncated_output"}]
+      },
+      "truncated_output": {"id": "truncated_output", "op": "结束", "value": "$ctx.deepseek_truncated_result", "edges": []},
+      "stuck_output": {"id": "stuck_output", "op": "结束", "value": {"status": "stuck", "message": "$ctx.text", "trajectory": "$ctx._trajectory"}, "edges": []},
+      "limit_status": {
+        "id": "limit_status",
+        "op": "数据",
+        "action": "set",
+        "key": "deepseek_limit_result",
+        "value": {"status": "limit_exceeded", "reason": "$ctx._termination.message", "last_response": "$ctx.text", "trajectory": "$ctx._trajectory"},
+        "edges": [{"condition": "default", "to": "limit_output"}]
+      },
+      "limit_output": {"id": "limit_output", "op": "结束", "value": "$ctx.deepseek_limit_result", "edges": []}
+    }
+  }
+}

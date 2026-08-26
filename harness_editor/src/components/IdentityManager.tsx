@@ -49,11 +49,11 @@ const defaultId: IdData = {
   description: "",
   llm: {
     type: "custom_llm",
-    base_url: "http://[fdbd:dc02:2a:424::20]:10174/v1",
-    model: "Qwen3-8B-yangyuan",
+    base_url: "",
+    model: "",
     api_key: "",
-    temperature: 0.7,
-    max_tokens: 8192,
+    temperature: 0.2,
+    max_tokens: 4096,
   },
 };
 
@@ -90,6 +90,9 @@ export default function IdentityManager() {
   const [newSkillName, setNewSkillName] = useState("");
   const [newKnowledgeName, setNewKnowledgeName] = useState("");
   const [status, setStatus] = useState("");
+  const [agentDescription, setAgentDescription] = useState("");
+  const [agentSystemName, setAgentSystemName] = useState("");
+  const [createdHarness, setCreatedHarness] = useState("");
 
   const refreshList = useCallback(async () => {
     const list = await api.listIdentities();
@@ -150,6 +153,23 @@ export default function IdentityManager() {
       loadFull(name);
     } catch (e: unknown) {
       setStatus(`创建失败: ${(e as Error).message}`);
+    }
+  };
+
+  const createFullAgent = async () => {
+    if (!agentDescription.trim()) { setStatus("请先描述 Agent 要做什么"); return; }
+    setStatus("正在创建有效 Identity、真实 Skills 和可视化 Harness...");
+    try {
+      const result = await api.createAgentSystem(agentDescription.trim(), agentSystemName.trim() || undefined);
+      const identityName = result.identity?.name || "";
+      setCreatedHarness(result.harness || result.recommended_harness || "");
+      setAgentDescription("");
+      setAgentSystemName("");
+      await refreshList();
+      if (identityName) await loadFull(identityName);
+      setStatus(`完整 Agent ${identityName} 已创建；专属 Harness: ${result.harness}`);
+    } catch (e: unknown) {
+      setStatus(`完整 Agent 创建失败: ${(e as Error).message}`);
     }
   };
 
@@ -219,12 +239,13 @@ export default function IdentityManager() {
   const newSkill = () => {
     const name = newSkillName.trim();
     if (!name) { setStatus("请输入 Skill 名称"); return; }
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) { setStatus("Skill 名称必须是可用的 Python 函数名（英文、数字、下划线）"); return; }
     setNewSkillName("");
     setEditingSkill(name);
     setEditingKnowledge("");
     setSkillDetail({
-      meta: { type: "function", title: name, name, description: "", parameters: { type: "object", properties: {}, required: [] }, tags: [], author: "admin" },
-      scripts: { [`${name}.py`]: "# 在此编写工具实现\n\ndef main(**kwargs):\n    return {\"result\": \"ok\"}\n" },
+      meta: { type: "tool", title: name, name, description: "", parameters: { type: "object", properties: {}, required: [] }, tags: [], author: "admin" },
+      scripts: { [`${name}.py`]: `# 在此编写工具实现\n\ndef ${name}(**kwargs):\n    return {"result": "ok"}\n` },
     });
   };
 
@@ -272,7 +293,7 @@ export default function IdentityManager() {
     setEditingKnowledge(name);
     setEditingSkill("");
     setKnowledgeDetail({
-      meta: { name, description: "" },
+      meta: { type: "knowledge", name, title: name.split("_").join(" "), description: "" },
       content: "# 在此编写知识内容\n",
     });
   };
@@ -280,8 +301,29 @@ export default function IdentityManager() {
   return (
     <div style={{ display: "flex", height: "100%", gap: 0 }}>
       {/* 左侧列表 */}
-      <div style={{ width: 240, borderRight: "1px solid #333", padding: 12, overflowY: "auto", flexShrink: 0 }}>
+      <div style={{ width: 280, borderRight: "1px solid #333", padding: 12, overflowY: "auto", flexShrink: 0 }}>
         <h3 style={{ margin: "0 0 8px", fontSize: 14, color: "#aaa" }}>🤖 Identities</h3>
+
+        <div style={{ padding: 9, marginBottom: 10, border: "1px solid #0ea5e955", background: "#082f4933", borderRadius: 7 }}>
+          <div style={{ color: "#7dd3fc", fontSize: 12, fontWeight: 700, marginBottom: 5 }}>✨ 一句话创建完整 Agent</div>
+          <textarea
+            value={agentDescription}
+            onChange={(event) => setAgentDescription(event.target.value)}
+            placeholder="例如：一个会检查 Python 补丁、运行测试并解释风险的代码审查 Agent"
+            rows={4}
+            style={{ ...textareaStyle, fontSize: 11, marginBottom: 5 }}
+          />
+          <input
+            value={agentSystemName}
+            onChange={(event) => setAgentSystemName(event.target.value)}
+            placeholder="可选英文名，如 review_bot"
+            style={{ ...inputStyle, marginBottom: 5 }}
+          />
+          <button onClick={createFullAgent} style={{ ...btnStyle, width: "100%", background: "#0369a1", color: "#e0f2fe" }}>
+            创建 Identity + Skills + Harness
+          </button>
+          {createdHarness && <div style={{ color: "#86efac", fontSize: 10, marginTop: 5 }}>可在 Harness 编排中加载：{createdHarness}</div>}
+        </div>
 
         <div style={{ marginBottom: 8 }}>
           <input
@@ -396,7 +438,9 @@ export default function IdentityManager() {
                 <Field label="类型 (type)" value={idData.llm.type} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, type: v } })} />
                 <Field label="Base URL" value={idData.llm.base_url} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, base_url: v } })} />
                 <Field label="模型 (model)" value={idData.llm.model} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, model: v } })} />
-                <Field label="API Key" value={idData.llm.api_key} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, api_key: v } })} />
+                <p style={{ margin: "0 0 8px", color: "#777", fontSize: 11, lineHeight: 1.5 }}>
+                  API Key 不写入 Identity。请在 Settings 配置服务端模型档案；Base URL 与模型留空时使用当前全局档案。
+                </p>
                 <Field label="Temperature" value={String(idData.llm.temperature)} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, temperature: parseFloat(v) || 0 } })} />
                 <Field label="Max Tokens" value={String(idData.llm.max_tokens)} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, max_tokens: parseInt(v) || 0 } })} />
 

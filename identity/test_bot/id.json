@@ -7,6 +7,8 @@
   },
   "role": "test assistant",
   "description": "A simple test bot for verifying harness pipeline.",
+  "ego_inherits": ["@pack/filesystem_readonly", "@pack/filesystem_navigation"],
+  "preferred_tools": ["glob_search", "read_file"],
   "llm": {
     "type": "dummy_llm",
     "mode": "scripted",

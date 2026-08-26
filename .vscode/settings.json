@@ -1,0 +1,47 @@
+{
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/__pycache__/**": true,
+    "**/.runtime/**": true,
+    "**/.runtime-logs/**": true,
+    "**/.egoagent/**": true,
+    "**/.egoagent_checkpoints/**": true,
+    "**/sessions/**": true,
+    "**/logs/**": true,
+    "**/tmp/**": true,
+    "**/void-web/**": true,
+    "**/experiments/external/**": true,
+    "**/experiments/**/_runs/**": true,
+    "**/research/upstream/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/__pycache__": true,
+    "**/.runtime": true,
+    "**/.runtime-logs": true,
+    "**/.egoagent": true,
+    "**/.egoagent_checkpoints": true,
+    "**/sessions": true,
+    "**/logs": true,
+    "**/tmp": true,
+    "**/void-web": true,
+    "**/experiments/external": true,
+    "**/experiments/**/_runs": true,
+    "**/research/upstream": true
+  },
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.runtime": true,
+    "**/.runtime-logs": true,
+    "**/.egoagent": true,
+    "**/.egoagent_checkpoints": true,
+    "**/logs": true,
+    "**/tmp": true,
+    "**/void-web": true
+  },
+  "search.followSymlinks": false,
+  "git.repositoryScanMaxDepth": 1,
+  "git.openRepositoryInParentFolders": "never"
+}

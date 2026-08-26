@@ -1,0 +1,56 @@
+{
+  "name": "ai_scientist_experiment_run_worker",
+  "description": "AI Scientist experiment run with coder feedback and at most four implementation/error-repair attempts.",
+  "slots": {
+    "coder": {"description": "Aider-like coding Identity/EGO that implements or repairs one experiment run", "required": true, "identity": "coder"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 55,
+    "max_node_steps": 240,
+    "timeout_seconds": 3000,
+    "workspace_preview": true,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "budget": {"max_model_calls": 72, "max_tool_calls": 192, "max_process_calls": 4, "max_tokens": 500000},
+    "context": {
+      "task": "", "idea": {}, "experiment_plan": {}, "experiment_run": {}, "baseline_results": {},
+      "attempts": [1,2,3,4], "attempt": 1, "last_result": {}, "succeeded": false,
+      "attempt_history": [], "run_result": {}
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "task"}, "edges": [{"condition": "input", "to": "attempt_loop"}]},
+      "attempt_loop": {
+        "id": "attempt_loop", "op": "循环", "list_var": "attempts", "item_var": "attempt", "counter_var": "attempt_index",
+        "body_start": "coder_step", "break_when": "ctx.succeeded", "result_var": "attempt_history", "max_count": 4,
+        "edges": [{"condition": "loop_break", "to": "finalize"}, {"condition": "loop_done", "to": "finalize"}]
+      },
+      "coder_step": {
+        "id": "coder_step", "op": "子流程", "harness": "bounded_coder_worker", "agent_map": {"coder": "coder"},
+        "inputs": {"message": "Implement or repair this one scientific experiment run. Inspect the actual current files. On attempt 1, implement the requested change; on later attempts, correct the concrete process failure. Keep the command/args contract unchanged, do not rerun the provided baseline, and do not fabricate output. Update notes only with evidence after success.\n\nIdea: ${ctx.idea}\nPlan: ${ctx.experiment_plan}\nBaseline: ${ctx.baseline_results}\nRun: ${ctx.experiment_run}\nAttempt: ${ctx.attempt}/4\nPrevious process result: ${ctx.last_result}"},
+        "output_var": "coder_report", "edges": [{"condition": "subflow_done", "to": "execute"}]
+      },
+      "execute": {
+        "id": "execute", "op": "进程", "command": "$ctx.experiment_run.command", "args": "$ctx.experiment_run.args",
+        "cwd": "$ctx.experiment_run.cwd", "resources": "$ctx.experiment_run.resources", "success_codes": [0],
+        "fail_on_error": false, "timeout_seconds": 600,
+        "artifacts": ["**/final_info.json", "**/results.json", "**/notes.txt", "**/*.png", "**/*.pdf"],
+        "output_var": "last_result",
+        "edges": [{"condition": "process_succeeded", "to": "mark_success"}, {"condition": "process_failed", "to": "capture_attempt"}]
+      },
+      "mark_success": {"id": "mark_success", "op": "数据", "action": "set", "key": "succeeded", "value": true, "edges": [{"condition": "default", "to": "capture_attempt"}]},
+      "capture_attempt": {
+        "id": "capture_attempt", "op": "数据", "action": "set", "key": "_loop_result",
+        "value": {"attempt": "$ctx.attempt", "coder_report": "$ctx.coder_report", "process": "$ctx.last_result"},
+        "edges": [{"condition": "default", "to": "attempt_loop"}]
+      },
+      "finalize": {
+        "id": "finalize", "op": "数据", "action": "set", "key": "run_result",
+        "value": {"id": "$ctx.experiment_run.id", "purpose": "$ctx.experiment_run.purpose", "success": "$ctx.succeeded", "attempts": "$ctx.attempt", "process": "$ctx.last_result", "history": "$ctx.attempt_history"},
+        "edges": [{"condition": "default", "to": "output"}]
+      },
+      "output": {"id": "output", "op": "结束", "value": "$ctx.run_result", "edges": []}
+    }
+  }
+}

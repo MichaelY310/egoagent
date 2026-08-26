@@ -1,0 +1,21 @@
+{
+    "type": "function",
+    "title": "List Directory",
+    "name": "ls",
+    "description": "List files and directories in a given path. Returns names, types (file/dir), and sizes.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "description": "The absolute path to the directory to list.",
+                "type": "string"
+            },
+            "ignore": {
+                "description": "List of glob patterns to ignore (e.g. ['__pycache__', '*.pyc']).",
+                "type": "array",
+                "items": {"type": "string"}
+            }
+        },
+        "required": ["path"]
+    }
+}

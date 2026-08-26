@@ -28,6 +28,12 @@
         "id": "infer",
         "op": "推理",
         "agent": "agent",
+        "tools": "all",
+        "instructions": "If the user asks to change the workspace, perform the change with tools and verify the observation before claiming completion. Never substitute a completion phrase for an actual edit. Questions and explanations do not require a tool.",
+        "require_tool_for_mutations": true,
+        "required_tool_patterns": ["write_file", "patch_file", "multi_edit"],
+        "max_required_tool_retries": 2,
+        "max_tool_rounds": 8,
         "edges": [
           {
             "condition": "has_tool_calls",

@@ -33,6 +33,16 @@
                 "type": "string",
                 "enum": ["all", "last"],
                 "description": "'all' returns entire conversation, 'last' returns only final message"
+            },
+            "max_result_chars": {
+                "type": "integer",
+                "minimum": 500,
+                "maximum": 20000,
+                "description": "Maximum child result characters returned to the parent context; default 4000"
+            },
+            "include_metadata": {
+                "type": "boolean",
+                "description": "Include sub-session wrapper metadata. Set false for result-only hidden workers."
             }
         },
         "required": ["harness_dir", "agents"]

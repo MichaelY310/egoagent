@@ -1,0 +1,16 @@
+{
+  "type": "tool",
+  "name": "local_paper_search",
+  "description": "Search already-downloaded local papers by filename and content before using the web. Supports PDF, TXT and Markdown, builds a reusable workspace-local cache, and returns cited snippets with paths/pages. Use an empty query to list the collection.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string", "description": "Keywords, paper title, author, concept, or question; empty lists indexed papers"},
+      "root": {"type": "string", "description": "Workspace-relative paper directory, default papers"},
+      "paper": {"type": "string", "description": "Optional filename substring to restrict the search"},
+      "top_k": {"type": "integer", "minimum": 1, "maximum": 20},
+      "max_chars": {"type": "integer", "minimum": 500, "maximum": 30000}
+    },
+    "required": ["query"]
+  }
+}

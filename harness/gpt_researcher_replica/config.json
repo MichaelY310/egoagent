@@ -1,0 +1,69 @@
+{
+  "name": "gpt_researcher_replica",
+  "description": "Source-shaped GPT Researcher standard report: automatic research identity, seed search before query planning, parallel sub-query search/scrape workers, original-query coverage, source curation and grounded report writing.",
+  "slots": {
+    "strategist": {"description": "Selects the dynamic role, plans from initial search results and curates sources", "required": true, "identity": "dante"},
+    "researcher": {"description": "Runs bounded search/scrape loops for seed and sub-queries", "required": true, "identity": "researcher"},
+    "writer": {"description": "Writes the final report from curated context", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "choose_role": {
+      "description": "GPT Researcher automatic agent selection",
+      "default": "Choose the expert persona best suited to the research task. Return only JSON.\n\nTask: {request}\n\nSchema: {{\"server\":\"short agent name\",\"agent_role_prompt\":\"You are ...\"}}"
+    },
+    "plan": {
+      "description": "Plan sub-queries from an actual seed search result",
+      "default": "Using the initial public search material, generate at most three complementary plain natural-language sub-queries. Do not use search operators. The original query will be added separately.\n\nRequest: {request}\nRole: {agent_role}\nInitial search material: {seed_context}\n\nReturn ONLY JSON: {{\"queries\":[\"...\"]}}"
+    },
+    "curate": {
+      "description": "Rank and clean source material by relevance, credibility and reliability",
+      "default": "Curate the gathered source material for the request. Prefer primary and official sources, remove duplicates and irrelevant claims, preserve useful URLs, and flag contradictions. If no reliable material exists, output exactly NO_RELIABLE_SOURCES.\n\nRequest: {request}\nResearch role: {agent_role}\nRaw source material:\n{evidence}"
+    },
+    "report": {
+      "description": "GPT Researcher report generation",
+      "default": "Using only the curated material below, answer the request as an in-depth Markdown report. Form a concrete conclusion, use clear headings, cite URLs next to claims, and finish with a deduplicated References section. Never invent a citation.\n\nRequest: {request}\nResearch role: {agent_role}\nCurated material:\n{curated_context}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input", "max_steps": 44, "max_node_steps": 300, "timeout_seconds": 720,
+    "budget": {"max_model_calls": 72, "max_tool_calls": 120, "max_tokens": 360000},
+    "context": {"request": "", "agent_name": "", "agent_role": "", "seed_context": "", "queries": [], "research_runs": [], "evidence": "", "curated_context": ""},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "choose_role"}]},
+      "choose_role": {
+        "id": "choose_role", "op": "模型", "agent": "strategist", "prompt": "choose_role", "parse_as": "json_object",
+        "json_fallback": {"server": "Default Agent", "agent_role_prompt": "You are an objective, critical research assistant."},
+        "temperature": 0.15, "retry": {"max_attempts": 2},
+        "output_schema": {"type": "object", "required": ["server", "agent_role_prompt"], "properties": {"server": {"type": "string"}, "agent_role_prompt": {"type": "string"}}},
+        "outputs": {"structured.server": "agent_name", "structured.agent_role_prompt": "agent_role"}, "edges": [{"condition": "has_text", "to": "seed_search"}]
+      },
+      "seed_search": {
+        "id": "seed_search", "op": "子流程", "harness": "gpt_researcher_query_worker",
+        "inputs": {"message": "${ctx.agent_role}\n\nRun an initial public web search for this task: ${ctx.request}. Return a compact sample of relevant results with exact URLs. This material will be used to plan the research outline."},
+        "output_var": "seed_context", "edges": [{"condition": "subflow_done", "to": "plan"}]
+      },
+      "plan": {
+        "id": "plan", "op": "模型", "agent": "strategist", "prompt": "plan", "parse_as": "json_object",
+        "json_fallback": {"queries": []}, "temperature": 0.2, "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["queries"], "properties": {"queries": {"type": "array", "items": {"type": "string"}}}},
+        "outputs": {"structured.queries": "queries"}, "edges": [{"condition": "has_text", "to": "append_original"}]
+      },
+      "append_original": {"id": "append_original", "op": "数据", "action": "append", "key": "queries", "value": "$ctx.request", "edges": [{"condition": "default", "to": "dedupe_queries"}]},
+      "dedupe_queries": {"id": "dedupe_queries", "op": "数据", "action": "unique", "key": "queries", "source": "$ctx.queries", "edges": [{"condition": "default", "to": "research"}]},
+      "research": {"id": "research", "op": "映射", "source": "$ctx.queries", "item_var": "search_query", "body_start": "search_query", "join": "join_sources", "max_count": 4, "max_workers": 4, "fail_fast": false, "output_var": "research_runs", "edges": []},
+      "search_query": {
+        "id": "search_query", "op": "子流程", "harness": "gpt_researcher_query_worker",
+        "inputs": {"message": "${ctx.agent_role}\n\nResearch this query: ${ctx.search_query}\nOriginal request: ${ctx.request}\nSearch and read public sources. Return relevant evidence with exact URLs and distinguish direct evidence from inference."},
+        "output_var": "query_evidence", "edges": [{"condition": "subflow_done", "to": "join_sources"}]
+      },
+      "join_sources": {"id": "join_sources", "op": "合并", "source": "$ctx.research_runs", "strategy": "concat", "separator": "\n\n--- source batch ---\n\n", "output_var": "evidence", "edges": [{"condition": "joined", "to": "has_sources"}]},
+      "has_sources": {"id": "has_sources", "op": "条件", "condition": "not empty(strip(ctx.evidence))", "edges": [{"condition": "true", "to": "curate"}, {"condition": "false", "to": "abstain"}]},
+      "curate": {"id": "curate", "op": "模型", "agent": "strategist", "prompt": "curate", "temperature": 0.1, "max_tokens": 8000, "retry": {"max_attempts": 2}, "outputs": {"text": "curated_context"}, "edges": [{"condition": "has_text", "to": "reliable"}]},
+      "reliable": {"id": "reliable", "op": "条件", "condition": "strip(ctx.curated_context) != 'NO_RELIABLE_SOURCES' and not empty(strip(ctx.curated_context))", "edges": [{"condition": "true", "to": "report"}, {"condition": "false", "to": "abstain"}]},
+      "report": {"id": "report", "op": "模型", "agent": "writer", "prompt": "report", "temperature": 0.35, "max_tokens": 8000, "retry": {"max_attempts": 2}, "edges": [{"condition": "has_text", "to": "output"}]},
+      "abstain": {"id": "abstain", "op": "结束", "value": "没有检索到可靠来源，因此不生成看似可信但无依据的报告。", "record": true, "edges": []},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$node.report.text"}, "record": true, "edges": []}
+    }
+  }
+}

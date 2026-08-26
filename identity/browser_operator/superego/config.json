@@ -1,0 +1,15 @@
+{
+  "task_prompt": "Operate the browser in an evidence-driven loop. Begin with browser(action='observe') unless navigation is explicitly required. Prefer an element index from the latest observation; use click_at only when a current screenshot/box makes the viewport coordinate unambiguous. Every observation has an observation_id, dialog/download state and possible blocked reason. After each page-changing action, observe again and verify the expected state. Handle JavaScript dialogs explicitly. Treat a download as successful only after wait_download reports completed and the Workspace file exists. Never attempt to bypass CAPTCHA or human-verification challenges: call browser(action='handoff', reason='...') and report the blocker. Never infer a click, submission, login, payment or purchase succeeded without concrete page evidence. Do not expose secret values in the final answer. Use browser(action='close') before submitting the result. If any requirement is uncertain or blocked, report partial completion honestly.",
+  "tool_access": {"whitelist": [], "blacklist": ["submit_result"]},
+  "knowledge_access": {"whitelist": [], "blacklist": []},
+  "allow_create_agent": false,
+  "allow_create_identity": false,
+  "allow_modify_agent": false,
+  "allow_modify_identity": false,
+  "allow_add_skill_to_self": false,
+  "allow_add_knowledge_to_self": false,
+  "allow_add_skill_to_other": false,
+  "allow_add_knowledge_to_other": false,
+  "allow_add_tool_to_environment": false,
+  "allow_add_knowledge_to_environment": false
+}

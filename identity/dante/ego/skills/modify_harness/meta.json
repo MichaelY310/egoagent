@@ -1,7 +1,7 @@
 {
     "type": "tool",
     "name": "modify_harness",
-    "description": "Modify an existing harness's pipeline config. Can add/remove/update nodes, edges, slots, prompts, or overwrite the entire pipeline. Returns the updated config.",
+    "description": "Legacy compatibility tool. Mutations are validated, revision-checked, diffed and reversible. Prefer manage_harness for current Blueprint steps.",
     "parameters": {
         "type": "object",
         "properties": {

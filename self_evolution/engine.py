@@ -24,6 +24,10 @@ from typing import List, Dict, Any, Optional
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from llm.env_config import load_local_env
+
+load_local_env(PROJECT_ROOT)
+
 # ============================================================
 # 配置
 # ============================================================
@@ -34,8 +38,9 @@ ARCHIVE_FILE = DATA_DIR / "archive.json"
 TASK_POOL_FILE = DATA_DIR / "task_pool.json"
 SNAPSHOTS_DIR = DATA_DIR / "snapshots"
 
-LLM_BASE_URL = "http://[fdbd:dc05:10:10a::27]:9638/v1"
-LLM_MODEL = "Qwen3-8B-yangyuan"
+LLM_BASE_URL = os.environ.get("EGOAGENT_LLM_BASE_URL", "http://[fdbd:dc05:10:10a::27]:9638/v1").rstrip("/")
+LLM_MODEL = os.environ.get("EGOAGENT_LLM_MODEL", "Qwen3-8B-yangyuan")
+LLM_API_KEY = os.environ.get("EGOAGENT_LLM_API_KEY", "") or os.environ.get("DEEPSEEK_API_KEY", "") or os.environ.get("SILICONFLOW_API_KEY", "")
 
 
 def _ensure_data_dirs():
@@ -76,6 +81,8 @@ def _llm_call(messages: List[Dict], max_tokens: int = 2048, temperature: float =
         "temperature": temperature,
     }
     headers = {"Content-Type": "application/json"}
+    if LLM_API_KEY:
+        headers["Authorization"] = f"Bearer {LLM_API_KEY}"
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=120)
         resp.raise_for_status()
@@ -852,6 +859,7 @@ def run_evolution_cycle(
         "total_accepted": 0,
         "total_rejected": 0,
         "total_rollbacks": 0,
+        "capability_recommendations": [],
     }
 
     if verbose:
@@ -888,6 +896,9 @@ def run_evolution_cycle(
             "score_after": current_score,
             "action": "",
             "decision": "",
+            "evolution_layer": "none",
+            "capability_analysis": None,
+            "transaction_id": None,
         }
 
         # Step 3: 选择前沿任务
@@ -932,6 +943,24 @@ def run_evolution_cycle(
         # Step 6: 计算文本梯度
         _emit(f"[Iter {iteration+1}] [6/9] Computing text gradients...")
 
+        # First decide *which layer* should evolve.  The previous engine always
+        # changed prose, even when failures showed a missing retrieval tool or
+        # an overlong search trajectory.  Deterministic diagnosis is small-
+        # model friendly and keeps the later score gate unchanged.
+        from self_evolution.capability_evolution import (
+            CapabilityEvolutionService,
+            analyze_evolution_need,
+        )
+        failure_observation = {
+            "failed_tasks": failed_tasks,
+            "sessions": session_paths,
+            "target_harness": target_harness,
+            "target_identity": target_identity,
+        }
+        capability_analysis = analyze_evolution_need(failure_observation)
+        iter_report["capability_analysis"] = capability_analysis
+        report["capability_recommendations"].extend(capability_analysis.get("recommendations", []))
+
         gradient = ""
         if failed_tasks:
             identity_dir = Path(CONFIG["identity_repository"]) / target_identity
@@ -974,8 +1003,28 @@ def run_evolution_cycle(
 
         snap_id = snapshot(target_identity)
         action_desc = ""
+        capability_transaction = None
 
-        if gradient and "[LLM_ERROR]" not in gradient:
+        capability_choice = next((
+            recommendation for recommendation in capability_analysis.get("recommendations", [])
+            if recommendation.get("pack") and float(recommendation.get("confidence", 0)) >= 0.80
+        ), None)
+
+        if capability_choice:
+            service = CapabilityEvolutionService(PROJECT_ROOT)
+            installed = set(service.inspect(target_identity).get("installed_packs", []))
+            if capability_choice["pack"] not in installed:
+                install_result = service.install(
+                    target_identity,
+                    capability_choice["pack"],
+                    reason=capability_choice.get("reason", "evolution diagnosis"),
+                )
+                capability_transaction = install_result.get("transaction_id")
+                iter_report["transaction_id"] = capability_transaction
+                iter_report["evolution_layer"] = "identity_capability"
+                action_desc = f"Installed capability pack {capability_choice['pack']}"
+
+        if not action_desc and gradient and "[LLM_ERROR]" not in gradient:
             # 优先修改 personality.tone（有实际内容），避免修改空的 description
             identity_dir_tmp = Path(CONFIG["identity_repository"]) / target_identity
             id_tmp = json.loads((identity_dir_tmp / "id.json").read_text(encoding="utf-8"))
@@ -983,11 +1032,12 @@ def run_evolution_cycle(
             result = apply_gradient(target_identity, target_field, gradient)
             if result["success"]:
                 action_desc = f"Updated description via text gradient"
+                iter_report["evolution_layer"] = "identity_prompt"
                 if verbose:
                     print(f"       Applied gradient to description")
             else:
                 action_desc = "Gradient application failed"
-        else:
+        elif not action_desc:
             # 如果没有梯度，跳过本轮修改（不用低质量原则做盲目增强）
             action_desc = "No modifications applied (no gradient available)"
 
@@ -1008,21 +1058,28 @@ def run_evolution_cycle(
             print(f"       Score: {current_score:.2f} → {new_score:.2f} | Decision: {decision}")
 
         if decision == "rollback":
-            rollback(target_identity, snap_id)
+            if capability_transaction:
+                CapabilityEvolutionService(PROJECT_ROOT).rollback(capability_transaction)
+            else:
+                rollback(target_identity, snap_id)
             report["total_rollbacks"] += 1
             if verbose:
                 print("       ⟲ Rolled back")
         elif decision == "reject":
-            rollback(target_identity, snap_id)
+            if capability_transaction:
+                CapabilityEvolutionService(PROJECT_ROOT).rollback(capability_transaction)
+            else:
+                rollback(target_identity, snap_id)
             report["total_rejected"] += 1
             if verbose:
                 print("       ✗ Rejected (rolled back)")
         else:
-            current_score = new_score
+            improved = new_score > current_score
             report["total_accepted"] += 1
             # 更新使用到的原则分数
             if 'principles' in dir() and principles:
-                update_scores([p["id"] for p in principles], success=(new_score > current_score))
+                update_scores([p["id"] for p in principles], success=improved)
+            current_score = new_score
             if verbose:
                 print("       ✓ Accepted")
 
@@ -1031,7 +1088,7 @@ def run_evolution_cycle(
             "target": f"{target_harness}/{target_identity}",
             "action": action_desc,
             "diff": gradient[:500] if gradient else "",
-            "score_before": current_score,
+            "score_before": iter_report["score_before"],
             "score_after": new_score,
             "accepted": decision == "accept",
         })

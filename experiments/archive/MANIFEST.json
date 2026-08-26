@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-14T15:23:00+08:00",
+  "archive_policy": "Keep runners, protocols, README files and compact reports hot; compress completed workspaces and third-party source snapshots.",
+  "bundles": [
+    {
+      "source": "experiments/real_layer_evolution/_runs",
+      "archive": "real_layer_evolution_runs_20260813.zip",
+      "source_files": 2007,
+      "source_bytes": 95530266,
+      "archive_bytes": 13207234,
+      "sha256": "3b98ce445e726b7c15b4d21e0c33b0fc902c902260883d18bd0ccfd3652c3054"
+    },
+    {
+      "source": "experiments/self_evolution_emergence/_runs",
+      "archive": "self_evolution_emergence_runs_20260811.zip",
+      "source_files": 357,
+      "source_bytes": 31763959,
+      "archive_bytes": 6551247,
+      "sha256": "5b106596bc6102ea8aa93ba02d167b184a3fa798060dae37936ae2cdedb449c1"
+    },
+    {
+      "source": "experiments/external",
+      "archive": "external_harness_sources_20260813.zip",
+      "source_files": 3376,
+      "source_bytes": 62044682,
+      "archive_bytes": 22087623,
+      "sha256": "37729a4145f616c60aaa453aa78fd0eb8ed2217bf360c539029bfac9b396cfdb"
+    },
+    {
+      "source": "tmp/harness-e2e",
+      "archive": "harness_e2e_workspace_20260811.zip",
+      "source_files": 2042,
+      "source_bytes": 15680494,
+      "archive_bytes": 7896382,
+      "sha256": "873d9fce3f33f8b3b60ee2f4b3d6563ace574294db222b3f8c746f5b0d8d5e0a"
+    },
+    {
+      "source": "tmp/pdfs",
+      "archive": "research_pdfs_20260809.zip",
+      "source_files": 11,
+      "source_bytes": 2017773,
+      "archive_bytes": 1964243,
+      "sha256": "75736b69e57b7e6570476249c24637cf08c292879b439a4432dc6e80ef20db1b"
+    }
+  ]
+}

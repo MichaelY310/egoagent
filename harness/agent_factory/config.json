@@ -1,0 +1,22 @@
+{
+  "name": "agent_factory",
+  "description": "User-facing Agent factory assembled entirely from the reusable Agent Designer SubDAG.",
+  "slots": {"architect": {"description": "Agent-system architect", "required": true, "identity": "dante"}},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input", "max_steps": 40, "workspace_preview": true,
+    "budget": {"max_model_calls": 12, "max_tool_calls": 16, "max_tokens": 96000},
+    "context": {"request": "", "agent_spec": {}, "creation_result": ""},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "design_agent"}]},
+      "design_agent": {
+        "id": "design_agent", "op": "子流程", "harness": "component_agent_designer", "share_session": false,
+        "agent_map": {"architect": "architect"}, "component_inputs": {"request": "${ctx.request}", "require_approval": true},
+        "component_outputs": {"spec": "agent_spec", "result": "creation_result", "completed": "creation_completed"},
+        "result_mode": "data", "output_var": "agent_design_run", "edges": [{"condition": "subflow_done", "to": "done"}]
+      },
+      "done": {"id": "done", "op": "结束", "value": {"completed": "$ctx.creation_completed", "spec": "$ctx.agent_spec", "result": "$ctx.creation_result"}, "record": true, "edges": []}
+    }
+  }
+}

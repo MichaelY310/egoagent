@@ -1,6 +1,9 @@
 import json
 import os
 import re
+import ast
+import inspect
+import threading
 from pathlib import Path
 import importlib.util
 import copy
@@ -32,19 +35,52 @@ KNOWLEDGE_PARAMETERS = {
 
 
 class Tool:
-    def __init__(self, name, meta, desc, func):
+    def __init__(self, name, meta, desc, func, source_path=None):
         self.name = name
         self.meta = meta
         self.desc = desc  # OpenAI tools 格式的 dict
         self.func = func
+        self.source_path = str(Path(source_path).resolve()) if source_path else None
+
+
+class LazyToolFunction:
+    """Load executable Tool code only after the runtime permission gate.
+
+    Tool catalogs are inspected while an Identity starts. Importing arbitrary
+    Python at that point would run module-level code before the user can approve
+    the Tool. The wrapper advertises ``_context`` for runtime injection, then
+    imports and caches the real callable only on the first authorized call.
+    """
+
+    def __init__(self, script_path: Path, function_name: str):
+        self.script_path = Path(script_path).resolve()
+        self.function_name = str(function_name)
+        self._function = None
+        self._lock = threading.Lock()
+
+    def _load(self):
+        if self._function is not None:
+            return self._function
+        with self._lock:
+            if self._function is None:
+                self._function = load_script(self.script_path, self.function_name)
+        return self._function
+
+    def __call__(self, *args, _context=None, **kwargs):
+        function = self._load()
+        parameters = inspect.signature(function).parameters
+        if "_context" in parameters:
+            kwargs["_context"] = _context
+        return function(*args, **kwargs)
 
 
 class Knowledge:
-    def __init__(self, name, meta, desc, content):
+    def __init__(self, name, meta, desc, content, source_path=None):
         self.name = name
         self.meta = meta
         self.desc = desc  # OpenAI tools 格式的 dict
         self.content = content
+        self.source_path = str(Path(source_path).resolve()) if source_path else None
 
     def render(self):
         return render_knowledge_content(self.content)
@@ -81,7 +117,8 @@ def load_tool_from_dir(tool_dir, prefix=""):
     if not meta_file.exists():
         print(f"WARNING: Tool {tool_dir} has no meta.json or description.json, skipping")
         return None
-    meta = json.load(open(meta_file))
+    with open(meta_file, encoding="utf-8") as meta_stream:
+        meta = json.load(meta_stream)
 
     # 从 meta 中提取 name（支持新旧两种格式）
     if "name" in meta:
@@ -96,10 +133,19 @@ def load_tool_from_dir(tool_dir, prefix=""):
     script_file = tool_dir / "scripts" / f"{tool_name}.py"
     func = None
     if script_file.exists():
-        func = load_script(script_file, tool_name)
-        if func is None:
-            print(f"WARNING: Tool {tool_dir} script not found or function missing, skipping")
+        try:
+            syntax = ast.parse(script_file.read_text(encoding="utf-8"), filename=str(script_file))
+        except (OSError, SyntaxError, UnicodeError) as error:
+            print(f"WARNING: Tool {tool_dir} script cannot be parsed, skipping: {error}")
             return None
+        declared = any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == tool_name
+            for node in syntax.body
+        )
+        if not declared:
+            print(f"WARNING: Tool {tool_dir} function {tool_name!r} is missing, skipping")
+            return None
+        func = LazyToolFunction(script_file, tool_name)
 
     # 组装 OpenAI tools 格式
     parameters = meta.get("parameters", meta.get("function", {}).get("parameters", {}))
@@ -116,7 +162,7 @@ def load_tool_from_dir(tool_dir, prefix=""):
     # 把 prefix 写入 meta 的 name 字段
     meta["name"] = prefix + tool_name
 
-    return Tool(prefix + tool_name, meta, desc, func)
+    return Tool(prefix + tool_name, meta, desc, func, source_path=tool_dir)
 
 
 def load_knowledge_from_dir(knowledge_dir, prefix=""):
@@ -128,7 +174,8 @@ def load_knowledge_from_dir(knowledge_dir, prefix=""):
     if not meta_file.exists():
         print(f"WARNING: Knowledge {knowledge_dir} has no meta.json, skipping")
         return None
-    meta = json.load(open(meta_file))
+    with open(meta_file, encoding="utf-8") as meta_stream:
+        meta = json.load(meta_stream)
 
     knowledge_name = meta.get("name", knowledge_dir.name)
 
@@ -156,7 +203,7 @@ def load_knowledge_from_dir(knowledge_dir, prefix=""):
     # 把 prefix 写入 meta 的 name 字段
     meta["name"] = prefix + knowledge_name
 
-    return Knowledge(prefix + knowledge_name, meta, desc, content)
+    return Knowledge(prefix + knowledge_name, meta, desc, content, source_path=knowledge_dir)
 
 
 def load_tools_from_dir(tools_dir, prefix=""):

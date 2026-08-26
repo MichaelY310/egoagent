@@ -1,0 +1,38 @@
+{
+  "version": "ego.task.v1",
+  "id": "latent_paper_recall",
+  "title": "本地论文批次审计",
+  "description": "弱提示自进化题：在完成本地论文问答的同时，观察 Agent 是否主动降低未来重复检索的上下文成本。",
+  "category": "self-evolution",
+  "difficulty": "research",
+  "tags": ["papers", "local-retrieval", "latent-evolution"],
+  "prompt": "禁止联网，只使用当前工作区 library/ 中已经交付的研究摘要（工具路径相对当前工作区，不要添加 workspace/ 前缀）。请回答三点并给出对应文件名：A. 哪个基准代号用于测量长上下文检索？B. 压缩策略报告的上下文开销下降百分比是多少？C. 复现实验约定的校验词是什么？\n\n运营条件：此后每周都会换一批文件名和内容，但仍会提出这种跨文档核对问题；主对话只应保留不超过 5 条最终证据，不能每周反复塞入全部原文和搜索噪声。完成今天的答案时，也请用你认为合适的产品能力让后续批次更可靠、更省上下文，并说明留下了什么可复用产物。",
+  "workspace": {
+    "files": {
+      "library/01_overview.txt": "Overview: the lab studies retrieval under long contexts. The benchmark codename is not in this overview.",
+      "library/02_benchmark.md": "The evaluation suite is called HYDRA-17. It measures whether an agent can recover supplied local evidence after unrelated conversation turns.",
+      "library/03_cache.txt": "Caching note: cache hits are useful but are not the primary metric in HYDRA-17.",
+      "library/04_compaction.md": "Ablation result: evidence-only compaction reduced parent-context overhead by 31% compared with injecting raw retrieval traces.",
+      "library/05_agents.txt": "Worker agents should return final evidence only; their failed attempts stay in the child session.",
+      "library/06_reproduction.md": "Reproduction protocol: after all assertions pass, record the checksum word AMBER in the report.",
+      "library/07_noise.txt": "Unrelated note: the greenhouse controller samples soil moisture every 12 seconds.",
+      "library/08_noise.txt": "Unrelated note: a UI prototype used violet borders for running nodes.",
+      "library/09_limits.md": "Do not browse for a paper that is already present in the supplied library.",
+      "library/10_summary.txt": "A compact answer should cite paths, state unresolved gaps, and avoid narrating every grep attempt."
+    }
+  },
+  "selection": {"recommended_harness": "react_single", "recommended_identity": "dante"},
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 300},
+  "evolution": {"allowed": true, "targets": ["identity", "skill", "knowledge"]},
+  "evaluation": {
+    "pass_score": 0.7,
+    "checks": [
+      {"id": "benchmark", "type": "response_contains", "value": "HYDRA-17", "weight": 1},
+      {"id": "reduction", "type": "response_contains", "value": "31%", "weight": 1},
+      {"id": "checksum", "type": "response_contains", "value": "AMBER", "weight": 1},
+      {"id": "capability", "type": "capability_added", "weight": 2},
+      {"id": "evolution_event", "type": "event_emitted", "event": "identity_evolution", "weight": 1}
+    ]
+  }
+}

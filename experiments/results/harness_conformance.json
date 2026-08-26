@@ -1,0 +1,1451 @@
+{
+  "schema": "ego.harness-conformance-report.v1",
+  "generated_at": 1786469010,
+  "behavioral_executed": true,
+  "summary": {
+    "contracts": 15,
+    "core_passed": 15,
+    "failed": 0,
+    "external_blocked": 15
+  },
+  "contracts": [
+    {
+      "contract_id": "openhands",
+      "project": "OpenHands SDK",
+      "source": {
+        "repository": "https://github.com/All-Hands-AI/software-agent-sdk",
+        "revision": "c7e270aae43a"
+      },
+      "source_contract": "Pending actions execute before a new model turn; ordered tool batches stop at Finish; repeated identical failures nudge then stop; a bounded independent goal judge decides completion conservatively.",
+      "structural": {
+        "contract_id": "openhands",
+        "harness": "openhands_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 95
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "26 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/All-Hands-AI/software-agent-sdk@c7e270aae43a"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_openhands_contract_retries_until_independent_goal_judge_accepts",
+              "test_openhands_contract_uses_conservative_invalid_judge_fallback",
+              "test_openhands_contract_finish_ends_inner_loop_and_discards_later_tools",
+              "test_openhands_contract_caps_goal_controller_at_ten_iterations",
+              "test_openhands_contract_budget_limit_runs_safe_finalizer_without_extra_model_call"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 17,
+          "edges": 26,
+          "operations": [
+            "Agent",
+            "上下文",
+            "工作区",
+            "工具",
+            "工具审查",
+            "循环",
+            "数据",
+            "条件",
+            "模型",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_openhands_contract_retries_until_independent_goal_judge_accepts",
+          "test_openhands_contract_uses_conservative_invalid_judge_fallback",
+          "test_openhands_contract_finish_ends_inner_loop_and_discards_later_tools",
+          "test_openhands_contract_caps_goal_controller_at_ten_iterations",
+          "test_openhands_contract_budget_limit_runs_safe_finalizer_without_extra_model_call"
+        ],
+        "returncode": 0,
+        "duration_seconds": 2.68,
+        "output": ".....\n----------------------------------------------------------------------\nRan 5 tests in 1.299s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Full parity requires a configured model and the project-specific sandbox/tool adapters."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "aider",
+      "project": "Aider",
+      "source": {
+        "repository": "https://github.com/Aider-AI/aider",
+        "revision": "5dc9490bb35f"
+      },
+      "source_contract": "Architect/editor separation, SEARCH/REPLACE parsing with partial success, at most three reflections, optional lint/test repair, explicit shell approval, and per-hunk review.",
+      "structural": {
+        "contract_id": "aider",
+        "harness": "aider_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 70
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "45 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/Aider-AI/aider@5dc9490bb35f"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_aider_contract_accepts_plan_runs_editor_and_reviews",
+              "test_aider_contract_reflects_after_format_error_then_applies_fixed_block",
+              "test_aider_contract_feeds_match_failure_back_without_resending_successful_blocks",
+              "test_aider_contract_reflects_lint_feedback_into_a_second_edit",
+              "test_aider_contract_stops_after_three_malformed_reflections",
+              "test_aider_contract_budget_limit_uses_safe_transaction_finalizer",
+              "test_aider_contract_does_not_run_suggested_shell_commands_without_explicit_approval"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 31,
+          "edges": 45,
+          "operations": [
+            "Agent",
+            "人工审批",
+            "子流程",
+            "工作区",
+            "工具",
+            "循环",
+            "数据",
+            "文本处理",
+            "条件",
+            "模型",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_aider_contract_accepts_plan_runs_editor_and_reviews",
+          "test_aider_contract_reflects_after_format_error_then_applies_fixed_block",
+          "test_aider_contract_feeds_match_failure_back_without_resending_successful_blocks",
+          "test_aider_contract_reflects_lint_feedback_into_a_second_edit",
+          "test_aider_contract_stops_after_three_malformed_reflections",
+          "test_aider_contract_budget_limit_uses_safe_transaction_finalizer",
+          "test_aider_contract_does_not_run_suggested_shell_commands_without_explicit_approval"
+        ],
+        "returncode": 0,
+        "duration_seconds": 1.58,
+        "output": ".......\n----------------------------------------------------------------------\nRan 7 tests in 0.368s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Exact parity with every Aider model-specific edit format is provider dependent."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "swe-agent",
+      "project": "SWE-agent",
+      "source": {
+        "repository": "https://github.com/SWE-agent/SWE-agent",
+        "revision": "3ea751c087f3"
+      },
+      "source_contract": "Exactly one fenced action per turn, bounded format correction, observation compaction, explicit submit/exit, checkpoints, and safe budget autosubmit.",
+      "structural": {
+        "contract_id": "swe-agent",
+        "harness": "swe_agent_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 30
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "19 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/SWE-agent/SWE-agent@3ea751c087f3"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_swe_agent_contract_executes_one_action_observes_and_explicitly_submits",
+              "test_swe_agent_contract_requeries_format_errors_then_exits_with_autosubmit_status",
+              "test_swe_agent_contract_feeds_environment_error_back_before_submission",
+              "test_swe_agent_contract_budget_exhaustion_runs_safe_autosubmit_finalizer"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 11,
+          "edges": 19,
+          "operations": [
+            "Agent",
+            "上下文",
+            "工作区",
+            "工具",
+            "数据",
+            "文本处理",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_swe_agent_contract_executes_one_action_observes_and_explicitly_submits",
+          "test_swe_agent_contract_requeries_format_errors_then_exits_with_autosubmit_status",
+          "test_swe_agent_contract_feeds_environment_error_back_before_submission",
+          "test_swe_agent_contract_budget_exhaustion_runs_safe_autosubmit_finalizer"
+        ],
+        "returncode": 0,
+        "duration_seconds": 1.823,
+        "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.429s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Benchmark-environment parity requires the relevant SWE task image and ACI tools."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "continue",
+      "project": "Continue",
+      "source": {
+        "repository": "https://github.com/continuedev/continue",
+        "revision": "5522c6f44ca0"
+      },
+      "source_contract": "Mode-specific visible tools, ordered permissions, concurrent approved calls, tool errors as observations, threshold compaction, and one bounded continuation.",
+      "structural": {
+        "contract_id": "continue",
+        "harness": "continue_agent_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 40
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "10 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/continuedev/continue@5522c6f44ca0"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_continue_agent_contract_runs_parallel_tools_and_feeds_errors_back",
+              "test_continue_plan_contract_hides_and_blocks_write_tools_but_keeps_bash",
+              "test_continue_contract_auto_compacts_persists_and_continues_once",
+              "test_continue_contract_budget_finalizer_does_not_make_an_extra_model_call"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 8,
+          "edges": 10,
+          "operations": [
+            "Agent",
+            "上下文",
+            "工具",
+            "工具审查",
+            "数据",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_continue_agent_contract_runs_parallel_tools_and_feeds_errors_back",
+          "test_continue_plan_contract_hides_and_blocks_write_tools_but_keeps_bash",
+          "test_continue_contract_auto_compacts_persists_and_continues_once",
+          "test_continue_contract_budget_finalizer_does_not_make_an_extra_model_call"
+        ],
+        "returncode": 0,
+        "duration_seconds": 2.504,
+        "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.096s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "IDE integration parity depends on the active editor/provider adapters."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "ai-scientist",
+      "project": "AI Scientist",
+      "source": {
+        "repository": "https://github.com/SakanaAI/AI-Scientist",
+        "revision": "1de1dbc1f4ee"
+      },
+      "source_contract": "Reflected idea generation, conservative novelty search, isolated experiments with bounded repair, evidence-only writeup, independent review ensemble, and optional improvement/re-review.",
+      "structural": {
+        "contract_id": "ai-scientist",
+        "harness": "ai_scientist_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 400
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "30 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/SakanaAI/AI-Scientist@1de1dbc1f4ee"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_ai_scientist_contract_filters_novel_ideas_and_ensemble_reviews_study",
+              "test_ai_scientist_generation_contract_reflects_each_idea_for_three_total_rounds",
+              "test_ai_scientist_novelty_contract_is_sequential_and_defaults_not_novel_after_ten_rounds",
+              "test_ai_scientist_experiment_contract_retries_one_failed_run_at_most_four_times"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 29,
+          "edges": 30,
+          "operations": [
+            "合并",
+            "子流程",
+            "工作区",
+            "循环",
+            "数据",
+            "映射",
+            "条件",
+            "模型",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_ai_scientist_contract_filters_novel_ideas_and_ensemble_reviews_study",
+          "test_ai_scientist_generation_contract_reflects_each_idea_for_three_total_rounds",
+          "test_ai_scientist_novelty_contract_is_sequential_and_defaults_not_novel_after_ten_rounds",
+          "test_ai_scientist_experiment_contract_retries_one_failed_run_at_most_four_times"
+        ],
+        "returncode": 0,
+        "duration_seconds": 9.452,
+        "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 7.722s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Full paper-quality parity needs search APIs, LaTeX/toolchains, compute and real model reviewers."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "gpt-researcher",
+      "project": "GPT Researcher",
+      "source": {
+        "repository": "https://github.com/assafelovic/gpt-researcher",
+        "revision": "5d84d2f5553e"
+      },
+      "source_contract": "Seed search precedes planning; queries run concurrently; URLs are deduplicated and curated; cited synthesis abstains when evidence is absent.",
+      "structural": {
+        "contract_id": "gpt-researcher",
+        "harness": "gpt_researcher_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 44
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "14 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/assafelovic/gpt-researcher@5d84d2f5553e"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_gpt_researcher_contract_curates_parallel_sources_before_writing",
+              "test_gpt_researcher_deep_contract_runs_breadth_and_preserves_typed_citations"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 15,
+          "edges": 14,
+          "operations": [
+            "合并",
+            "子流程",
+            "数据",
+            "映射",
+            "条件",
+            "模型",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_gpt_researcher_contract_curates_parallel_sources_before_writing",
+          "test_gpt_researcher_deep_contract_runs_breadth_and_preserves_typed_citations"
+        ],
+        "returncode": 0,
+        "duration_seconds": 1.696,
+        "output": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.175s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Search/scrape quality and paywalled sources depend on external services."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "open-deep-research",
+      "project": "Open Deep Research",
+      "source": {
+        "repository": "https://github.com/langchain-ai/open_deep_research",
+        "revision": "20aaa0d422bd"
+      },
+      "source_contract": "Clarification and brief are separate; a bounded supervisor delegates at most five concurrent researchers; raw evidence is compressed and final synthesis retries overflow conservatively.",
+      "structural": {
+        "contract_id": "open-deep-research",
+        "harness": "open_deep_research_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 90
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "28 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/langchain-ai/open_deep_research@20aaa0d422bd"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_open_deep_research_contract_runs_through_parallel_subflows"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 27,
+          "edges": 28,
+          "operations": [
+            "合并",
+            "子流程",
+            "循环",
+            "数据",
+            "映射",
+            "条件",
+            "模型",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_open_deep_research_contract_runs_through_parallel_subflows"
+        ],
+        "returncode": 0,
+        "duration_seconds": 2.337,
+        "output": ".\n----------------------------------------------------------------------\nRan 1 test in 0.067s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Live parity requires configured web search, fetch and provider services."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "voyager",
+      "project": "Voyager",
+      "source": {
+        "repository": "https://github.com/MineDojo/Voyager",
+        "revision": "55e45a880755"
+      },
+      "source_contract": "A persistent curriculum retrieves five skills, attempts each task four times, validates decisions with bounded correction, and stores successful executable trajectories.",
+      "structural": {
+        "contract_id": "voyager",
+        "harness": "voyager_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 4000
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "32 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/MineDojo/Voyager@55e45a880755"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_voyager_contract_learns_curriculum_tasks_and_persists_skills"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 28,
+          "edges": 32,
+          "operations": [
+            "子流程",
+            "循环",
+            "数据",
+            "条件",
+            "模型",
+            "结束",
+            "记忆",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_voyager_contract_learns_curriculum_tasks_and_persists_skills"
+        ],
+        "returncode": 0,
+        "duration_seconds": 2.433,
+        "output": ".\n----------------------------------------------------------------------\nRan 1 test in 0.308s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Minecraft reset, world observation and JavaScript program execution require the MineDojo environment adapter."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "generative-agents",
+      "project": "Generative Agents",
+      "source": {
+        "repository": "https://github.com/joonspk-research/generative_agents",
+        "revision": "fe05a71d3e4e"
+      },
+      "source_contract": "Each tick performs perceive, retrieve, plan, reflect, execute; scored persistent memories trigger evidence-linked reflection and update daily/current action state.",
+      "structural": {
+        "contract_id": "generative-agents",
+        "harness": "generative_agent_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 40
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "19 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/joonspk-research/generative_agents@fe05a71d3e4e"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_generative_agent_contract_accumulates_memory_and_reflects"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 20,
+          "edges": 19,
+          "operations": [
+            "合并",
+            "子流程",
+            "数据",
+            "映射",
+            "模型",
+            "结束",
+            "记忆",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_generative_agent_contract_accumulates_memory_and_reflects"
+        ],
+        "returncode": 0,
+        "duration_seconds": 6.38,
+        "output": ".\n----------------------------------------------------------------------\nRan 1 test in 4.684s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Stanford Town visibility, clock and path movement require the original simulation adapter."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "metagpt",
+      "project": "MetaGPT MGX",
+      "source": {
+        "repository": "https://github.com/geekan/MetaGPT",
+        "revision": "11cdf466d042"
+      },
+      "source_contract": "RoleZero agents receive addressed messages, a lead delegates dependency-aware tasks, reports are durably acknowledged, and company rounds/cost are bounded.",
+      "structural": {
+        "contract_id": "metagpt",
+        "harness": "metagpt_mgx_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 180
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "29 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/geekan/MetaGPT@11cdf466d042"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_metagpt_contract_routes_typed_artifacts_and_repairs_until_qa_passes",
+              "test_metagpt_mgx_contract_routes_rolezero_reports_across_company_rounds"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 28,
+          "edges": 29,
+          "operations": [
+            "合并",
+            "子流程",
+            "循环",
+            "数据",
+            "映射",
+            "条件",
+            "检查点",
+            "模型",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_metagpt_contract_routes_typed_artifacts_and_repairs_until_qa_passes",
+          "test_metagpt_mgx_contract_routes_rolezero_reports_across_company_rounds"
+        ],
+        "returncode": 0,
+        "duration_seconds": 7.462,
+        "output": "..\n----------------------------------------------------------------------\nRan 2 tests in 3.172s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Exact provider/tool economics vary from the pinned upstream runtime."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "browser-use",
+      "project": "Browser Use",
+      "source": {
+        "repository": "https://github.com/browser-use/browser-use",
+        "revision": "32601887cfbc"
+      },
+      "source_contract": "Grounded action batches retain browser evidence, interrupt after navigation, recover from repeated failures, hand CAPTCHA to a human, and independently verify completion.",
+      "structural": {
+        "contract_id": "browser-use",
+        "harness": "browser_use_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 3200
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "27 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/browser-use/browser-use@32601887cfbc"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_browser_use_contract_runs_final_evidence_judge",
+              "test_browser_use_contract_stops_after_five_consecutive_failures"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 19,
+          "edges": 27,
+          "operations": [
+            "Agent",
+            "上下文",
+            "人工审批",
+            "工具",
+            "循环",
+            "数据",
+            "条件",
+            "模型",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_browser_use_contract_runs_final_evidence_judge",
+          "test_browser_use_contract_stops_after_five_consecutive_failures"
+        ],
+        "returncode": 0,
+        "duration_seconds": 2.28,
+        "output": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.081s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Website behavior, CAPTCHA and authenticated sessions require a live browser environment."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "stagehand",
+      "project": "Stagehand",
+      "source": {
+        "repository": "https://github.com/browserbase/stagehand",
+        "revision": "7566804ed4b9"
+      },
+      "source_contract": "DOM/hybrid/CUA modes expose distinct protocols and caps; deterministic actions are cached and repaired; a structured final answer and fused evidence verifier are mandatory.",
+      "structural": {
+        "contract_id": "stagehand",
+        "harness": "stagehand_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 520
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "62 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/browserbase/stagehand@7566804ed4b9"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_stagehand_contract_returns_fused_verifier_outcome",
+              "test_stagehand_contract_forces_done_and_replays_deterministic_cache",
+              "test_stagehand_contract_uses_source_default_step_caps"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 44,
+          "edges": 62,
+          "operations": [
+            "Agent",
+            "上下文",
+            "人工审批",
+            "工具",
+            "循环",
+            "数据",
+            "条件",
+            "模型",
+            "结束",
+            "记忆",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_stagehand_contract_returns_fused_verifier_outcome",
+          "test_stagehand_contract_forces_done_and_replays_deterministic_cache",
+          "test_stagehand_contract_uses_source_default_step_caps"
+        ],
+        "returncode": 0,
+        "duration_seconds": 4.448,
+        "output": "...\n----------------------------------------------------------------------\nRan 3 tests in 0.087s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Browserbase session features and hosted CUA models remain external adapters."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "openmanus",
+      "project": "OpenManus",
+      "source": {
+        "repository": "https://github.com/FoundationAgents/OpenManus",
+        "revision": "52a13f2a57d8"
+      },
+      "source_contract": "A bounded sequential tool loop records errors, supports browser context and AskHuman, and completes only through explicit typed termination; planning is a separate typed flow.",
+      "structural": {
+        "contract_id": "openmanus",
+        "harness": "openmanus_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 180
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "20 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/FoundationAgents/OpenManus@52a13f2a57d8"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_openmanus_contract_requires_explicit_terminate",
+              "test_openmanus_planning_contract_executes_each_step_then_summarizes"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 15,
+          "edges": 20,
+          "operations": [
+            "Agent",
+            "上下文",
+            "人工审批",
+            "工具",
+            "循环",
+            "数据",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_openmanus_contract_requires_explicit_terminate",
+          "test_openmanus_planning_contract_executes_each_step_then_summarizes"
+        ],
+        "returncode": 0,
+        "duration_seconds": 3.586,
+        "output": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.679s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "MCP servers, browser backend and optional Python sandbox are adapter-specific."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "autogpt-platform",
+      "project": "AutoGPT Platform",
+      "source": {
+        "repository": "https://github.com/Significant-Gravitas/AutoGPT",
+        "revision": "ce6ab7b074a6"
+      },
+      "source_contract": "A model compiles typed named-port blocks; a persisted scheduler handles static/dynamic repeated events, ready-node concurrency, review, cancellation/resume, and independent verification.",
+      "structural": {
+        "contract_id": "autogpt-platform",
+        "harness": "autogpt_platform_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 20
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "11 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/Significant-Gravitas/AutoGPT@ce6ab7b074a6"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_autogpt_platform_contract_compiles_maps_joins_and_verifies",
+              "test_autogpt_platform_routes_dependency_events_and_exposes_upstream_results",
+              "test_autogpt_platform_reuses_static_ports_for_repeated_dynamic_events",
+              "test_autogpt_platform_reviews_only_the_sensitive_block"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 7,
+          "edges": 11,
+          "operations": [
+            "子流程",
+            "检查点",
+            "模型",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_autogpt_platform_contract_compiles_maps_joins_and_verifies",
+          "test_autogpt_platform_routes_dependency_events_and_exposes_upstream_results",
+          "test_autogpt_platform_reuses_static_ports_for_repeated_dynamic_events",
+          "test_autogpt_platform_reviews_only_the_sensitive_block"
+        ],
+        "returncode": 0,
+        "duration_seconds": 13.285,
+        "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.418s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Hosted OAuth credentials, schedules/triggers and proprietary blocks require service adapters."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    },
+    {
+      "contract_id": "devika",
+      "project": "Devika",
+      "source": {
+        "repository": "https://github.com/stitionai/devika",
+        "revision": "80bb343cbe4a"
+      },
+      "source_contract": "Initial work routes through plan/status/research/code; follow-ups have distinct answer/run/deploy/feature/bug/browser/report paths; execution is safe, recoverable and checkpointed.",
+      "structural": {
+        "contract_id": "devika",
+        "harness": "devika_replica",
+        "passed": true,
+        "checks": [
+          {
+            "check": "schema",
+            "passed": true,
+            "detail": "valid"
+          },
+          {
+            "check": "start_exists",
+            "passed": true,
+            "detail": "input"
+          },
+          {
+            "check": "bounded_steps",
+            "passed": true,
+            "detail": 90
+          },
+          {
+            "check": "required_nodes",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "required_ops",
+            "passed": true,
+            "detail": "all present"
+          },
+          {
+            "check": "forbidden_ops",
+            "passed": true,
+            "detail": "none"
+          },
+          {
+            "check": "edge_targets",
+            "passed": true,
+            "detail": "31 valid edges"
+          },
+          {
+            "check": "source_pin",
+            "passed": true,
+            "detail": "https://github.com/stitionai/devika@80bb343cbe4a"
+          },
+          {
+            "check": "behavioral_evidence_declared",
+            "passed": true,
+            "detail": [
+              "test_devika_contract_routes_new_project_through_plan_research_and_code",
+              "test_devika_contract_keeps_distinct_run_feature_and_bug_paths"
+            ]
+          }
+        ],
+        "graph": {
+          "nodes": 24,
+          "edges": 31,
+          "operations": [
+            "上下文",
+            "人工审批",
+            "合并",
+            "子流程",
+            "映射",
+            "条件",
+            "检查点",
+            "模型",
+            "结束",
+            "输入"
+          ]
+        }
+      },
+      "behavioral": {
+        "passed": true,
+        "tests": [
+          "test_devika_contract_routes_new_project_through_plan_research_and_code",
+          "test_devika_contract_keeps_distinct_run_feature_and_bug_paths"
+        ],
+        "returncode": 0,
+        "duration_seconds": 6.944,
+        "output": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.073s\n\nOK"
+      },
+      "core_passed": true,
+      "external_blockers": [
+        "Deployment targets and third-party search/browser providers remain environment-specific."
+      ],
+      "parity_status": "core_verified_external_blocked"
+    }
+  ]
+}

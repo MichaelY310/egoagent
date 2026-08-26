@@ -1,0 +1,135 @@
+{
+  "name": "devika_replica",
+  "description": "Pinned Devika reproduction: action routing plus plan-status-research-code for new projects, dedicated answer/run/feature/bug/report/deploy paths, five-step browser interaction, safer bounded repair loops and recoverable checkpoints.",
+  "slots": {
+    "coordinator": {"description": "Routes requests and prepares plans", "required": true, "identity": "dante"},
+    "researcher": {"description": "Plans and performs web research", "required": true, "identity": "researcher"},
+    "coder": {"description": "Creates, runs and patches projects with workspace tools", "required": true, "identity": "coder"},
+    "reporter": {"description": "Answers project questions and writes reports", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "route": {
+      "description": "Devika action decision",
+      "default": "You are Devika, an AI software engineer. Select exactly one best action for the latest user request using the conversation. Use coding_project for a new build, answer for a project question, run to execute/verify, feature for a requested enhancement, bug for a reported defect, report for a detailed project report, deploy for an explicit deployment request, and browser for an explicit interactive web task.\n\nConversation: {conversation}\nLatest request: {request}\n\nReturn ONLY JSON: {{\"response\":\"short human-like status\",\"action\":\"coding_project|answer|run|feature|bug|report|deploy|browser\"}}"
+    },
+    "plan": {
+      "description": "Devika new-project plan",
+      "default": "Create a concise step-by-step software project plan tailored to the request. Cover only necessary research, implementation, testing and delivery. Simple tasks should have one or two steps.\n\nRequest: {request}\n\nReturn ONLY JSON: {{\"project_name\":\"at most five words\",\"reply\":\"short status\",\"focus\":\"main objective\",\"steps\":[{{\"id\":1,\"text\":\"...\",\"dependencies\":[],\"verification\":\"...\"}}],\"summary\":\"key dependencies and risks\"}}"
+    },
+    "research": {
+      "description": "Devika search-query and clarification planner",
+      "default": "Given the implementation plan, identify only advanced or current facts that truly require web documentation. Never search basic facts the model already knows. Return at most three natural-language queries. Ask the user only for a fact that cannot be inferred and is required to proceed.\n\nRequest: {request}\nPlan: {plan}\nFocus: {focus}\n\nReturn ONLY JSON: {{\"queries\":[\"...\"],\"ask_user\":\"\"}}"
+    },
+    "status": {
+      "description": "Devika short visible work status (its internal_monologue state field)",
+      "default": "Write a very short, conversational status telling the user what stage of the software task is happening. Do not expose hidden chain-of-thought or invent completed work.\n\nRequest: {request}\nPlan: {plan}\n\nReturn ONLY JSON: {{\"internal_monologue\":\"...\"}}"
+    },
+    "answer": {
+      "description": "Devika project answer",
+      "default": "Answer the user's latest question about the project concisely and accurately from the conversation and visible workspace context. Do not claim actions you did not perform.\n\nConversation: {conversation}\nLatest request: {request}"
+    },
+    "report": {
+      "description": "Devika project report",
+      "default": "Write a detailed Markdown project report from the conversation and workspace context. Include a title, table of contents, architecture, implemented behavior, usage, verification evidence, limitations and next steps. Do not invent missing facts.\n\nConversation: {conversation}\nLatest request: {request}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 90,
+    "max_node_steps": 600,
+    "timeout_seconds": 3600,
+    "workspace_preview": true,
+    "budget": {"max_model_calls": 100, "max_tool_calls": 300, "max_tokens": 800000},
+    "context": {
+      "request": "", "conversation": [], "route_response": "", "action": "", "plan": {}, "focus": "",
+      "queries": [], "ask_user": "", "internal_status": "", "user_context": "Nothing additional from the user.",
+      "research_runs": [], "research_context": "", "project_result": ""
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "history"}]},
+      "history": {"id": "history", "op": "上下文", "action": "compact", "source": "$session.messages", "last_n": 30, "keep_last": 12, "max_chars": 50000, "summarize": true, "agent": "coordinator", "output_var": "conversation", "edges": [{"condition": "context_ready", "to": "route"}]},
+      "route": {
+        "id": "route", "op": "模型", "agent": "coordinator", "prompt": "route", "parse_as": "json", "temperature": 0.1,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["response", "action"], "properties": {"action": {"type": "string", "enum": ["coding_project", "answer", "run", "feature", "bug", "report", "deploy", "browser"]}}},
+        "outputs": {"structured.response": "route_response", "structured.action": "action"},
+        "edges": [
+          {"condition": "expr:ctx.action == 'coding_project'", "to": "plan"},
+          {"condition": "expr:ctx.action == 'answer'", "to": "answer"},
+          {"condition": "expr:ctx.action == 'report'", "to": "report"},
+          {"condition": "expr:ctx.action == 'run'", "to": "run_project"},
+          {"condition": "expr:ctx.action == 'feature'", "to": "feature_project"},
+          {"condition": "expr:ctx.action == 'bug'", "to": "bug_project"},
+          {"condition": "expr:ctx.action == 'deploy'", "to": "approve_deploy"},
+          {"condition": "expr:ctx.action == 'browser'", "to": "browser_task"},
+          {"condition": "default", "to": "project_action"}
+        ]
+      },
+      "plan": {
+        "id": "plan", "op": "模型", "agent": "coordinator", "prompt": "plan", "parse_as": "json", "temperature": 0.2,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["project_name", "reply", "focus", "steps", "summary"]},
+        "outputs": {"structured": "plan", "structured.focus": "focus"}, "edges": [{"condition": "has_text", "to": "visible_status"}]
+      },
+      "visible_status": {
+        "id": "visible_status", "op": "模型", "agent": "coordinator", "prompt": "status", "parse_as": "json", "temperature": 0.3,
+        "retry": {"max_attempts": 5, "delay_seconds": 2},
+        "output_schema": {"type": "object", "required": ["internal_monologue"], "properties": {"internal_monologue": {"type": "string", "minLength": 1}}},
+        "outputs": {"structured.internal_monologue": "internal_status"}, "edges": [{"condition": "has_text", "to": "research_plan"}]
+      },
+      "research_plan": {
+        "id": "research_plan", "op": "模型", "agent": "researcher", "prompt": "research", "parse_as": "json", "temperature": 0.1,
+        "retry": {"max_attempts": 3, "delay_seconds": 1},
+        "output_schema": {"type": "object", "required": ["queries", "ask_user"], "properties": {"queries": {"type": "array", "items": {"type": "string"}}, "ask_user": {"type": "string"}}},
+        "outputs": {"structured.queries": "queries", "structured.ask_user": "ask_user"}, "edges": [{"condition": "has_text", "to": "needs_user"}]
+      },
+      "needs_user": {"id": "needs_user", "op": "条件", "condition": "not empty(ctx.ask_user)", "edges": [{"condition": "true", "to": "clarify"}, {"condition": "false", "to": "research_map"}]},
+      "clarify": {"id": "clarify", "op": "输入", "reuse_last": false, "prompt_text": "${ctx.ask_user}", "outputs": {"text": "user_context"}, "edges": [{"condition": "input", "to": "research_map"}, {"condition": "waiting", "to": null}]},
+      "research_map": {"id": "research_map", "op": "映射", "source": "$ctx.queries", "item_var": "search_query", "body_start": "research_one", "join": "join_research", "max_count": 3, "max_workers": 3, "fail_fast": false, "output_var": "research_runs", "edges": []},
+      "research_one": {
+        "id": "research_one", "op": "子流程", "harness": "open_deep_research_worker", "agent_map": {"researcher": "researcher"},
+        "inputs": {"message": "Research this advanced documentation query for a software project. Use multiple credible sources where possible and preserve exact URLs.\n\nQuery: ${ctx.search_query}\nProject request: ${ctx.request}\nPlan: ${ctx.plan}"},
+        "output_var": "query_evidence", "edges": [{"condition": "subflow_done", "to": "join_research"}]
+      },
+      "join_research": {"id": "join_research", "op": "合并", "source": "$ctx.research_runs", "strategy": "concat", "separator": "\n\n--- research batch ---\n\n", "output_var": "research_context", "edges": [{"condition": "joined", "to": "before_build"}]},
+      "before_build": {"id": "before_build", "op": "检查点", "action": "save", "label": "devika-before-build", "edges": [{"condition": "checkpoint_saved", "to": "build_project"}]},
+      "build_project": {
+        "id": "build_project", "op": "子流程", "harness": "bounded_coder_worker", "agent_map": {"coder": "coder"},
+        "inputs": {"message": "Build this software project in the current workspace. Inspect before editing, follow the plan, use research only when relevant, create all necessary files, and run verification. Prefer incremental edits over blind full-file replacement.\n\nRequest: ${ctx.request}\nPlan: ${ctx.plan}\nAdditional user context: ${ctx.user_context}\nResearch context: ${ctx.research_context}"},
+        "output_var": "project_result", "edges": [{"condition": "subflow_done", "to": "project_output"}]
+      },
+      "project_action": {
+        "id": "project_action", "op": "子流程", "harness": "bounded_coder_worker", "agent_map": {"coder": "coder"},
+        "inputs": {"message": "Perform the requested follow-up action on the existing project. The selected action is ${ctx.action}. Inspect the workspace, make only necessary changes, run relevant commands safely, and report evidence.\n\nConversation: ${ctx.conversation}\nLatest request: ${ctx.request}"},
+        "output_var": "project_result", "edges": [{"condition": "subflow_done", "to": "project_output"}]
+      },
+      "run_project": {
+        "id": "run_project", "op": "子流程", "harness": "bounded_coder_worker", "agent_map": {"coder": "coder"},
+        "inputs": {"message": "Run and verify the existing project, matching Devika's runner behavior with safer tools. Inspect the workspace, infer operating-system-compatible commands, execute them without a shell, and capture both stdout and stderr. If a command fails, diagnose whether the command or code is wrong; correct the command or make a minimal reviewed patch, then rerun. Never claim success without command evidence.\n\nConversation: ${ctx.conversation}\nLatest request: ${ctx.request}"},
+        "output_var": "project_result", "edges": [{"condition": "subflow_done", "to": "project_output"}]
+      },
+      "feature_project": {
+        "id": "feature_project", "op": "子流程", "harness": "bounded_coder_worker", "agent_map": {"coder": "coder"},
+        "inputs": {"message": "Implement the requested feature in the existing project. Inspect all relevant code first, make minimal targeted changes instead of rewriting unrelated files, preserve current behavior, and run focused regression verification. Leave edits available for per-hunk review.\n\nConversation: ${ctx.conversation}\nFeature request: ${ctx.request}"},
+        "output_var": "project_result", "edges": [{"condition": "subflow_done", "to": "project_output"}]
+      },
+      "bug_project": {
+        "id": "bug_project", "op": "子流程", "harness": "bounded_coder_worker", "agent_map": {"coder": "coder"},
+        "inputs": {"message": "Fix the reported bug in the existing project. Reproduce or inspect the failure, identify the root cause from concrete evidence, apply the smallest safe patch, and rerun a regression check. Capture stderr and do not overwrite unrelated files. Leave edits available for per-hunk review.\n\nConversation: ${ctx.conversation}\nBug report: ${ctx.request}"},
+        "output_var": "project_result", "edges": [{"condition": "subflow_done", "to": "project_output"}]
+      },
+      "browser_task": {
+        "id": "browser_task", "op": "子流程", "harness": "browser_use_replica", "identity_map": {"browser_agent": "browser_operator", "judge": "verify_agent"},
+        "inputs": {"message": "Complete this Devika interactive browser task. Use visible page evidence, stop honestly on CAPTCHA/login/payment/human-only blockers, and do not claim success until the page confirms it.\n\nRequest: ${ctx.request}", "data": {"max_browser_steps": 5}},
+        "output_var": "project_result", "edges": [{"condition": "subflow_done", "to": "project_output"}]
+      },
+      "approve_deploy": {"id": "approve_deploy", "op": "人工审批", "prompt_text": "Deployment creates an external side effect. Approve deployment using the configured workspace tools?", "default": "rejected", "edges": [{"condition": "approved", "to": "project_action"}, {"condition": "rejected", "to": "deploy_rejected"}]},
+      "deploy_rejected": {"id": "deploy_rejected", "op": "结束", "value": "Deployment was not approved; no external deployment was attempted.", "record": true, "edges": []},
+      "answer": {"id": "answer", "op": "模型", "agent": "reporter", "prompt": "answer", "temperature": 0.2, "edges": [{"condition": "has_text", "to": "text_output"}]},
+      "report": {"id": "report", "op": "模型", "agent": "reporter", "prompt": "report", "temperature": 0.2, "max_tokens": 7000, "edges": [{"condition": "has_text", "to": "text_output"}]},
+      "text_output": {"id": "text_output", "op": "结束", "inputs": {"value": "$last.text"}, "record": true, "edges": []},
+      "project_output": {"id": "project_output", "op": "结束", "inputs": {"value": "$ctx.project_result"}, "record": true, "edges": []}
+    }
+  }
+}

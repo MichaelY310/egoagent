@@ -1,0 +1,43 @@
+{
+  "name": "metagpt_rolezero_worker",
+  "description": "Reusable MetaGPT RoleZero-style native-tool loop with bounded reactions, sequential error-stop batches, exclusive command dedupe and human continuation at the limit.",
+  "slots": {"actor": {"description": "One MetaGPT role backed by its own Identity/EGO toolset", "required": true}},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 240,
+    "max_node_steps": 1200,
+    "timeout_seconds": 3600,
+    "budget": {"max_model_calls": 60, "max_tool_calls": 300, "max_tokens": 600000},
+    "context": {"task": "", "role_name": "role", "role_task": "", "max_react_loop": 50, "reaction_slots": [], "observations": [], "_trajectory": []},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "task"}, "edges": [{"condition": "input", "to": "make_stop"}]},
+      "make_stop": {"id": "make_stop", "op": "数据", "action": "evaluate", "key": "reaction_stop", "expression": "ctx.max_react_loop + 1", "edges": [{"condition": "default", "to": "make_slots"}]},
+      "make_slots": {"id": "make_slots", "op": "数据", "action": "range", "key": "reaction_slots", "range_start": 1, "range_stop": "$ctx.reaction_stop", "max_items": 100, "edges": [{"condition": "default", "to": "react"}]},
+      "react": {"id": "react", "op": "循环", "list_var": "reaction_slots", "item_var": "reaction_round", "body_start": "context", "max_count": "$ctx.max_react_loop", "edges": [{"condition": "loop_done", "to": "continue_review"}]},
+      "context": {"id": "context", "op": "上下文", "action": "select", "last_n": 200, "max_chars": 160000, "output_var": "observations", "edges": [{"condition": "context_ready", "to": "act"}]},
+      "act": {"id": "act", "op": "Agent", "agent": "actor", "tools": "all", "inputs": {"messages": "$ctx.observations"}, "retry": {"max_attempts": 3, "delay_seconds": 1}, "timeout_seconds": 180, "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "complete"}]},
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "actor",
+        "exclusive_tools": ["Editor.edit_file_by_replace", "Editor.insert_content_at_line", "Editor.append_file", "Editor.open_file", "edit_file_by_replace", "insert_content_at_line", "append_file", "open_file"],
+        "truncate_after_tools": ["end", "submit_result", "reply_to_human", "RoleZero.reply_to_human"],
+        "terminal_tools_to": "tool_complete",
+        "interrupt_when": "is_string(result) and (starts_with(lower(result), 'error') or starts_with(lower(result), 'tool '))",
+        "stuck_threshold": 3,
+        "error_stuck_threshold": 3,
+        "alternating_stuck_threshold": 6,
+        "stuck_prompt": "The RoleZero command sequence is repeating. Re-read the observation, update the plan and choose a different command.",
+        "edges": [{"condition": "human_required", "to": "human_handoff"}, {"condition": "stuck", "to": "react"}, {"condition": "tools_executed", "to": "react"}]
+      },
+      "human_handoff": {"id": "human_handoff", "op": "人工审批", "prompt_text": "This MetaGPT role needs human input before continuing.", "data": "$ctx._human_required", "default": "rejected", "editable": true, "edges": [{"condition": "approved", "to": "react"}, {"condition": "rejected", "to": "handoff_output"}]},
+      "continue_review": {"id": "continue_review", "op": "人工审批", "prompt_text": "This MetaGPT role reached its maximum reaction rounds. Continue it?", "data": {"role": "$ctx.role_name", "task": "$ctx.role_task", "trajectory": "$ctx._trajectory"}, "default": "rejected", "editable": false, "edges": [{"condition": "approved", "to": "react"}, {"condition": "rejected", "to": "limit_output"}]},
+      "complete": {"id": "complete", "op": "结束", "inputs": {"value": {"role": "$ctx.role_name", "task": "$ctx.role_task", "status": "completed", "summary": "$node.act.text", "trajectory": "$ctx._trajectory"}}, "edges": []},
+      "tool_complete": {"id": "tool_complete", "op": "结束", "inputs": {"value": {"role": "$ctx.role_name", "task": "$ctx.role_task", "status": "completed", "summary": "$node.tools.results", "trajectory": "$ctx._trajectory"}}, "edges": []},
+      "handoff_output": {"id": "handoff_output", "op": "结束", "inputs": {"value": {"role": "$ctx.role_name", "task": "$ctx.role_task", "status": "human_required", "summary": "$ctx._human_required", "trajectory": "$ctx._trajectory"}}, "edges": []},
+      "limit_output": {"id": "limit_output", "op": "结束", "inputs": {"value": {"role": "$ctx.role_name", "task": "$ctx.role_task", "status": "limit_exceeded", "summary": "Maximum RoleZero reaction rounds reached.", "trajectory": "$ctx._trajectory"}}, "edges": []}
+    }
+  }
+}

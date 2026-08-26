@@ -1,0 +1,37 @@
+{
+  "version": "ego.task.v1",
+  "id": "video_self_evolution_walkthrough",
+  "title": "录屏：重复工作触发受控自进化",
+  "description": "向通用 Evolver 提供真实重复工作压力；模型自行在不变、Knowledge、Skill、Identity/Sub-Agent 与 Harness 间选择，任何写入都经过人工审批。",
+  "category": "self-evolution",
+  "difficulty": "research",
+  "tags": ["video", "evolution", "approval", "skill", "audit"],
+  "prompt": "过去 12 个温室分区都重复执行同一流程：读取本地 docs/sensors.md 与 docs/pumps.md，按 sensor_name、pump_name 和 duration_seconds 提取干燥阈值、计算用水量并返回紧凑证据。现有证据是 SM-20=35%、SM-30=41%、P-12=12mL/s、P-8=8mL/s；至少验证 SM-20+P-12+5秒=>35%/60mL 与 SM-30+P-8+3秒=>41%/24mL，未知型号必须明确报错，不能凭空添加笔记里没有的型号。若实现 workspace-aware Skill，函数接受运行时注入的可选 _context=None，但不要把 _context 暴露到 parameters_schema；必须读取这两个文件而不是用硬编码映射兜底。验收时从持久化 Skill 的 scripts/<skill_name>.py 导入，传 _context={'workspace': os.getcwd()}，覆盖两组结果和未知型号，并打印 PASS。轨迹显示约 80% 的检索与计算步骤相同，之后还有更多分区。请基于这段真实重复压力判断是否值得进化。不要因为题目提到进化就强行修改；比较不变、Knowledge、确定性 Skill、隔离子 Agent 和 Harness。若值得，先搜索能力库避免重复，再提出最小可测试方案。",
+  "workspace": {
+    "files": {
+      "docs/sensors.md": "# Sensor evidence\nSM-20=35%\nSM-30=41%\n",
+      "docs/pumps.md": "# Pump evidence\nP-12=12mL/s\nP-8=8mL/s\n",
+      "evidence/repetition.json": "{\"zones_completed\":12,\"shared_trace_ratio\":0.8,\"future_zones\":24}\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "component_capability_evolver",
+    "recommended_identity": "coder",
+    "compatible_harnesses": ["component_capability_evolver"],
+    "compatible_identities": ["coder", "dante"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 600, "interactive": true},
+  "evolution": {"allowed": true, "targets": ["skill", "knowledge", "harness", "identity"]},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"type": "node_visited", "node": "judge", "weight": 1},
+      {"type": "op_visited", "op": "上下文", "weight": 1},
+      {"type": "tool_called", "name": "search_capabilities", "weight": 1},
+      {"type": "event_emitted", "event": "approval_required", "weight": 1},
+      {"type": "node_visited", "node": "mark_evolved", "weight": 1},
+      {"type": "event_emitted", "event": "identity_evolution", "weight": 1}
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "gpt_researcher_query_worker",
+  "description": "GPT Researcher focused search/scrape worker with bounded tool rounds and explicit source-preserving output.",
+  "slots": {"researcher": {"description": "Searches, reads and compresses relevant sources for one query", "required": true}},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input", "max_steps": 28, "max_node_steps": 100, "timeout_seconds": 180,
+    "budget": {"max_model_calls": 8, "max_tool_calls": 24, "max_tokens": 60000},
+    "context": {"query": "", "rounds": [1,2,3,4,5,6], "done": false, "answer": ""},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "query"}, "edges": [{"condition": "input", "to": "loop"}]},
+      "loop": {"id": "loop", "op": "循环", "list_var": "rounds", "item_var": "round", "body_start": "research", "break_when": "ctx.done", "edges": [{"condition": "loop_break", "to": "output"}, {"condition": "loop_done", "to": "fallback"}]},
+      "research": {"id": "research", "op": "Agent", "agent": "researcher", "tools": "all", "retry": {"max_attempts": 2}, "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "save"}]},
+      "tools": {"id": "tools", "op": "工具", "agent": "researcher", "parallel": true, "max_workers": 4, "retry": {"max_attempts": 2}, "edges": [{"condition": "tools_executed", "to": "loop"}, {"condition": "no_tool_calls", "to": "loop"}]},
+      "save": {"id": "save", "op": "数据", "action": "set", "key": "answer", "value": "$node.research.text", "edges": [{"condition": "default", "to": "done"}]},
+      "done": {"id": "done", "op": "数据", "action": "set", "key": "done", "value": true, "edges": [{"condition": "default", "to": "loop"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$ctx.answer"}, "record": true, "edges": []},
+      "fallback": {"id": "fallback", "op": "结束", "inputs": {"value": "$node.research.text"}, "record": true, "edges": []}
+    }
+  }
+}

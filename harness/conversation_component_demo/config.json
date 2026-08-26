@@ -1,0 +1,21 @@
+{
+  "name": "conversation_component_demo",
+  "description": "Minimal visual context-governance example: five real user/Agent interactions form a Loop, then separate Curator and passive token-pressure Compactor SubDAGs run ordinary Model planners and validated Conversation Output effects.",
+  "slots": {"agent": {"description": "Conversational worker and curator", "required": true, "identity": "dante"}},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "five_turn_cycle", "max_steps": 100, "max_node_steps": 400,
+    "budget": {"max_model_calls": 30, "max_tool_calls": 60, "max_tokens": 160000},
+    "context": {"five_interactions": [1, 2, 3, 4, 5]},
+    "nodes": {
+      "five_turn_cycle": {"id": "five_turn_cycle", "op": "循环", "list_var": "five_interactions", "item_var": "interaction", "counter_var": "interaction_index", "body_start": "input", "max_count": 5, "edges": [{"condition": "loop_done", "to": "compact_subdag"}]},
+      "input": {"id": "input", "op": "输入", "edges": [{"condition": "input", "to": "reply"}]},
+      "reply": {"id": "reply", "op": "Agent", "agent": "agent", "tools": "all", "max_tool_rounds": 4, "instructions": "Respond to interaction ${ctx.interaction} of this five-turn cycle. Use tools only when needed and preserve concrete project facts.", "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "five_turn_cycle"}]},
+      "tools": {"id": "tools", "op": "工具", "agent": "agent", "edges": [{"condition": "default", "to": "reply"}]},
+      "compact_subdag": {"id": "compact_subdag", "op": "子流程", "harness": "component_context_compactor", "share_session": true, "agent_map": {"compactor": "agent"}, "component_inputs": {"context_limit_tokens": 2048, "high_watermark": 0.35, "target_ratio": 0.2, "reserved_output_tokens": 256, "protect_recent_turns": 1}, "component_outputs": {"stats": "compaction_stats", "compacted": "context_compacted", "pressure": "context_pressure"}, "result_mode": "data", "edges": [{"condition": "subflow_done", "to": "summarize_subdag"}]},
+      "summarize_subdag": {"id": "summarize_subdag", "op": "子流程", "harness": "component_context_curator", "share_session": true, "agent_map": {"curator": "agent"}, "component_inputs": {"review_interval": 4, "protect_recent_turns": 1, "max_tool_chars": 1000}, "component_outputs": {"stats": "summary_stats", "applied": "summary_applied"}, "result_mode": "data", "edges": [{"condition": "subflow_done", "to": "done"}]},
+      "done": {"id": "done", "op": "结束", "value": {"completed_interactions": 5, "curation_applied": "$ctx.summary_applied", "curation_stats": "$ctx.summary_stats", "pressure_compacted": "$ctx.context_compacted", "compaction_stats": "$ctx.compaction_stats"}, "record": true, "edges": []}
+    }
+  }
+}

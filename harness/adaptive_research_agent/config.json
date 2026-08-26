@@ -1,0 +1,27 @@
+{
+  "name": "adaptive_research_agent",
+  "description": "Long-running research Agent composed from capability search, auditable context curation, pressure compaction and periodic knowledge/skill evolution review.",
+  "slots": {
+    "researcher": {"description": "Primary research Identity", "required": true, "identity": "researcher"},
+    "governor": {"description": "Context and evolution governor", "required": true, "identity": "dante"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input", "max_steps": 360, "max_node_steps": 1800, "workspace_preview": true,
+    "budget": {"max_model_calls": 280, "max_tool_calls": 700, "max_tokens": 1800000},
+    "context": {"request": "", "turn_count": 0, "curation_interval": 4, "evolution_interval": 12},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "count_turn"}]},
+      "count_turn": {"id": "count_turn", "op": "数据", "action": "increment", "scope": "session", "key": "automation.turn_count", "default": 0, "output_var": "turn_count", "edges": [{"condition": "default", "to": "discover"}]},
+      "discover": {"id": "discover", "op": "子流程", "harness": "component_capability_discovery", "share_session": true, "agent_map": {"searcher": "governor"}, "component_inputs": {"query": "${ctx.request}", "max_tool_rounds": 3}, "component_outputs": {"result": "capability_discovery"}, "result_mode": "data", "edges": [{"condition": "subflow_done", "to": "curation_due"}]},
+      "curation_due": {"id": "curation_due", "op": "条件", "condition": "ctx.turn_count % ctx.curation_interval == 0", "edges": [{"condition": "true", "to": "curate"}, {"condition": "false", "to": "compact"}]},
+      "curate": {"id": "curate", "op": "子流程", "harness": "component_context_curator", "share_session": true, "agent_map": {"curator": "governor"}, "component_inputs": {"review_interval": 4, "protect_recent_turns": 2, "max_tool_chars": 1200}, "component_outputs": {"stats": "context_stats"}, "result_mode": "data", "edges": [{"condition": "subflow_done", "to": "compact"}]},
+      "compact": {"id": "compact", "op": "子流程", "harness": "component_context_compactor", "share_session": true, "agent_map": {"compactor": "governor"}, "component_inputs": {"context_limit_tokens": 128000, "high_watermark": 0.8, "target_ratio": 0.58, "reserved_output_tokens": 6000, "protect_recent_turns": 2}, "component_outputs": {"stats": "pressure_stats"}, "result_mode": "data", "edges": [{"condition": "subflow_done", "to": "evolution_due"}]},
+      "evolution_due": {"id": "evolution_due", "op": "条件", "condition": "ctx.turn_count % ctx.evolution_interval == 0", "edges": [{"condition": "true", "to": "evolve"}, {"condition": "false", "to": "research"}]},
+      "evolve": {"id": "evolve", "op": "子流程", "harness": "component_capability_evolver", "share_session": true, "agent_map": {"evolver": "governor"}, "component_inputs": {"require_approval": true, "protect_recent_turns": 2}, "component_outputs": {"decision": "evolution_review", "result": "evolution_result"}, "result_mode": "data", "edges": [{"condition": "subflow_done", "to": "research"}]},
+      "research": {"id": "research", "op": "Agent", "agent": "researcher", "tools": "all", "max_tool_rounds": 12, "instructions": "Answer the current research request with traceable evidence. The discovery SubDAG returned: ${ctx.capability_discovery}\nReuse that result when applicable, prefer already supplied local papers and workspace knowledge over web search, isolate verbose delegated searches when available, preserve source provenance, and write reusable findings to Knowledge only when they are stable and likely to recur.", "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "input"}]},
+      "tools": {"id": "tools", "op": "工具", "agent": "researcher", "edges": [{"condition": "default", "to": "research"}]}
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "name": "codex_flow",
+  "description": "Codex-style repository turn runtime assembled from reusable EgoAgent Flow components: passive compaction, persistent tool loop, policy approval, concurrent independent calls, checkpoints, scoped project instructions and durable trajectory events.",
+  "slots": {
+    "coder": {"description": "Repository coding Identity", "required": true, "identity": "codex_operator"},
+    "compactor": {"description": "Identity used only when token pressure crosses the declared threshold", "required": true, "identity": "codex_operator"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 160,
+    "max_node_steps": 1200,
+    "timeout_seconds": 3600,
+    "workspace_preview": true,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "budget_exceeded_to": "limit_status",
+    "limit_finalizer_max_steps": 4,
+    "budget": {"max_model_calls": 160, "max_tool_calls": 600, "max_tokens": 1200000},
+    "context": {"request": "", "compaction_stats": {}, "post_tool_compaction_stats": {}},
+    "nodes": {
+      "input": {
+        "id": "input", "op": "输入", "outputs": {"text": "request"},
+        "edges": [{"condition": "input", "to": "pre_turn_compaction"}]
+      },
+      "pre_turn_compaction": {
+        "id": "pre_turn_compaction", "op": "子流程", "harness": "component_context_compactor", "share_session": true,
+        "agent_map": {"compactor": "compactor"},
+        "component_inputs": {"context_limit_tokens": 128000, "high_watermark": 0.82, "target_ratio": 0.62, "reserved_output_tokens": 12000, "protect_recent_turns": 2},
+        "component_outputs": {"stats": "compaction_stats"}, "result_mode": "data", "output_var": "pre_turn_compaction_result",
+        "edges": [{"condition": "subflow_done", "to": "act"}]
+      },
+      "act": {
+        "id": "act", "op": "Agent", "agent": "coder", "tools": "all", "max_tool_rounds": 120,
+        "instructions": "Complete the current user objective in this workspace. Continue the same turn after tool observations without repeating earlier prose. Independent read-only tool calls may be issued together. If a tool or model limit interrupts the task, state that explicitly instead of presenting a partial sentence as completion.",
+        "retry": {"max_attempts": 3, "delay_seconds": 1, "backoff": 2},
+        "timeout_seconds": 240,
+        "edges": [
+          {"condition": "has_tool_calls", "to": "permissions"},
+          {"condition": "has_text", "to": "output"},
+          {"condition": "stuck", "to": "stuck_output"}
+        ]
+      },
+      "permissions": {
+        "id": "permissions", "op": "工具审查", "agent": "coder", "review_mode": "policy", "policy_match": "first",
+        "default_permission": "ask", "ask_default": "rejected",
+        "policies": [
+          {"tool": "read*", "permission": "allow"},
+          {"tool": "search*", "permission": "allow"},
+          {"tool": "glob*", "permission": "allow"},
+          {"tool": "ls", "permission": "allow"},
+          {"tool": "update_plan", "permission": "allow"},
+          {"tool": "activate_capability", "permission": "allow"},
+          {"tool": "apply_patch", "permission": "ask"},
+          {"tool": "patch*", "permission": "ask"},
+          {"tool": "write*", "permission": "ask"},
+          {"tool": "multi_edit", "permission": "ask"},
+          {"tool": "exec_command", "permission": "ask"},
+          {"tool": "run_command", "permission": "ask"}
+        ],
+        "edges": [{"condition": "default", "to": "tools"}]
+      },
+      "tools": {
+        "id": "tools", "op": "工具", "agent": "coder", "parallel": true, "max_workers": 8,
+        "timeout_seconds": 300, "checkpoint": true, "checkpoint_label": "codex-tool-batch",
+        "edges": [
+          {"condition": "tools_executed", "to": "post_tool_compaction"},
+          {"condition": "no_tool_calls", "to": "post_tool_compaction"},
+          {"condition": "human_required", "to": "act"},
+          {"condition": "stuck", "to": "stuck_output"}
+        ]
+      },
+      "post_tool_compaction": {
+        "id": "post_tool_compaction", "op": "子流程", "harness": "component_context_compactor", "share_session": true,
+        "agent_map": {"compactor": "compactor"},
+        "component_inputs": {"context_limit_tokens": 128000, "high_watermark": 0.88, "target_ratio": 0.66, "reserved_output_tokens": 12000, "protect_recent_turns": 2},
+        "component_outputs": {"stats": "post_tool_compaction_stats"}, "result_mode": "data", "output_var": "post_tool_compaction_result",
+        "edges": [{"condition": "subflow_done", "to": "steer_poll"}]
+      },
+      "steer_poll": {
+        "id": "steer_poll", "op": "输入", "mode": "poll", "reuse_last": false,
+        "edges": [{"condition": "input", "to": "act"}, {"condition": "no_input", "to": "act"}]
+      },
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$node.act.text"}, "record": true, "edges": []},
+      "stuck_output": {"id": "stuck_output", "op": "结束", "value": {"status": "stuck", "message": "$ctx.text", "trajectory": "$ctx._trajectory"}, "edges": []},
+      "limit_status": {"id": "limit_status", "op": "数据", "action": "set", "key": "codex_limit_result", "value": {"status": "limit_exceeded", "reason": "$ctx._termination.message", "last_response": "$ctx.text", "trajectory": "$ctx._trajectory"}, "edges": [{"condition": "default", "to": "limit_output"}]},
+      "limit_output": {"id": "limit_output", "op": "结束", "value": "$ctx.codex_limit_result", "edges": []}
+    }
+  }
+}

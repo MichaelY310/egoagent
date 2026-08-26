@@ -1,0 +1,15 @@
+{
+  "type": "function",
+  "name": "finish",
+  "description": "Submit the current OpenHands work attempt to the independent goal judge. Call this only after gathering concrete file, command, or test evidence for every requirement.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "Concise description of the completed work and its authoritative verification evidence."
+      }
+    },
+    "required": []
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "type": "tool",
+  "name": "manage_harness",
+  "description": "Inspect, validate, create, structurally patch or rollback a visual Harness with the compact Blueprint protocol. Always inspect first and pass expected_revision when patching.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {"type": "string", "enum": ["guide", "contract", "inspect", "validate", "create", "patch", "rollback"]},
+      "harness_name": {"type": "string"},
+      "blueprint": {"type": "object"},
+      "operations": {"type": "array", "items": {"type": "object"}},
+      "expected_revision": {"type": "string"},
+      "transaction_id": {"type": "string"},
+      "reason": {"type": "string"},
+      "dry_run": {"type": "boolean"},
+      "node_type": {"type": "string", "description": "For contract: canonical node type"}
+    },
+    "required": ["action"]
+  }
+}

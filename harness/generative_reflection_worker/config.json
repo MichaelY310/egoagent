@@ -1,0 +1,27 @@
+{
+  "name": "generative_reflection_worker",
+  "description": "One Generative Agents reflection focal point: retrieve top memories with source-shaped weights and derive up to five evidence-linked insights.",
+  "slots": {"persona": {"description": "The Identity whose memories are being reflected on", "required": true}},
+  "prompts": {
+    "insights": {
+      "description": "Generate evidence-linked reflection thoughts",
+      "default": "Infer up to five high-level insights that answer the focal point. Every insight must cite concrete memory IDs from the retrieved records; do not invent evidence.\n\nFocal point: {focal_point}\nRetrieved memories: {retrieved_memories}\n\nReturn ONLY JSON: {{\"insights\":[{{\"thought\":\"...\",\"evidence\":[\"memory-id\"],\"importance\":5}}]}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 5,
+    "max_node_steps": 24,
+    "timeout_seconds": 180,
+    "budget": {"max_model_calls": 3, "max_tokens": 30000},
+    "context": {"focal_point": "", "retrieved_memories": [], "insights": []},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "focal_point"}, "edges": [{"condition": "input", "to": "retrieve"}]},
+      "retrieve": {"id": "retrieve", "op": "记忆", "action": "search", "namespace": "generative_persona", "query": "$ctx.focal_point", "top_k": 30, "weights": {"recency": 0.5, "relevance": 3, "importance": 2}, "output_var": "retrieved_memories", "edges": [{"condition": "memory_found", "to": "insights"}, {"condition": "memory_empty", "to": "empty"}]},
+      "insights": {"id": "insights", "op": "模型", "agent": "persona", "prompt": "insights", "parse_as": "json", "temperature": 0.3, "retry": {"max_attempts": 3}, "output_schema": {"type": "object", "required": ["insights"], "properties": {"insights": {"type": "array", "items": {"type": "object", "required": ["thought", "evidence", "importance"]}}}}, "outputs": {"structured.insights": "insights"}, "edges": [{"condition": "has_text", "to": "output"}]},
+      "empty": {"id": "empty", "op": "结束", "inputs": {"value": []}, "edges": []},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$ctx.insights"}, "edges": []}
+    }
+  }
+}

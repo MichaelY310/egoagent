@@ -1,0 +1,40 @@
+{
+  "version": "ego.task.v1",
+  "id": "video_code_agent_walkthrough",
+  "title": "录屏：修复智能花盆控制器",
+  "description": "为教学视频准备的确定性代码任务：真实编辑、测试、DAG 轨迹与逐块变更审核。",
+  "category": "tutorial",
+  "difficulty": "easy",
+  "tags": ["video", "python", "change-review", "capability-search"],
+  "prompt": "修复 garden.py 中的浇水判断与单次用水量计算；不要修改公开函数签名。先读取 AGENTS.md 和相关文件，运行测试，并在最终回复中给出测试证据。",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Video Demo Repository Rules\n\n- Keep changes small and explain them in Chinese.\n- Do not change public function signatures.\n- Run `python -m unittest discover -v` after code changes.\n- Treat files under `docs/` as authoritative local evidence and cite paths.\n- Do not use the network for this demo.\n",
+      "README.md": "# Smart Garden Controller — EgoAgent video fixture\n\nThis deliberately small Python repository is the safe recording workspace for EgoAgent. It contains two real bugs, deterministic tests, local research notes, and a workspace-scoped reusable Skill that should be discovered before a new one is created.\n\nStart with:\n\n```powershell\npython -m unittest discover -v\n```\n\nThe intended first task is:\n\n> 修复智能花盆的浇水判断与单次用水量计算；不要修改公开函数签名。运行测试，并说明证据。\n",
+      "garden.py": "\"\"\"Small smart-planter controller used by the EgoAgent recording tutorial.\"\"\"\n\n\ndef should_water(moisture_percent: float, threshold: float = 35.0) -> bool:\n    \"\"\"Return whether soil moisture is low enough to require watering.\"\"\"\n    return moisture_percent > threshold\n\n\ndef water_millilitres(flow_ml_per_second: float, seconds: float) -> float:\n    \"\"\"Return the water used for one pump activation.\"\"\"\n    return flow_ml_per_second + seconds\n\n\ndef watering_decision(moisture_percent: float, flow_ml_per_second: float, seconds: float) -> dict:\n    required = should_water(moisture_percent)\n    return {\n        \"water\": required,\n        \"millilitres\": water_millilitres(flow_ml_per_second, seconds) if required else 0.0,\n    }\n",
+      "test_garden.py": "import unittest\n\nfrom garden import should_water, water_millilitres, watering_decision\n\n\nclass GardenTests(unittest.TestCase):\n    def test_dry_soil_needs_water(self):\n        self.assertTrue(should_water(20))\n\n    def test_wet_soil_does_not_need_water(self):\n        self.assertFalse(should_water(70))\n\n    def test_volume_is_flow_times_duration(self):\n        self.assertEqual(water_millilitres(12, 5), 60)\n\n    def test_decision_keeps_pump_off_for_wet_soil(self):\n        self.assertEqual(watering_decision(80, 12, 5), {\"water\": False, \"millilitres\": 0.0})\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n",
+      "docs/sensor_notes.md": "SM-20 is the production sensor. Below 35 percent means dry soil.\n",
+      "docs/pump_notes.md": "P-12 delivers 12 millilitres per second. Pump volume equals flow multiplied by duration.\n",
+      "docs/operations_notes.md": "Use local notes as evidence. Do not browse. Preserve public APIs and verify the complete watering decision.\n",
+      ".agents/skills/garden_evidence/SKILL.md": "# Garden evidence lookup\nSearch local docs for sensor and pump evidence; cite relative paths and do not browse.\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "adaptive_code_agent",
+    "recommended_identity": "coder",
+    "compatible_harnesses": ["adaptive_code_agent", "aider_replica", "openhands_replica", "tutorial_full_stack_code_agent"],
+    "compatible_identities": ["coder", "dante", "openhands"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 600},
+  "evolution": {"allowed": false},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"id": "tests", "type": "command", "command": ["python", "-m", "unittest", "discover", "-v"], "timeout_seconds": 30, "weight": 3},
+      {"id": "comparison", "type": "file_regex", "path": "garden.py", "pattern": "moisture_percent\\s*<\\s*threshold", "weight": 1},
+      {"id": "multiplication", "type": "file_regex", "path": "garden.py", "pattern": "flow_ml_per_second\\s*\\*\\s*seconds", "weight": 1},
+      {"id": "dag", "type": "op_visited", "op": "Agent", "minimum": 1, "weight": 1}
+    ]
+  }
+}

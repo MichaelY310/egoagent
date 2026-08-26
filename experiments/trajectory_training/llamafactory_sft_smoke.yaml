@@ -1,0 +1,37 @@
+### model
+model_name_or_path: /home/aa310/.cache/huggingface/hub/models--hmellor--tiny-random-LlamaForCausalLM/snapshots/9408c553e5c189a7dcdc5a5dbd2feb476b061759
+trust_remote_code: false
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+
+### exact EgoAgent model-call projection
+dataset: egoagent_sft
+dataset_dir: /mnt/c/Users/aa310/Desktop/egoagent/.egoagent/research/trajectory_training_smoke_v5/export
+template: llama2
+cutoff_len: 512
+max_samples: 8
+overwrite_cache: true
+preprocessing_num_workers: 1
+dataloader_num_workers: 0
+
+### one-step resource-safe smoke
+output_dir: /home/aa310/egoagent-training/results/llamafactory-sft-smoke
+logging_steps: 1
+save_steps: 10
+plot_loss: false
+overwrite_output_dir: true
+save_only_model: false
+report_to: none
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-4
+max_steps: 1
+lr_scheduler_type: constant
+warmup_ratio: 0.0
+fp16: false
+bf16: false
+ddp_timeout: 180000000
+resume_from_checkpoint: null

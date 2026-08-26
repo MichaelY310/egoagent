@@ -1,0 +1,26 @@
+{
+  "type": "function",
+  "function": {
+    "name": "coc_use_matches",
+    "description": "Use the carried CoC item: matches. Returns an action intent for Keeper adjudication; it does not bypass the Keeper.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Target or intended use."
+        },
+        "intent": {
+          "type": "string",
+          "description": "Brief in-character intent."
+        }
+      },
+      "required": []
+    }
+  },
+  "coc_item": {
+    "id": "matches",
+    "label": "matches",
+    "action": "light"
+  }
+}

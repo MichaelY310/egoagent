@@ -1,0 +1,60 @@
+{
+  "name": "continue_agent_replica",
+  "description": "Continue CLI agent reproduction: streamed tool loop, request-time tool visibility, parallel execution after permission review, thresholded persistent compaction with automatic continuation, checkpoints and bounded execution.",
+  "slots": {
+    "coder": {"description": "Continue-style coding Identity/EGO", "required": true, "identity": "coder"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 40,
+    "max_node_steps": 260,
+    "timeout_seconds": 2400,
+    "budget_exceeded_to": "limit_status",
+    "limit_finalizer_max_steps": 4,
+    "workspace_preview": true,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "budget": {"max_model_calls": 42, "max_tool_calls": 140, "max_tokens": 420000},
+    "context": {"request": "", "working_context": []},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "context"}]},
+      "context": {
+        "id": "context", "op": "上下文", "action": "auto_compact", "source": "$session.messages", "agent": "coder",
+        "context_limit_tokens": 128000, "max_output_tokens": 8192, "reserved_tokens": 12000,
+        "compaction_buffer_ratio": 0.2, "compaction_buffer_cap": 15000,
+        "summary_max_tokens": 2048, "persist_session": true,
+        "output_var": "working_context", "compacted_var": "context_compacted",
+        "edges": [{"condition": "context_ready", "to": "act"}]
+      },
+      "act": {
+        "id": "act", "op": "Agent", "agent": "coder", "tools": "all",
+        "hidden_tools": ["submit_result"],
+        "inputs": {"messages": "$ctx.working_context", "compacted": "$ctx.context_compacted"},
+        "auto_continue_when": "compacted == true", "auto_continue_prompt": "continue", "auto_continue_to": "context", "max_auto_continuations": 1,
+        "duplicate_threshold": 2, "retry": {"max_attempts": 3, "delay_seconds": 1, "backoff": 2}, "timeout_seconds": 180,
+        "edges": [{"condition": "has_tool_calls", "to": "permissions"}, {"condition": "auto_continue", "to": "context"}, {"condition": "has_text", "to": "output"}, {"condition": "stuck", "to": "act"}]
+      },
+      "permissions": {
+        "id": "permissions", "op": "工具审查", "agent": "coder", "review_mode": "policy", "policy_match": "first", "default_permission": "ask", "ask_default": "rejected",
+        "policies": [
+          {"tool": "read*", "permission": "allow"},
+          {"tool": "search*", "permission": "allow"},
+          {"tool": "glob*", "permission": "allow"},
+          {"tool": "ls", "permission": "allow"},
+          {"tool": "check_command_status", "permission": "allow"},
+          {"tool": "stop_command", "permission": "allow"},
+          {"tool": "write*", "permission": "ask"},
+          {"tool": "patch*", "permission": "ask"},
+          {"tool": "multi_edit", "permission": "ask"},
+          {"tool": "run_command", "permission": "ask"}
+        ],
+        "edges": [{"condition": "default", "to": "tools"}]
+      },
+      "tools": {"id": "tools", "op": "工具", "agent": "coder", "parallel": true, "max_workers": 8, "timeout_seconds": 240, "checkpoint": true, "checkpoint_label": "continue-tool-preview", "edges": [{"condition": "tools_executed", "to": "context"}, {"condition": "no_tool_calls", "to": "context"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$node.act.text"}, "record": true, "edges": []},
+      "limit_status": {"id": "limit_status", "op": "数据", "action": "set", "key": "continue_limit_result", "value": {"status": "limit_exceeded", "reason": "$ctx._termination.message", "last_response": "$ctx.text", "trajectory": "$ctx._trajectory"}, "edges": [{"condition": "default", "to": "limit_output"}]},
+      "limit_output": {"id": "limit_output", "op": "结束", "value": "$ctx.continue_limit_result", "edges": []}
+    }
+  }
+}

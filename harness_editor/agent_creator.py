@@ -3,6 +3,8 @@
 import json
 import os
 import re
+import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -10,41 +12,50 @@ from typing import Dict, List, Optional
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 IDENTITY_DIR = PROJECT_ROOT / "identity"
 
+from config import CONFIG
+from harness_blueprint import HarnessBlueprintService
+
+
+def _replace_directory(source: Path, destination: Path, attempts: int = 5) -> None:
+    """Atomically commit a staged directory, tolerating short Windows locks."""
+    for attempt in range(max(1, attempts)):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(0.05 * (2 ** attempt))
+
 TEMPLATES = {
     "code_review": {
         "traits": ["meticulous", "constructive", "thorough"],
-        "tools": ["read_file", "search_files", "patch_file"],
-        "harness": "react_single",
+        "tools": ["read", "search", "patch", "end_session"],
         "temperature": 0.3,
     },
     "coding": {
         "traits": ["efficient", "pragmatic", "test_driven"],
-        "tools": ["read_file", "write_file", "patch_file", "search_files", "run_command"],
-        "harness": "coder_react",
+        "tools": ["read", "write", "patch", "search", "end_session"],
         "temperature": 0.5,
     },
     "research": {
         "traits": ["curious", "analytical", "systematic"],
-        "tools": ["read_file", "search_files", "write_file"],
-        "harness": "research_loop",
+        "tools": ["read", "search", "write", "end_session"],
         "temperature": 0.7,
     },
     "creative": {
         "traits": ["creative", "innovative", "open_minded"],
-        "tools": ["read_file", "write_file"],
-        "harness": "creative_roundtable",
+        "tools": ["read", "write", "search", "end_session"],
         "temperature": 0.9,
     },
     "devops": {
         "traits": ["systematic", "security_conscious", "efficient"],
-        "tools": ["run_command", "read_file", "write_file", "patch_file"],
-        "harness": "react_single",
+        "tools": ["read", "write", "patch", "search", "end_session"],
         "temperature": 0.3,
     },
     "testing": {
         "traits": ["thorough", "systematic", "edge_case_aware"],
-        "tools": ["read_file", "write_file", "run_command", "search_files"],
-        "harness": "react_single",
+        "tools": ["read", "write", "patch", "search", "end_session"],
         "temperature": 0.4,
     },
 }
@@ -58,16 +69,7 @@ _KEYWORD_MAP = {
     "testing": ["测试", "test", "qa"],
 }
 
-_TECH_KEYWORDS = {
-    "react": {"tools_add": ["npm_run"]},
-    "vue": {"tools_add": ["npm_run"]},
-    "typescript": {"tools_add": ["npm_run"]},
-    "node": {"tools_add": ["npm_run"]},
-    "python": {"tools_add": ["pytest"]},
-    "rust": {"tools_add": ["cargo_build"]},
-    "go": {"tools_add": ["go_build"]},
-    "docker": {"tools_add": ["docker_run"]},
-}
+_TECH_KEYWORDS = {name: {} for name in ("react", "vue", "typescript", "node", "python", "rust", "go", "docker")}
 
 
 def _match_template(description: str) -> str:
@@ -117,95 +119,244 @@ def _build_system_prompt(template_name: str, traits: List[str], tech_stack: List
     return prompt
 
 
-def create_agent_from_description(description: str, name: str = None) -> Dict:
-    """Create an AI agent from a natural language description.
+def _normalize_agent_spec(spec: dict, description: str) -> dict:
+    """Validate a model-authored Agent Spec without choosing its behavior."""
 
-    Args:
-        description: Natural language description of the desired agent.
-        name: Optional name for the agent. Generated if not provided.
+    if not isinstance(spec, dict):
+        raise ValueError("spec must be an object")
+    role = str(spec.get("role") or "general agent").strip()[:200]
+    traits = spec.get("traits", [])
+    skills = spec.get("skills", [])
+    knowledge_topics = spec.get("knowledge_topics", [])
+    if not isinstance(traits, list) or not isinstance(skills, list) or not isinstance(knowledge_topics, list):
+        raise ValueError("spec traits, skills and knowledge_topics must be arrays")
 
-    Returns:
-        Dict with status, identity config, recommended harness, path, and next_steps.
+    def safe_values(values, label, limit):
+        result = []
+        for raw in values[:limit]:
+            value = str(raw).strip()
+            if not value:
+                continue
+            if label in {"skill", "knowledge"} and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,79}", value):
+                raise ValueError(f"invalid {label} name: {value!r}")
+            result.append(value[:120])
+        return list(dict.fromkeys(result))
+
+    prompt = str(spec.get("system_prompt") or "").strip()
+    if not prompt:
+        prompt = (
+            f"You are a {role}. {description.strip()}\n"
+            "Inspect evidence before acting. Use only installed capabilities and verify the final result."
+        )
+    try:
+        temperature = float(spec.get("temperature", 0.4))
+    except (TypeError, ValueError) as error:
+        raise ValueError("spec temperature must be numeric") from error
+    return {
+        "role": role,
+        "traits": safe_values(traits, "trait", 12) or ["deliberate", "evidence_driven"],
+        "skills": safe_values(skills, "skill", 30),
+        "knowledge_topics": safe_values(knowledge_topics, "knowledge", 30),
+        "system_prompt": prompt[:20_000],
+        "language": str(spec.get("language") or ("zh" if re.search(r"[\u4e00-\u9fff]", description) else "en"))[:20],
+        "tone": str(spec.get("tone") or "professional and direct")[:200],
+        "temperature": min(2.0, max(0.0, temperature)),
+        "allow_self_evolution": bool(spec.get("allow_self_evolution", True)),
+    }
+
+
+def create_agent_from_description(description: str, name: str = None, spec: dict = None) -> Dict:
+    """Create a real Identity + executable Skill pack + visual Harness.
+
+    This path is deterministic on purpose: even a weak model only has to state
+    the role.  It never has to hand-write Python or raw DAG JSON.
     """
-    template_name = _match_template(description)
-    template = TEMPLATES[template_name]
-    tech_stack = _detect_tech_stack(description)
+    if not description or not description.strip():
+        raise ValueError("description cannot be empty")
+    if spec is None:
+        # Legacy convenience path used by the old REST form. New DAGs should
+        # have an ordinary Model author a structured spec and pass it here.
+        template_name = _match_template(description)
+        template = TEMPLATES[template_name]
+        tech_stack = _detect_tech_stack(description)
+        normalized = {
+            "role": f"{template_name.replace('_', ' ')} agent",
+            "traits": list(template["traits"]),
+            "skills": list(template["tools"]),
+            "knowledge_topics": tech_stack,
+            "system_prompt": _build_system_prompt(template_name, list(template["traits"]), tech_stack),
+            "language": "zh" if re.search(r"[\u4e00-\u9fff]", description) else "en",
+            "tone": "professional and direct",
+            "temperature": template["temperature"],
+            "allow_self_evolution": True,
+        }
+    else:
+        template_name = "custom"
+        normalized = _normalize_agent_spec(spec, description)
 
     if name is None:
+        name = str((spec or {}).get("name") or "") or _generate_name(description, template_name)
+
+    name = re.sub(r"[^A-Za-z0-9_-]+", "_", name or "").strip("_")
+    if not name or not re.match(r"^[A-Za-z_]", name):
         name = _generate_name(description, template_name)
 
-    # Handle name conflicts by adding suffix
+    # Handle name conflicts without overwriting user data.
     agent_dir = IDENTITY_DIR / name
-    if agent_dir.exists():
+    harness_name = f"{name}_harness"
+    if agent_dir.exists() or (PROJECT_ROOT / "harness" / harness_name).exists():
         suffix = int(time.time()) % 10000
         name = f"{name}_{suffix}"
         agent_dir = IDENTITY_DIR / name
+        harness_name = f"{name}_harness"
 
-    # Build tools list with tech-specific additions
-    tools = list(template["tools"])
-    for tech in tech_stack:
-        for tool in _TECH_KEYWORDS[tech]["tools_add"]:
-            if tool not in tools:
-                tools.append(tool)
-
-    # Create identity directory structure
-    ego_dir = agent_dir / "ego"
-    skills_dir = ego_dir / "skills"
-    knowledge_dir = ego_dir / "knowledge"
-    superego_dir = agent_dir / "superego"
-
-    os.makedirs(skills_dir, exist_ok=True)
-    os.makedirs(knowledge_dir, exist_ok=True)
-    os.makedirs(superego_dir, exist_ok=True)
-
-    # Build identity config
-    traits = list(template["traits"])
-    system_prompt = _build_system_prompt(template_name, traits, tech_stack)
-
+    # These names map to real, copied Skill directories.  The old creator only
+    # wrote names into tools.json, a file the runtime never reads.
+    tools = normalized["skills"]
+    traits = normalized["traits"]
+    tech_stack = normalized["knowledge_topics"]
+    system_prompt = normalized["system_prompt"]
+    default_llm = {}
+    try:
+        default_llm = json.loads((IDENTITY_DIR / "dante" / "id.json").read_text(encoding="utf-8")).get("llm", {})
+    except (OSError, ValueError):
+        pass
     identity_config = {
         "name": name,
-        "template": template_name,
-        "traits": traits,
-        "tools": tools,
-        "temperature": template["temperature"],
-        "tech_stack": tech_stack,
-        "created_at": time.time(),
+        "role": normalized["role"],
+        "description": description.strip(),
+        "personality": {
+            "traits": traits,
+            "tone": normalized["tone"],
+            "language": normalized["language"],
+        },
+        "llm": {
+            "type": "custom_llm",
+            "base_url": CONFIG.get("default_llm_base_url") or default_llm.get("base_url", ""),
+            "model": CONFIG.get("default_llm_model") or default_llm.get("model", ""),
+            "api_key": "",
+            "temperature": normalized["temperature"],
+            "max_tokens": 8192,
+        },
+    }
+    superego_config = {
+        "task_prompt": system_prompt + "\nInspect evidence before acting. Use only installed tools and verify the final result.",
+        "tool_access": {"whitelist": [], "blacklist": []},
+        "knowledge_access": {"whitelist": [], "blacklist": []},
+        "allow_create_agent": False,
+        "allow_create_identity": False,
+        "allow_modify_agent": normalized["allow_self_evolution"],
+        "allow_modify_identity": normalized["allow_self_evolution"],
+        "allow_add_skill_to_self": normalized["allow_self_evolution"],
+        "allow_add_knowledge_to_self": normalized["allow_self_evolution"],
+        "allow_add_skill_to_other": False,
+        "allow_add_knowledge_to_other": False,
+        "allow_add_tool_to_environment": False,
+        "allow_add_knowledge_to_environment": False,
     }
 
-    # Write id.json
-    id_path = agent_dir / "id.json"
-    with open(id_path, "w", encoding="utf-8") as f:
-        json.dump(identity_config, f, indent=2, ensure_ascii=False)
+    blueprint = {
+        "version": 1,
+        "name": harness_name,
+        "description": f"Visual one-shot Agent Harness for {name}: {description.strip()}",
+        "roles": {
+            "agent": {
+                "description": description.strip(),
+                "required": True,
+                "identity": name,
+            }
+        },
+        "start": "input",
+        "steps": [
+            {"id": "input", "type": "input", "next": "think"},
+            {
+                "id": "think",
+                "type": "agent",
+                "role": "agent",
+                "on": {"tools": "act", "text": "finish"},
+                "config": {"tools": "auto", "max_empty_responses": 1},
+            },
+            {"id": "act", "type": "tool", "role": "agent", "next": "think"},
+            {"id": "finish", "type": "end", "inputs": {"value": "$last.text"}},
+        ],
+        "return_mode": "last",
+        "max_steps": 100,
+        "workspace_preview": True,
+    }
 
-    # Write system_prompt.txt
-    prompt_path = ego_dir / "system_prompt.txt"
-    with open(prompt_path, "w", encoding="utf-8") as f:
-        f.write(system_prompt)
+    service = HarnessBlueprintService(PROJECT_ROOT)
+    service.validate(blueprint)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{name}.", dir=str(IDENTITY_DIR)))
+    committed_harness = False
+    copied_tools = []
+    try:
+        ego_dir = temporary / "ego"
+        skills_dir = ego_dir / "skills"
+        knowledge_dir = ego_dir / "knowledge"
+        superego_dir = temporary / "superego"
+        skills_dir.mkdir(parents=True)
+        knowledge_dir.mkdir(parents=True)
+        superego_dir.mkdir(parents=True)
+        (temporary / "id.json").write_text(json.dumps(identity_config, ensure_ascii=False, indent=2), encoding="utf-8")
+        (superego_dir / "config.json").write_text(json.dumps(superego_config, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # Write tools.json
-    tools_config = [{"name": t, "enabled": True} for t in tools]
-    tools_path = ego_dir / "tools.json"
-    with open(tools_path, "w", encoding="utf-8") as f:
-        json.dump(tools_config, f, indent=2, ensure_ascii=False)
+        source_skills = IDENTITY_DIR / "dante" / "ego" / "skills"
+        for tool in tools:
+            source = source_skills / tool
+            if source.is_dir() and (source / "meta.json").is_file():
+                shutil.copytree(source, skills_dir / tool)
+                copied_tools.append(tool)
 
-    # Create knowledge base placeholders for detected tech
-    for tech in tech_stack:
-        kb_path = knowledge_dir / f"{tech}.md"
-        with open(kb_path, "w", encoding="utf-8") as f:
-            f.write(f"# {tech.capitalize()} Knowledge Base\n\nAdd {tech} knowledge here.\n")
+        for tech in tech_stack:
+            knowledge = knowledge_dir / tech
+            knowledge.mkdir()
+            (knowledge / "meta.json").write_text(json.dumps({
+                "type": "knowledge",
+                "name": tech,
+                "title": f"{tech.title()} working notes",
+                "description": f"Use this knowledge when a task concerns {tech}; update it with verified project-specific facts.",
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            (knowledge / f"{tech}.txt").write_text(
+                f"# {tech.title()} working notes\n\nNo project-specific facts have been learned yet. Verify before adding durable knowledge.\n",
+                encoding="utf-8",
+            )
+
+        service.create(blueprint)
+        committed_harness = True
+        _replace_directory(temporary, agent_dir)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        if committed_harness:
+            shutil.rmtree(PROJECT_ROOT / "harness" / harness_name, ignore_errors=True)
+        raise
 
     return {
         "status": "created",
         "identity": identity_config,
-        "recommended_harness": template["harness"],
+        "harness": harness_name,
+        "recommended_harness": harness_name,
         "path": str(agent_dir),
+        "skills": copied_tools,
+        "blueprint": blueprint,
+        "agent_spec": normalized,
         "next_steps": [
-            f"Edit {prompt_path} to customize the system prompt",
-            f"Add knowledge files to {knowledge_dir}",
-            f"Configure tools in {tools_path}",
-            f"Run with harness: {template['harness']}",
+            f"Open {harness_name} in Studio to see the generated DAG",
+            f"Bind slot agent to identity/{name} (already stored as the slot default)",
+            f"Run the Harness with a concrete task and inspect every node",
+            "Use manage_harness inspect → dry-run patch → patch for structural evolution",
         ],
     }
+
+
+def create_agent_from_spec(spec: dict, name: str = None) -> Dict:
+    """Create an Agent from an explicit model-authored, user-inspectable spec."""
+
+    if not isinstance(spec, dict):
+        raise ValueError("spec must be an object")
+    description = str(spec.get("description") or spec.get("purpose") or spec.get("role") or "").strip()
+    if not description:
+        raise ValueError("spec must include description, purpose or role")
+    return create_agent_from_description(description, name=name, spec=spec)
 
 
 def list_templates() -> List[Dict]:
@@ -220,7 +371,7 @@ def list_templates() -> List[Dict]:
             "name": name,
             "traits": config["traits"],
             "tools": config["tools"],
-            "harness": config["harness"],
+            "harness": "generated per Agent",
             "temperature": config["temperature"],
         })
     return result

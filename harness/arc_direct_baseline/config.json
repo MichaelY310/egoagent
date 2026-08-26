@@ -1,0 +1,38 @@
+{
+  "name": "arc_direct_baseline",
+  "description": "Direct-model ARC-AGI-3 baseline with the same official text/action adapter but no persistent memory, supervisor, or Flow evolution.",
+  "slots": {"explorer": {"description": "Direct acting model", "required": true, "identity": "arc_explorer"}},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "mode": "agent",
+    "max_steps": 300,
+    "max_node_steps": 1200,
+    "timeout_seconds": 7200,
+    "workspace_preview": false,
+    "permissions": {"defaults": {"network": "allow", "read": "allow", "write": "allow", "process": "deny", "mutation": "deny", "secret": "deny"}},
+    "budget_exceeded_to": "budget_finish",
+    "limit_finalizer_max_steps": 3,
+    "budget": {"max_model_calls": 60, "max_tool_calls": 32, "max_tokens": 450000},
+    "context": {"request": ""},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "act"}]},
+      "act": {
+        "id": "act", "op": "Agent", "agent": "explorer", "tools": "all",
+        "visible_tools": ["arc_start", "arc_act", "arc_status", "arc_finish"],
+        "max_tool_rounds": 32, "max_tool_calls_per_turn": 1,
+        "instructions": "Play the requested game and win. Include any context you want to carry forward in each decision. Take exactly one tool action per model step and call arc_finish when done or when the user-stated action budget is reached.",
+        "edges": [{"condition": "has_tool_calls", "to": "permissions"}, {"condition": "has_text", "to": "act"}, {"condition": "stuck", "to": "act"}]
+      },
+      "permissions": {"id": "permissions", "op": "工具审查", "agent": "explorer", "review_mode": "policy", "default_permission": "deny", "policies": [{"tool": "arc_*", "permission": "allow"}], "edges": [{"condition": "default", "to": "tools"}]},
+      "tools": {
+        "id": "tools", "op": "工具", "agent": "explorer", "parallel": false,
+        "truncate_after_tools": ["arc_finish"], "terminal_tools_to": "result",
+        "edges": [{"condition": "tools_executed", "to": "act"}]
+      },
+      "result": {"id": "result", "op": "结束", "value": {"status": "finished", "result": "$node.tools.results", "trajectory": "$ctx._trajectory"}, "edges": []},
+      "budget_finish": {"id": "budget_finish", "op": "结束", "value": {"status": "budget_exceeded", "reason": "$ctx._termination.message", "trajectory": "$ctx._trajectory"}, "edges": []}
+    }
+  }
+}

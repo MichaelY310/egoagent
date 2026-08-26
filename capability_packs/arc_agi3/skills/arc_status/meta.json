@@ -1,0 +1,12 @@
+{
+  "type": "function",
+  "title": "Inspect ARC-AGI-3 State",
+  "name": "arc_status",
+  "description": "Read the current exact observation and progress counters for an active ARC session without taking an action.",
+  "permissions": [],
+  "parameters": {
+    "type": "object",
+    "properties": {"session_id": {"type": "string"}},
+    "required": []
+  }
+}

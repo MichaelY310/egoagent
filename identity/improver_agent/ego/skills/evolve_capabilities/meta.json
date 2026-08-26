@@ -1,0 +1,19 @@
+{
+  "type": "tool",
+  "name": "evolve_capabilities",
+  "description": "Analyze and reversibly install Identity capability evolution: local paper retrieval or a result-only delegated search Agent. Use analyze, then dry-run install, then install and evaluate.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {"type": "string", "enum": ["list", "analyze", "inspect", "install", "rollback"]},
+      "identity_name": {"type": "string"},
+      "observations": {},
+      "pack": {"type": "string", "enum": ["paper_library", "delegated_search"]},
+      "workspace": {"type": "string"},
+      "dry_run": {"type": "boolean"},
+      "reason": {"type": "string"},
+      "transaction_id": {"type": "string"}
+    },
+    "required": ["action"]
+  }
+}

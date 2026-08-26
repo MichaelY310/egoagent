@@ -1,0 +1,6 @@
+{
+  "type": "knowledge",
+  "name": "local_papers_first",
+  "title": "Local papers before web search",
+  "description": "Retrieval policy for tasks involving papers previously provided by the user"
+}

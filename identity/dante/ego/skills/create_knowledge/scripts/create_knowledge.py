@@ -37,6 +37,20 @@ def create_knowledge(identity_name: str, knowledge_name: str, content: str,
     if not filename:
         filename = f"{knowledge_name}.txt"
 
+    filename = Path(filename).name
+    if not filename.lower().endswith(".txt"):
+        filename += ".txt"
+
+    meta = {
+        "type": "knowledge",
+        "name": knowledge_name,
+        "title": knowledge_name.replace("_", " ").title(),
+        "description": f"Identity knowledge: {knowledge_name.replace('_', ' ')}",
+    }
+    (knowledge_dir / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=4), encoding="utf-8"
+    )
+
     # 写入知识文件
     file_path = knowledge_dir / filename
     file_path.write_text(content, encoding="utf-8")

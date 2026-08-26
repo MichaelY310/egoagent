@@ -5,7 +5,8 @@ import re
 from pathlib import Path
 
 
-def run_harness_test(harness_name: str, agent_identity: str, task: str, max_steps: int = 10):
+def run_harness_test(harness_name: str, agent_identity: str, task: str, max_steps: int = 10,
+                     _context: dict = None):
     """Run a harness with a task and return structured evaluation."""
     project_root = Path(__file__).resolve().parents[6]
     
@@ -21,7 +22,7 @@ def run_harness_test(harness_name: str, agent_identity: str, task: str, max_step
     sys.path.insert(0, str(project_root))
     try:
         from agent import Agent
-        from harness import Harness, set_current_harness, get_current_harness
+        from harness import Harness, reset_current_harness, set_current_harness, get_current_harness
         
         # Determine which slot to fill
         config = json.loads((harness_dir / "config.json").read_text(encoding="utf-8"))
@@ -40,8 +41,9 @@ def run_harness_test(harness_name: str, agent_identity: str, task: str, max_step
             return json.dumps({"error": f"Harness '{harness_name}' has no slots defined"})
         
         # Create agent and harness
-        agent = Agent(str(identity_dir), name=slot_name)
-        harness = Harness(str(harness_dir), agents={slot_name: agent})
+        workspace = Path(_context["workspace"]) if _context and _context.get("workspace") else None
+        agent = Agent(str(identity_dir), name=slot_name, workspace=workspace)
+        harness = Harness(str(harness_dir), agents={slot_name: agent}, workspace=workspace)
         harness._non_interactive = True
         
         # Override max_steps
@@ -50,7 +52,7 @@ def run_harness_test(harness_name: str, agent_identity: str, task: str, max_step
         
         # Save parent harness and set this as current
         parent = get_current_harness()
-        set_current_harness(harness)
+        harness_token = set_current_harness(harness)
         
         # Inject task
         msg = {"role": "user", "content": task}
@@ -62,9 +64,8 @@ def run_harness_test(harness_name: str, agent_identity: str, task: str, max_step
             harness.run_func(harness)
         except Exception as run_err:
             pass
-        
-        # Restore parent
-        set_current_harness(parent)
+        finally:
+            reset_current_harness(harness_token)
         
         # Evaluate results
         messages = harness.session.messages

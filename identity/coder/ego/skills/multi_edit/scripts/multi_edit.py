@@ -14,12 +14,14 @@ def multi_edit(file_path: str, edits: list):
         return json.dumps({"error": "edits list is empty."})
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        # newline="" keeps the file's exact line endings.  Universal newline
+        # translation would otherwise turn an LF file into CRLF on Windows and
+        # collapse unrelated edits into one whole-file review hunk.
+        with open(file_path, "r", encoding="utf-8", newline="") as f:
             content = f.read()
     except UnicodeDecodeError:
         return json.dumps({"error": f"Cannot read '{file_path}': file appears to be binary."})
 
-    old_content = content
     results = []
     for i, edit in enumerate(edits):
         old_string = edit.get("old_string", "")
@@ -31,21 +33,10 @@ def multi_edit(file_path: str, edits: list):
         results.append({"index": i, "status": "ok"})
 
     try:
-        with open(file_path, "w", encoding="utf-8") as f:
+        with open(file_path, "w", encoding="utf-8", newline="") as f:
             f.write(content)
     except Exception as e:
         return json.dumps({"error": f"Failed to write '{file_path}': {str(e)}"})
-
-    # Record change for tracking
-    try:
-        import sys as _sys
-        _ct_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "..", "..", "harness_editor")
-        if os.path.isdir(_ct_path) and _ct_path not in _sys.path:
-            _sys.path.insert(0, _ct_path)
-        from change_tracker import record_change
-        record_change(file_path, old_content, content, "multi_edit")
-    except Exception:
-        pass
 
     failed = [r for r in results if r["status"] != "ok"]
     return json.dumps({

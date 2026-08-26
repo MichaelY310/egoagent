@@ -1,0 +1,17 @@
+{
+  "type": "function",
+  "title": "Execute Command",
+  "name": "exec_command",
+  "description": "Run a command in the current workspace. Returns immediately with a session_id when it is still running; use write_stdin to poll or send input.",
+  "permissions": ["process"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "cmd": {"type": "string", "description": "Shell command to execute"},
+      "workdir": {"type": "string", "description": "Workspace-relative working directory"},
+      "yield_time_ms": {"type": "integer", "minimum": 0, "maximum": 30000, "description": "How long to wait for initial output"},
+      "max_output_chars": {"type": "integer", "minimum": 1000, "maximum": 100000}
+    },
+    "required": ["cmd"]
+  }
+}

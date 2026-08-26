@@ -1,0 +1,53 @@
+{
+  "name": "gpt_researcher_deep_replica",
+  "description": "GPT Researcher Deep Research reproduction: initial web-informed follow-up plan, automatic answers, recursive breadth/depth research, cited learning tree and final report.",
+  "slots": {
+    "strategist": {"description": "Plans follow-up questions and recursive search queries", "required": true, "identity": "dante"},
+    "researcher": {"description": "Searches and reads public sources", "required": true, "identity": "researcher"},
+    "writer": {"description": "Writes the final deep-research report", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "initial_plan": {
+      "description": "Web-informed follow-up questions used by GPT Researcher deep mode",
+      "default": "Analyze the original query and initial search material. Generate three questions that explore different aspects or time periods. Research will proceed automatically, so do not ask the user.\n\nQuery: {request}\nInitial search results: {initial_context}\n\nReturn ONLY JSON: {{\"questions\":[\"...\"]}}"
+    },
+    "report": {
+      "description": "Final report from the recursively collected context",
+      "default": "Write a comprehensive Markdown report answering the original query from the recursive research tree. Use only supplied evidence, preserve source URLs as citations, distinguish uncertainty and inference, and end with deduplicated references.\n\nQuery: {request}\nResearch tree: {deep_context}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input", "max_steps": 24, "max_node_steps": 500, "timeout_seconds": 1800,
+    "budget": {"max_model_calls": 180, "max_tool_calls": 360, "max_tokens": 900000},
+    "context": {"request": "", "initial_context": "", "follow_up_questions": [], "deep_depth": 2, "deep_breadth": 4, "deep_results": {}, "deep_context": ""},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "initial_search"}]},
+      "initial_search": {
+        "id": "initial_search", "op": "子流程", "harness": "gpt_researcher_query_worker",
+        "inputs": {"message": "Run an initial public web search for: ${ctx.request}. Return a representative set of source titles, snippets and exact URLs."},
+        "output_var": "initial_context", "edges": [{"condition": "subflow_done", "to": "initial_plan"}]
+      },
+      "initial_plan": {
+        "id": "initial_plan", "op": "模型", "agent": "strategist", "prompt": "initial_plan", "parse_as": "json_object", "json_fallback": {"questions": []},
+        "temperature": 0.4, "retry": {"max_attempts": 2},
+        "output_schema": {"type": "object", "required": ["questions"], "properties": {"questions": {"type": "array", "items": {"type": "string"}}}},
+        "outputs": {"structured.questions": "follow_up_questions"}, "edges": [{"condition": "has_text", "to": "deep_research"}]
+      },
+      "deep_research": {
+        "id": "deep_research", "op": "子流程", "harness": "gpt_researcher_deep_worker", "result_mode": "result", "max_depth": 8,
+        "inputs": {
+          "message": "Initial query: ${ctx.request}\nFollow-up questions and automatic answers: ${ctx.follow_up_questions}\nEach answer is: Automatically proceeding with research.",
+          "data": {"depth": "$ctx.deep_depth", "breadth": "$ctx.deep_breadth"}
+        },
+        "output_var": "deep_results", "edges": [{"condition": "subflow_done", "to": "stringify_context"}]
+      },
+      "stringify_context": {"id": "stringify_context", "op": "数据", "action": "evaluate", "key": "deep_context", "expression": "str(ctx.deep_results)", "edges": [{"condition": "default", "to": "trim_context"}]},
+      "trim_context": {"id": "trim_context", "op": "数据", "action": "trim_words", "key": "deep_context", "source": "$ctx.deep_context", "max_words": 25000, "edges": [{"condition": "default", "to": "has_results"}]},
+      "has_results": {"id": "has_results", "op": "条件", "condition": "not empty(ctx.deep_results.level_results)", "edges": [{"condition": "true", "to": "report"}, {"condition": "false", "to": "abstain"}]},
+      "report": {"id": "report", "op": "模型", "agent": "writer", "prompt": "report", "temperature": 0.35, "max_tokens": 10000, "retry": {"max_attempts": 2}, "edges": [{"condition": "has_text", "to": "output"}]},
+      "abstain": {"id": "abstain", "op": "结束", "value": "深度研究没有获得可靠来源，因此不生成报告。", "record": true, "edges": []},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$node.report.text"}, "record": true, "edges": []}
+    }
+  }
+}

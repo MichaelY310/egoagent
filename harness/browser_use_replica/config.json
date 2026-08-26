@@ -1,0 +1,102 @@
+{
+  "name": "browser_use_replica",
+  "description": "Pinned Browser Use reproduction: 500-step planned observe/act loop, five-action guarded batches, five-failure recovery, loop replanning, browser evidence and optional final judge.",
+  "slots": {
+    "browser_agent": {"description": "Browser-driving Identity/EGO", "required": true, "identity": "browser_operator"},
+    "judge": {"description": "Independently checks task completion from browser evidence", "required": true, "identity": "verify_agent"}
+  },
+  "prompts": {
+    "replan": {
+      "description": "Browser Use stall recovery plan",
+      "default": "The browser trajectory has stalled or looped. Re-read the task and concrete page observations. Produce a short changed strategy; do not claim completion.\n\nTask: {task}\nTrajectory: {trajectory}"
+    },
+    "failure": {
+      "description": "Browser Use final response after repeated failures",
+      "default": "The browser run reached five consecutive failed steps. Give a factual partial result, the last confirmed browser evidence and the exact blocker. Do not invent success.\n\nTask: {task}\nTrajectory: {trajectory}"
+    },
+    "max_steps": {
+      "description": "Browser Use forced response at the step cap",
+      "default": "The browser run reached its configured step limit. Give the best evidence-grounded partial result and clearly identify unfinished requirements.\n\nTask: {task}\nTrajectory: {trajectory}"
+    },
+    "judge": {
+      "description": "Browser Use optional final judge",
+      "default": "Judge whether the browser task was actually completed from the replayable action/observation trajectory. Re-read every concrete user requirement. Treat tool execution as insufficient unless its observation confirms the expected page state. If any requirement is missing, uncertain, blocked by login/payment/CAPTCHA, or based only on the agent's claim, set success=false.\n\nTask: {task}\nAgent answer: {answer}\nTrajectory: {trajectory}\n\nReturn ONLY JSON: {{\"success\":true,\"summary\":\"...\",\"evidence\":[\"specific observed fact\"],\"gaps\":[\"...\"]}}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 3200,
+    "max_node_steps": 12000,
+    "timeout_seconds": 86400,
+    "budget": {"max_model_calls": 560, "max_tool_calls": 2500, "max_tokens": 6000000},
+    "context": {
+      "task": "",
+      "max_browser_steps": 500,
+      "browser_steps": [],
+      "browser_step": 0,
+      "browser_context": [],
+      "answer": "",
+      "trajectory": [],
+      "human_required": {},
+      "consecutive_failures": 0,
+      "recovery_plan": "",
+      "success": false,
+      "summary": "",
+      "evidence": [],
+      "gaps": []
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "task"}, "edges": [{"condition": "input", "to": "make_stop"}]},
+      "make_stop": {"id": "make_stop", "op": "数据", "action": "evaluate", "key": "browser_stop", "expression": "ctx.max_browser_steps + 1", "edges": [{"condition": "default", "to": "make_steps"}]},
+      "make_steps": {"id": "make_steps", "op": "数据", "action": "range", "key": "browser_steps", "range_start": 1, "range_stop": "$ctx.browser_stop", "max_items": 1000, "edges": [{"condition": "default", "to": "browser_loop"}]},
+      "browser_loop": {"id": "browser_loop", "op": "循环", "list_var": "browser_steps", "item_var": "browser_step", "body_start": "context", "max_count": "$ctx.max_browser_steps", "edges": [{"condition": "loop_done", "to": "max_steps_response"}]},
+      "context": {"id": "context", "op": "上下文", "action": "compact", "source": "$session.messages", "last_n": 36, "keep_last": 14, "max_chars": 80000, "summarize": true, "agent": "browser_agent", "output_var": "browser_context", "edges": [{"condition": "context_ready", "to": "act"}]},
+      "act": {
+        "id": "act",
+        "op": "Agent",
+        "agent": "browser_agent",
+        "tools": "all",
+        "inputs": {"messages": "$ctx.browser_context"},
+        "max_tool_calls_per_turn": 5,
+        "duplicate_threshold": 2,
+        "stuck_prompt": "The same response or action pattern is not making progress. Re-observe the current page, verify what failed, and take a different action or finish honestly.",
+        "retry": {"max_attempts": 3, "delay_seconds": 1, "backoff": 2},
+        "timeout_seconds": 180,
+        "outputs": {"text": "answer"},
+        "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "capture_trajectory"}, {"condition": "stuck", "to": "replan"}]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "browser_agent",
+        "parallel": false,
+        "timeout_seconds": 240,
+        "sensitive_fields": ["text"],
+        "only_first_tools": ["done"],
+        "truncate_after_tools": ["done", "submit_result"],
+        "terminal_tools_to": "capture_trajectory",
+        "end_session_to": "capture_trajectory",
+        "stuck_threshold": 3,
+        "error_stuck_threshold": 3,
+        "alternating_stuck_threshold": 6,
+        "stuck_prompt": "The browser actions are looping without changing the observed page. Re-observe, verify selectors and state, then take a different action or report the blocker honestly.",
+        "interrupt_when": "(is_string(result) and starts_with(lower(result), 'tool ')) or (tool == 'browser' and (arguments.get('action') in ['navigate', 'back', 'new_tab', 'switch_tab'] or (is_object(result) and bool(result.get('page_changed', false))) or (is_object(result) and is_object(result.get('observation', {})) and bool(result.get('observation', {}).get('page_changed', false)))))",
+        "outputs": {"human_required": "human_required"},
+        "edges": [{"condition": "human_required", "to": "human_approval"}, {"condition": "stuck", "to": "increment_failures"}, {"condition": "tools_executed", "to": "last_action_ok"}, {"condition": "no_tool_calls", "to": "browser_loop"}]
+      },
+      "last_action_ok": {"id": "last_action_ok", "op": "条件", "expression": "ctx._trajectory[-1].ok", "edges": [{"condition": "true", "to": "reset_failures"}, {"condition": "false", "to": "increment_failures"}]},
+      "reset_failures": {"id": "reset_failures", "op": "数据", "action": "set", "key": "consecutive_failures", "value": 0, "edges": [{"condition": "default", "to": "browser_loop"}]},
+      "increment_failures": {"id": "increment_failures", "op": "数据", "action": "evaluate", "key": "consecutive_failures", "expression": "ctx.consecutive_failures + 1", "edges": [{"condition": "default", "to": "failure_limit"}]},
+      "failure_limit": {"id": "failure_limit", "op": "条件", "expression": "ctx.consecutive_failures >= 5", "edges": [{"condition": "true", "to": "failure_response"}, {"condition": "false", "to": "replan_needed"}]},
+      "replan_needed": {"id": "replan_needed", "op": "条件", "expression": "ctx.consecutive_failures >= 3", "edges": [{"condition": "true", "to": "replan"}, {"condition": "false", "to": "browser_loop"}]},
+      "replan": {"id": "replan", "op": "模型", "agent": "browser_agent", "prompt": "replan", "temperature": 0.2, "retry": {"max_attempts": 2}, "outputs": {"text": "recovery_plan"}, "edges": [{"condition": "has_text", "to": "browser_loop"}]},
+      "human_approval": {"id": "human_approval", "op": "人工审批", "name": "browser human handoff", "data": "$ctx.human_required", "editable": false, "prompt_text": "The browser encountered CAPTCHA or another human-only state. Complete it in the visible browser and approve to resume, or reject to finish with an honest blocked result.", "default": "rejected", "output_var": "human_handoff_decision", "edges": [{"condition": "approved", "to": "browser_loop"}, {"condition": "rejected", "to": "capture_trajectory"}]},
+      "failure_response": {"id": "failure_response", "op": "模型", "agent": "browser_agent", "prompt": "failure", "temperature": 0.1, "retry": {"max_attempts": 2}, "outputs": {"text": "answer"}, "edges": [{"condition": "has_text", "to": "capture_trajectory"}]},
+      "max_steps_response": {"id": "max_steps_response", "op": "模型", "agent": "browser_agent", "prompt": "max_steps", "temperature": 0.1, "retry": {"max_attempts": 2}, "outputs": {"text": "answer"}, "edges": [{"condition": "has_text", "to": "capture_trajectory"}]},
+      "capture_trajectory": {"id": "capture_trajectory", "op": "数据", "action": "set", "key": "trajectory", "value": "$ctx._trajectory", "edges": [{"condition": "default", "to": "judge"}]},
+      "judge": {"id": "judge", "op": "模型", "agent": "judge", "prompt": "judge", "parse_as": "json", "temperature": 0.1, "retry": {"max_attempts": 3, "delay_seconds": 1}, "output_schema": {"type": "object", "required": ["success", "summary", "evidence", "gaps"]}, "outputs": {"structured.success": "success", "structured.summary": "summary", "structured.evidence": "evidence", "structured.gaps": "gaps"}, "edges": [{"condition": "has_text", "to": "output"}]},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": {"success": "$ctx.success", "answer": "$ctx.answer", "summary": "$ctx.summary", "evidence": "$ctx.evidence", "gaps": "$ctx.gaps", "trajectory": "$ctx.trajectory", "steps": "$ctx.browser_step", "consecutive_failures": "$ctx.consecutive_failures"}}, "edges": []}
+    }
+  }
+}

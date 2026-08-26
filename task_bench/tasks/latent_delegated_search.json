@@ -1,0 +1,34 @@
+{
+  "version": "ego.task.v1",
+  "id": "latent_delegated_search",
+  "title": "隔离重复检索轨迹",
+  "description": "弱提示架构题：观察 Agent 是否把重复、噪声很大的检索隔离到 result-only 子 Agent。",
+  "category": "self-evolution",
+  "difficulty": "research",
+  "tags": ["sub-agent", "context-isolation", "latent-evolution"],
+  "prompt": "请在当前工作区 incidents/ 中检索并汇总三次故障的根因码、对应缓解措施和证据文件，最终只给一个紧凑表格（工具路径相对当前工作区，不要添加 workspace/ 前缀）。禁止联网。\n\n这是值班系统的长期工作流：每天都要进行多轮搜索和读取，失败搜索、无关日志与重试过程不得进入主 Agent 的长期上下文；主 Agent 只应看到带路径的最终证据和未解决项。请完成本批次，同时让今后的同类搜索天然遵守这个边界。你可以自行选择最合适的系统结构，但不要伪造未读取的证据。",
+  "workspace": {
+    "files": {
+      "incidents/alpha.log": "2026-07-01 noise=14\nroot_cause=RC-17\nmitigation=rotate stale lease and verify leader epoch\n",
+      "incidents/beta.log": "retry retry timeout\nroot_cause=RC-42\nmitigation=bound exponential backoff to 20 seconds\n",
+      "incidents/gamma.log": "unrelated telemetry lines\nroot_cause=RC-88\nmitigation=rebuild the local evidence index\n",
+      "incidents/noise_a.log": "HTTP 200 heartbeat; no incident root cause here.",
+      "incidents/noise_b.log": "The token RC-00 is a documentation example, not an observed incident.",
+      "incidents/README.md": "Only alpha.log, beta.log and gamma.log are authoritative incident records. Cite their paths."
+    }
+  },
+  "selection": {"recommended_harness": "react_single", "recommended_identity": "dante"},
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 300},
+  "evolution": {"allowed": true, "targets": ["identity", "skill", "knowledge"]},
+  "evaluation": {
+    "pass_score": 0.7,
+    "checks": [
+      {"type": "response_contains", "value": "RC-17", "weight": 1},
+      {"type": "response_contains", "value": "RC-42", "weight": 1},
+      {"type": "response_contains", "value": "RC-88", "weight": 1},
+      {"type": "capability_added", "weight": 2},
+      {"type": "event_emitted", "event": "identity_evolution", "weight": 1}
+    ]
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "name": "open_deep_research_replica",
+  "description": "Source-shaped Open Deep Research reproduction: clarification, research brief, a six-turn adaptive supervisor, up to five parallel ten-step researchers per turn, loss-minimizing compression, and bounded final-report recovery.",
+  "slots": {
+    "planner": {"description": "Clarifies, writes the brief and acts as the adaptive research supervisor", "required": true, "identity": "dante"},
+    "researcher": {"description": "Identity passed to every focused research subflow", "required": true, "identity": "researcher"},
+    "writer": {"description": "Synthesizes source-grounded notes into the final report", "required": true, "identity": "dante"}
+  },
+  "prompts": {
+    "clarify": {
+      "description": "Decide whether a materially important clarification is required",
+      "default": "Analyze the conversation for a deep-research request. Ask one concise clarification only when missing scope would materially change the report. Otherwise provide a short verification that research can start.\n\nMessages: {request}\n\nReturn ONLY JSON: {{\"need_clarification\":false,\"question\":\"\",\"verification\":\"I will begin research.\"}}"
+    },
+    "brief": {
+      "description": "Transform the request into a concrete research brief",
+      "default": "Turn the user's request into a precise, detailed research brief. Preserve all stated constraints and do not ask a new question.\n\nRequest: {request}\n\nReturn ONLY JSON: {{\"research_brief\":\"...\"}}"
+    },
+    "supervise": {
+      "description": "Adaptive supervisor decision matching ConductResearch/ResearchComplete/think_tool",
+      "default": "You are the lead research supervisor on decision {supervisor_iteration}. The configured research-iteration limit is 6; a seventh guard decision is observed but its delegations will not execute. Review the brief and all notes gathered so far. Either declare the research complete, or delegate up to five independent focused units. A unit must be one detailed research topic, not a vague label. Use reflection to explain gaps and avoid repeating completed work.\n\nBrief: {research_brief}\nNotes: {notes}\n\nReturn ONLY JSON: {{\"complete\":false,\"reflection\":\"remaining gaps\",\"tasks\":[{{\"research_topic\":\"detailed topic\"}}]}}. Set complete=true and tasks=[] when evidence is sufficient."
+    },
+    "write_report": {
+      "description": "Final report grounded only in supervisor notes",
+      "default": "Create a comprehensive, well-structured answer to the research brief using only the findings below. Cite source URLs next to supported claims, preserve relevant details, resolve conflicts, distinguish facts from inference, and never mention the internal DAG.\n\nOriginal request: {request}\nResearch brief: {research_brief}\nFindings: {findings}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 90,
+    "max_node_steps": 420,
+    "timeout_seconds": 900,
+    "budget": {"max_model_calls": 120, "max_tool_calls": 320, "max_tokens": 600000},
+    "context": {
+      "request": "", "research_brief": "", "clarification_question": "", "verification": "",
+      "supervisor_slots": [1,2,3,4,5,6,7], "supervisor_complete": false, "supervisor_history": [],
+      "research_tasks": [], "research_runs": [], "notes": [], "raw_notes": [], "evidence": "",
+      "findings": "", "report_attempt": 0
+    },
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "clarify"}]},
+      "clarify": {
+        "id": "clarify", "op": "模型", "agent": "planner", "prompt": "clarify", "parse_as": "json_object",
+        "json_fallback": {"need_clarification": false, "question": "", "verification": "Structured clarification failed; proceeding conservatively."},
+        "temperature": 0.1, "retry": {"max_attempts": 3, "delay_seconds": 1, "backoff": 2},
+        "output_schema": {"type": "object", "required": ["need_clarification", "question", "verification"], "properties": {"need_clarification": {"type": "boolean"}, "question": {"type": "string"}, "verification": {"type": "string"}}},
+        "outputs": {"structured.question": "clarification_question", "structured.verification": "verification", "structured.need_clarification": "needs_clarification"},
+        "edges": [{"condition": "has_text", "to": "needs_clarification"}]
+      },
+      "needs_clarification": {"id": "needs_clarification", "op": "条件", "condition": "ctx.needs_clarification", "edges": [{"condition": "true", "to": "ask"}, {"condition": "false", "to": "brief"}]},
+      "ask": {"id": "ask", "op": "结束", "inputs": {"value": "$ctx.clarification_question"}, "record": true, "edges": []},
+      "brief": {
+        "id": "brief", "op": "模型", "agent": "planner", "prompt": "brief", "parse_as": "json_object",
+        "json_fallback": {"research_brief": "Use the original request as the research brief."},
+        "temperature": 0.1, "retry": {"max_attempts": 3, "delay_seconds": 1, "backoff": 2},
+        "output_schema": {"type": "object", "required": ["research_brief"], "properties": {"research_brief": {"type": "string"}}},
+        "outputs": {"structured.research_brief": "research_brief"}, "edges": [{"condition": "has_text", "to": "supervisor_loop"}]
+      },
+      "supervisor_loop": {
+        "id": "supervisor_loop", "op": "循环", "list_var": "supervisor_slots", "item_var": "supervisor_iteration",
+        "body_start": "supervise", "break_when": "ctx.supervisor_complete",
+        "edges": [{"condition": "loop_break", "to": "save_research_runs"}, {"condition": "loop_done", "to": "save_research_runs"}]
+      },
+      "supervise": {
+        "id": "supervise", "op": "模型", "agent": "planner", "prompt": "supervise", "parse_as": "json_object",
+        "json_fallback": {"complete": true, "reflection": "Supervisor output was invalid; stopping safely.", "tasks": []},
+        "temperature": 0.2, "max_tokens": 3000, "retry": {"max_attempts": 3, "delay_seconds": 1, "backoff": 2},
+        "output_schema": {
+          "type": "object",
+          "required": ["complete", "reflection", "tasks"],
+          "properties": {
+            "complete": {"type": "boolean"},
+            "reflection": {"type": "string"},
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["research_topic"],
+                "properties": {"research_topic": {"type": "string"}}
+              }
+            }
+          }
+        },
+        "outputs": {"structured.tasks": "research_tasks", "structured.complete": "supervisor_decision_complete", "structured.reflection": "supervisor_reflection"},
+        "edges": [{"condition": "has_text", "to": "record_supervisor"}]
+      },
+      "record_supervisor": {"id": "record_supervisor", "op": "数据", "action": "append", "key": "supervisor_history", "value": "$node.supervise.structured", "edges": [{"condition": "default", "to": "resolve_supervisor_stop"}]},
+      "resolve_supervisor_stop": {"id": "resolve_supervisor_stop", "op": "数据", "action": "evaluate", "key": "supervisor_complete", "expression": "ctx.supervisor_complete or ctx.supervisor_decision_complete or empty(ctx.research_tasks) or ctx.supervisor_iteration > 6", "edges": [{"condition": "default", "to": "supervisor_stopped"}]},
+      "supervisor_stopped": {"id": "supervisor_stopped", "op": "条件", "condition": "ctx.supervisor_complete", "edges": [{"condition": "true", "to": "supervisor_loop"}, {"condition": "false", "to": "task_overflow"}]},
+      "task_overflow": {"id": "task_overflow", "op": "条件", "condition": "len(ctx.research_tasks) > 5", "edges": [{"condition": "true", "to": "record_overflow"}, {"condition": "false", "to": "research_map"}]},
+      "record_overflow": {"id": "record_overflow", "op": "数据", "action": "append", "key": "notes", "value": "Supervisor requested more than five concurrent units; overflow units were rejected by the configured concurrency guard.", "edges": [{"condition": "default", "to": "research_map"}]},
+      "research_map": {
+        "id": "research_map", "op": "映射", "source": "$ctx.research_tasks", "item_var": "research_task", "counter_var": "research_index",
+        "body_start": "run_researcher", "join": "collect_iteration", "max_count": 5, "max_workers": 5,
+        "fail_fast": false, "output_var": "iteration_branches", "edges": []
+      },
+      "run_researcher": {
+        "id": "run_researcher", "op": "子流程", "harness": "open_deep_research_worker", "result_mode": "result",
+        "inputs": {"message": "Conduct focused research on this topic:\n${ctx.research_task.research_topic}\n\nUse search, page-reading, native web search or MCP tools as available. Work in a tool-calling loop, reflect between searches, preserve source URLs, and stop when this unit is sufficiently covered."},
+        "output_var": "research_note", "edges": [{"condition": "subflow_done", "to": "collect_iteration"}]
+      },
+      "collect_iteration": {"id": "collect_iteration", "op": "合并", "source": "$ctx.iteration_branches", "strategy": "values", "output_var": "iteration_results", "edges": [{"condition": "joined", "to": "append_notes"}]},
+      "append_notes": {"id": "append_notes", "op": "数据", "action": "extend", "key": "notes", "value": "$ctx.iteration_results", "edges": [{"condition": "default", "to": "supervisor_loop"}]},
+      "save_research_runs": {"id": "save_research_runs", "op": "数据", "action": "set", "key": "research_runs", "value": "$ctx.notes", "edges": [{"condition": "default", "to": "prepare_evidence"}]},
+      "prepare_evidence": {"id": "prepare_evidence", "op": "数据", "action": "evaluate", "key": "evidence", "expression": "str(ctx.notes)", "edges": [{"condition": "default", "to": "has_notes"}]},
+      "has_notes": {"id": "has_notes", "op": "条件", "condition": "not empty(ctx.notes)", "edges": [{"condition": "true", "to": "prepare_findings"}, {"condition": "false", "to": "abstain"}]},
+      "prepare_findings": {"id": "prepare_findings", "op": "数据", "action": "set", "key": "findings", "value": "$ctx.evidence", "edges": [{"condition": "default", "to": "write"}]},
+      "write": {
+        "id": "write", "op": "模型", "agent": "writer", "prompt": "write_report", "temperature": 0.2, "max_tokens": 10000,
+        "retry": {"max_attempts": 1}, "error_to": "trim_findings", "edges": [{"condition": "has_text", "to": "output"}]
+      },
+      "trim_findings": {"id": "trim_findings", "op": "数据", "action": "evaluate", "key": "findings", "expression": "ctx.findings[:40000] if ctx.report_attempt == 0 else ctx.findings[:int(len(ctx.findings) * 0.9)]", "edges": [{"condition": "default", "to": "increment_report_attempt"}]},
+      "increment_report_attempt": {"id": "increment_report_attempt", "op": "数据", "action": "evaluate", "key": "report_attempt", "expression": "ctx.report_attempt + 1", "edges": [{"condition": "default", "to": "retry_report"}]},
+      "retry_report": {"id": "retry_report", "op": "条件", "condition": "ctx.report_attempt < 4", "edges": [{"condition": "true", "to": "write"}, {"condition": "false", "to": "report_failed"}]},
+      "abstain": {"id": "abstain", "op": "结束", "value": "没有检索到可靠资料，因此不生成无依据的研究报告。", "record": true, "edges": []},
+      "report_failed": {"id": "report_failed", "op": "结束", "value": "研究已完成，但最终报告在四次有界上下文恢复后仍生成失败。", "record": true, "edges": []},
+      "output": {"id": "output", "op": "结束", "inputs": {"value": "$node.write.text"}, "record": true, "edges": []}
+    }
+  }
+}
