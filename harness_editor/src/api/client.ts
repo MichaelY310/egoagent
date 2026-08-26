@@ -698,6 +698,79 @@ export async function updatePortfolioSession(session: string, changes: { title?:
   return request('POST', '/api/projects/session/update', { session, changes });
 }
 
+// ============ Optional Heart Flow / Flow Relay experiment ============
+
+export type HeartFlowCapsule = {
+  id: string;
+  project_id: string;
+  project_title: string;
+  workspace: string;
+  session: string;
+  goal: string;
+  progress: string[];
+  next_action: string;
+  blockers: string[];
+  files: string[];
+  tests: string[];
+  message_count: number;
+  created_at: number;
+  updated_at: number;
+};
+
+export type HeartFlowEvent = {
+  id: string;
+  run_id: string;
+  project_id: string;
+  project_title: string;
+  session: string;
+  harness: string;
+  phase: 'approval' | 'waiting' | 'failed' | 'completed';
+  urgent: boolean;
+  delivery: 'now' | 'batched';
+  summary: string;
+  created_at: number;
+};
+
+export type HeartFlowStatus = {
+  enabled: boolean;
+  projects: ProjectPortfolioItem[];
+  settings: { focus_minutes: number; wip_limit: number; notification_policy: 'natural_breakpoints' | 'focus_end' | 'immediate' };
+  focus: { project_id: string; started_at: number; ends_at: number };
+  focus_ended: boolean;
+  focused_project?: ProjectPortfolioItem | null;
+  reentry_capsule?: HeartFlowCapsule | null;
+  capsules: Record<string, HeartFlowCapsule>;
+  inbox: HeartFlowEvent[];
+  batched_count: number;
+  immediate_count: number;
+};
+
+export async function getHeartFlowStatus(): Promise<HeartFlowStatus> {
+  const params = new URLSearchParams();
+  if (WORKSPACE) params.set('workspace', WORKSPACE);
+  return request('GET', `/api/heart-flow/status?${params.toString()}`);
+}
+
+export async function focusHeartFlowProject(project_id: string, minutes?: number) {
+  return request('POST', '/api/heart-flow/focus', { project_id, minutes });
+}
+
+export async function stopHeartFlow() {
+  return request('POST', '/api/heart-flow/stop', {});
+}
+
+export async function parkHeartFlowProject(input: { project_id: string; session?: string; capsule?: Partial<HeartFlowCapsule> }) {
+  return request('POST', '/api/heart-flow/park', input);
+}
+
+export async function updateHeartFlowSettings(changes: Partial<HeartFlowStatus['settings']>) {
+  return request('POST', '/api/heart-flow/settings', changes);
+}
+
+export async function acknowledgeHeartFlowEvents(event_ids: string[] = []) {
+  return request('POST', '/api/heart-flow/inbox/ack', { event_ids });
+}
+
 export type SessionLineage = {
   schema?: string;
   operation?: 'fork' | 'merge';

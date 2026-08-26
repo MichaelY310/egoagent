@@ -2235,8 +2235,8 @@ let workbenchStatusItem;
 let pendingWorkbenchHandoff;
 let workbenchRuntimeStatus = { running: false, scope: 'builder', status: 'idle', evolutionProposals: 0, online: false };
 
-const WORKBENCH_TABS = new Set(['home', 'harness', 'ir', 'tasks', 'research', 'background', 'library', 'packages', 'changes', 'checkpoints', 'identity', 'environment', 'sessions', 'settings', 'evolution', 'coc']);
-const WORKBENCH_ROUTE_LABELS = { home: 'Home', harness: 'Build', tasks: 'Evaluate', evolution: 'Improve', library: 'Library', packages: 'Deploy' };
+const WORKBENCH_TABS = new Set(['home', 'harness', 'ir', 'tasks', 'research', 'background', 'library', 'packages', 'changes', 'checkpoints', 'identity', 'environment', 'sessions', 'settings', 'evolution', 'coc', 'flow']);
+const WORKBENCH_ROUTE_LABELS = { home: 'Home', harness: 'Build', tasks: 'Evaluate', evolution: 'Improve', library: 'Library', packages: 'Deploy', flow: 'Heart Flow' };
 
 function workbenchWorkspaceKey() {
   const workspace = normalizedFsPath(vscode.workspace.workspaceFolders?.[0]?.uri) || 'standalone';
@@ -2384,6 +2384,13 @@ async function openWorkbenchFile(message) {
   editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 }
 
+async function openWorkbenchWorkspace(message) {
+  const folderPath = String(message.path || '').trim();
+  if (!folderPath) return;
+  const target = workspaceUriForPath(folderPath);
+  await vscode.commands.executeCommand('vscode.openFolder', target, Boolean(message.newWindow ?? true));
+}
+
 function openWorkbench(requestedTab) {
   const restoredTab = workbenchContext?.workspaceState.get(workbenchWorkspaceKey(), 'home');
   const tab = WORKBENCH_TABS.has(requestedTab) ? requestedTab : WORKBENCH_TABS.has(restoredTab) ? restoredTab : 'home';
@@ -2425,6 +2432,7 @@ function openWorkbench(requestedTab) {
       return;
     }
     if (message.type === 'open-file') void openWorkbenchFile(message);
+    if (message.type === 'open-workspace') void openWorkbenchWorkspace(message);
     if (message.type === 'review-changes') void vscode.commands.executeCommand('egoagent.reviewChanges');
     if (message.type === 'review-change') {
       try {

@@ -2,7 +2,7 @@ import type { HarnessConfig } from './types';
 import { WORKSPACE, canonicalWorkspace } from './api/runtime';
 import { postToIde, type IdeContextItem } from './ideBridge';
 
-export type WorkbenchRoute = 'home' | 'harness' | 'ir' | 'tasks' | 'research' | 'background' | 'library' | 'packages' | 'changes' | 'checkpoints' | 'identity' | 'environment' | 'sessions' | 'settings' | 'evolution' | 'coc';
+export type WorkbenchRoute = 'home' | 'harness' | 'ir' | 'tasks' | 'research' | 'background' | 'library' | 'packages' | 'changes' | 'checkpoints' | 'identity' | 'environment' | 'sessions' | 'settings' | 'evolution' | 'coc' | 'flow';
 
 export interface BuilderDraft {
   config: HarnessConfig;

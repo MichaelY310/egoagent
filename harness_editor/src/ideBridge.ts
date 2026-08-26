@@ -39,6 +39,11 @@ export function openFileInIde(path: string, line = 1, endLine?: number): boolean
   return postToIde('open-file', { path, line, endLine });
 }
 
+export function openWorkspaceInIde(path: string, newWindow = true): boolean {
+  if (!path) return false;
+  return postToIde('open-workspace', { path, newWindow });
+}
+
 export function revealAgentChangesInIde(): boolean {
   return postToIde('review-changes');
 }

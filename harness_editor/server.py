@@ -89,6 +89,14 @@ from interactive_runs import InteractiveRun, InteractiveRunManager
 from interactive_execution_service import InteractiveExecutionError, InteractiveExecutionService
 from agent_factory import AgentFactory
 
+# HEART_FLOW_DEMO_HOOK: optional experiment; core Project/Session management
+# does not import it.  Deleting ``heart_flow/`` therefore keeps the server
+# operational and simply removes the optional routes.
+try:
+    from heart_flow import api as heart_flow_api
+except ImportError:
+    heart_flow_api = None
+
 load_local_env(_PROJECT_ROOT_FOR_IMPORTS)
 apply_product_environment(_PROJECT_ROOT_FOR_IMPORTS)
 
@@ -123,13 +131,22 @@ SESSIONS_DIR = Path(__file__).resolve().parent.parent / "sessions"
 ENVIRONMENT_DIR = Path(__file__).resolve().parent.parent / "environment"
 TRAINING_ANNOTATIONS_PATH = Path(__file__).resolve().parent.parent / ".egoagent" / "training" / "annotations.json"
 PROJECT_PORTFOLIO_PATH = Path(__file__).resolve().parent.parent / ".egoagent" / "project_portfolio.json"
+HEART_FLOW_STATE_PATH = Path(__file__).resolve().parent.parent / ".egoagent" / "heart_flow.json"
 _identity_agent_factory = AgentFactory(identity_roots=(IDENTITY_DIR,))
+
+
+_project_portfolio_services = {}
 
 
 def _project_portfolio():
     # SESSIONS_DIR is patched by focused HTTP tests, so construct the cheap
     # service lazily instead of capturing the production directory at import.
-    return ProjectPortfolio(PROJECT_PORTFOLIO_PATH, SESSIONS_DIR)
+    key = (str(PROJECT_PORTFOLIO_PATH.resolve()), str(SESSIONS_DIR.resolve()))
+    service = _project_portfolio_services.get(key)
+    if service is None:
+        service = ProjectPortfolio(PROJECT_PORTFOLIO_PATH, SESSIONS_DIR)
+        _project_portfolio_services[key] = service
+    return service
 
 # 确保 environment 根目录存在
 ENVIRONMENT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1628,6 +1645,16 @@ class APIHandler(BaseHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
 
+        if heart_flow_api and heart_flow_api.handle_get(
+            self,
+            path,
+            parsed_url,
+            service=heart_flow_api.FlowRelayService(HEART_FLOW_STATE_PATH),
+            portfolio=_project_portfolio(),
+            runs=interactive_runs,
+        ):
+            return
+
         if path == "/api/security/settings":
             query = parse_qs(parsed_url.query)
             workspace_raw = str((query.get("workspace") or [str(_PROJECT_ROOT_FOR_IMPORTS)])[0])
@@ -2850,6 +2877,15 @@ class APIHandler(BaseHTTPRequestHandler):
         if not self._guard_browser_request(require_json=True):
             return
         path = urlparse(self.path).path
+
+        if heart_flow_api and heart_flow_api.handle_post(
+            self,
+            path,
+            service=heart_flow_api.FlowRelayService(HEART_FLOW_STATE_PATH),
+            portfolio=_project_portfolio(),
+            runs=interactive_runs,
+        ):
+            return
 
         if path == "/api/trajectory/settings":
             body = self._read_body()

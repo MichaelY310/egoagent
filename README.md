@@ -8,6 +8,7 @@ Runtime trajectory/replay design and training validation:
 - [Human feedback and curated training-data workflow](docs/TRAINING_DATA_COLLECTION_ZH.md)
 - [Session fork and provenance-preserving merge](docs/SESSION_FORK_AND_MERGE.md)
 - [Multi-project and multi-Session portfolio](docs/PROJECT_PORTFOLIO.md)
+- [Optional Heart Flow / Flow Relay research demo](docs/HEART_FLOW_RESEARCH_AND_DESIGN.md)
 
 > Start with the [repository guide](docs/REPOSITORY_GUIDE.md), then see the
 > current [architecture contract](ARCHITECTURE.md),
@@ -41,6 +42,8 @@ EgoAgent combines a code editor (Void, a VSCode fork) with a management panel fo
 - **Project & Session Portfolio** — Durable workspace attribution, several live
   Sessions per project, pinned projects/Sessions, project-scoped history, and
   provenance-preserving cross-project Summary/Dialogue merges
+- **Optional Flow Relay Demo** — A removable attention router and editable
+  ready-to-resume capsule for preserving human flow across parallel Projects
 
 ---
 

@@ -13,6 +13,7 @@ import {
   type TrainingAnnotation,
 } from "../api/client";
 import { WORKSPACE } from "../api/runtime";
+import { openWorkspaceInIde } from "../ideBridge";
 
 interface SessionInfo {
   name: string;
@@ -328,6 +329,7 @@ export default function SessionExplorer() {
               <small style={{ color: project.running_count ? '#4ade80' : '#718096' }}>{project.running_count ? `${project.running_count} live` : project.session_count}</small>
             </button>
             {project.id !== 'unknown' && <button type="button" title={project.pinned ? '取消项目置顶' : '置顶项目'} onClick={() => void toggleProjectPin(project)} style={{ padding: '4px', border: 0, color: project.pinned ? '#e2c08d' : '#53657a', background: 'transparent', cursor: 'pointer' }}>{project.pinned ? '★' : '☆'}</button>}
+            {project.available && !project.current && <button type="button" title="在新的 IDE 窗口打开 Project" onClick={() => openWorkspaceInIde(project.workspace, true)} style={{ padding: '4px', border: 0, color: '#7ecfff', background: 'transparent', cursor: 'pointer' }}>↗</button>}
           </div>)}
         </div>
         <div style={{ flex: 1, overflow: "auto", padding: "8px 0" }}>

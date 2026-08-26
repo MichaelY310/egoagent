@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -42,6 +43,43 @@ def project_id_for_workspace(value: str | Path) -> str:
     if not key:
         raise ValueError("workspace is required")
     return "project_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
+def _is_ephemeral_workspace(value: str | Path | None) -> bool:
+    """Identify test/build workspaces that must not become user Projects."""
+
+    key = workspace_key(value)
+    if not key:
+        return False
+    temp_key = workspace_key(tempfile.gettempdir())
+    if temp_key and (key == temp_key or key.startswith(temp_key + "/")):
+        return True
+    parts = {part.lower() for part in Path(str(value)).parts}
+    return bool(parts.intersection({".runtime-logs", ".pytest_cache", "__pycache__"}))
+
+
+def _inside_registered_project(workspace: str, projects: dict[str, Any]) -> bool:
+    candidate = Path(workspace).resolve() if workspace else None
+    if candidate is None:
+        return False
+    for record in projects.values():
+        if not isinstance(record, dict) or not record.get("workspace"):
+            continue
+        try:
+            candidate.relative_to(Path(str(record["workspace"])).resolve())
+            return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def _same_workspace_parent(left: str | Path | None, right: str | Path | None) -> bool:
+    if not left or not right:
+        return False
+    try:
+        return Path(str(left)).resolve().parent == Path(str(right)).resolve().parent
+    except OSError:
+        return False
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -123,6 +161,9 @@ class ProjectPortfolio:
         self.state_path = Path(state_path)
         self.sessions_root = Path(sessions_root)
         self._lock = threading.RLock()
+        self._attribution_cache: dict[str, tuple[float, tuple[str, str]]] = {}
+        self._session_cache: dict[str, tuple[tuple[int, ...], dict[str, Any]]] = {}
+        self._aggregate_cache: Optional[tuple[str, float, dict[str, dict[str, Any]]]] = None
 
     @staticmethod
     def _empty() -> dict[str, Any]:
@@ -164,6 +205,7 @@ class ProjectPortfolio:
         with self._lock:
             payload = self._load()
             existing = payload["projects"].get(project_id, {})
+            last_opened = float(existing.get("last_opened_at") or 0)
             record = {
                 "id": project_id,
                 "workspace": str(path),
@@ -173,11 +215,16 @@ class ProjectPortfolio:
                 "pinned": bool(existing.get("pinned", False)),
                 "archived": bool(existing.get("archived", False)),
                 "created_at": float(existing.get("created_at") or now),
-                "last_opened_at": now if touch else float(existing.get("last_opened_at") or now),
+                # A UI poll is not a meaningful project-open event.  Coalesce
+                # touches so portfolio reads do not rewrite state every 5s.
+                "last_opened_at": now if touch and last_opened < now - 60 else (last_opened or now),
                 "active_session": str(existing.get("active_session") or ""),
+                "source": "registered",
             }
-            payload["projects"][project_id] = record
-            self._save(payload)
+            if record != existing:
+                payload["projects"][project_id] = record
+                self._aggregate_cache = None
+                self._save(payload)
         return dict(record)
 
     def update_project(self, project_id: str, changes: dict[str, Any]) -> dict[str, Any]:
@@ -198,6 +245,7 @@ class ProjectPortfolio:
                 else:
                     record[key] = str(changes[key] or "").strip()[:500]
             record["last_opened_at"] = time.time()
+            self._aggregate_cache = None
             self._save(payload)
             return dict(record)
 
@@ -232,6 +280,7 @@ class ProjectPortfolio:
             if isinstance(project, dict):
                 project["active_session"] = name
                 project["last_opened_at"] = time.time()
+            self._aggregate_cache = None
             self._save(payload)
             return dict(record)
 
@@ -252,6 +301,69 @@ class ProjectPortfolio:
             return ()
         return (item for item in self.sessions_root.iterdir() if item.is_dir())
 
+    @staticmethod
+    def _signature(directory: Path, *, detailed: bool = False) -> tuple[int, ...]:
+        names = ("session.json", "trajectory.jsonl", "full_messages.json", "messages.json")
+        values: list[int] = []
+        for name in names:
+            path = directory / name
+            try:
+                stat = path.stat()
+                values.extend((stat.st_mtime_ns, stat.st_size))
+            except OSError:
+                values.extend((0, 0))
+            if not detailed and name == "messages.json":
+                break
+        return tuple(values)
+
+    def _infer_cached(self, directory: Path) -> tuple[str, str]:
+        key = str(directory)
+        cached = self._attribution_cache.get(key)
+        if cached and (cached[1][0] or time.monotonic() - cached[0] < 5):
+            # A Session's workspace is immutable once recorded. Unknown live
+            # Sessions get a short retry window so a later save can attribute
+            # them without making every Portfolio poll stat thousands of files.
+            return cached[1]
+        value = infer_session_workspace(directory)
+        self._attribution_cache[key] = (time.monotonic(), value)
+        return value
+
+    def _session_base(self, directory: Path) -> dict[str, Any]:
+        key = str(directory)
+        signature = self._signature(directory, detailed=True)
+        cached = self._session_cache.get(key)
+        if cached and cached[0] == signature:
+            return dict(cached[1])
+        inferred_workspace, provenance = self._infer_cached(directory)
+        metadata = _read_json(directory / "session.json")
+        working = self._message_count(directory / "messages.json")
+        audit = self._message_count(directory / "full_messages.json") or working
+        try:
+            directory_timestamp = float(directory.stat().st_mtime)
+        except OSError:
+            directory_timestamp = 0.0
+        record = {
+            "id": directory.name,
+            "name": directory.name,
+            "path": str(directory),
+            "workspace": inferred_workspace,
+            "workspace_provenance": provenance,
+            "project_id": project_id_for_workspace(inferred_workspace) if inferred_workspace else "unknown",
+            "timestamp": max(directory_timestamp, float(metadata.get("updated_at") or 0)),
+            "message_count": audit,
+            "working_message_count": working,
+            "summary": _first_user_summary(directory),
+            "harness": str(metadata.get("harness") or self._harness_from_name(directory.name)),
+            "session_id": str(metadata.get("session_id") or ""),
+            "trace_id": str(metadata.get("trace_id") or ""),
+            "has_trajectory": (directory / "trajectory.jsonl").is_file(),
+            "trajectory_events": int(metadata.get("trajectory_events") or 0),
+            "trajectory_agents": list(metadata.get("trajectory_agents") or []),
+            "health": metadata.get("health") if isinstance(metadata.get("health"), dict) else None,
+        }
+        self._session_cache[key] = (signature, record)
+        return dict(record)
+
     def list_sessions(
         self,
         *,
@@ -266,7 +378,7 @@ class ProjectPortfolio:
         custom = payload.get("sessions", {})
         result: list[dict[str, Any]] = []
         for directory in self._session_dirs():
-            inferred_workspace, provenance = infer_session_workspace(directory)
+            inferred_workspace, _provenance = self._infer_cached(directory)
             inferred_project = project_id_for_workspace(inferred_workspace) if inferred_workspace else "unknown"
             if requested_key and workspace_key(inferred_workspace) != requested_key:
                 continue
@@ -275,36 +387,14 @@ class ProjectPortfolio:
             local = custom.get(directory.name, {}) if isinstance(custom, dict) else {}
             if bool(local.get("archived", False)) and not include_archived:
                 continue
-            metadata = _read_json(directory / "session.json")
-            working = self._message_count(directory / "messages.json")
-            audit = self._message_count(directory / "full_messages.json") or working
-            timestamp = max(
-                float(directory.stat().st_mtime),
-                float(metadata.get("updated_at") or 0),
-            )
-            result.append({
-                "id": directory.name,
-                "name": directory.name,
+            record = self._session_base(directory)
+            record.update({
                 "title": str(local.get("title") or ""),
-                "path": str(directory),
-                "workspace": inferred_workspace,
-                "workspace_provenance": provenance,
-                "project_id": inferred_project,
-                "timestamp": timestamp,
-                "message_count": audit,
-                "working_message_count": working,
-                "summary": _first_user_summary(directory),
-                "harness": str(metadata.get("harness") or self._harness_from_name(directory.name)),
-                "session_id": str(metadata.get("session_id") or ""),
-                "trace_id": str(metadata.get("trace_id") or ""),
-                "has_trajectory": (directory / "trajectory.jsonl").is_file(),
-                "trajectory_events": int(metadata.get("trajectory_events") or 0),
-                "trajectory_agents": list(metadata.get("trajectory_agents") or []),
-                "health": metadata.get("health") if isinstance(metadata.get("health"), dict) else None,
                 "pinned": bool(local.get("pinned", False)),
                 "archived": bool(local.get("archived", False)),
                 "last_opened_at": float(local.get("last_opened_at") or 0),
             })
+            result.append(record)
         result.sort(key=lambda item: (bool(item["pinned"]), float(item["timestamp"])), reverse=True)
         return result[: max(1, min(int(limit), 5000))]
 
@@ -323,15 +413,76 @@ class ProjectPortfolio:
             for key, value in payload.get("projects", {}).items()
             if isinstance(value, dict)
         }
-        sessions = self.list_sessions(include_archived=True, limit=5000)
-        aggregates: dict[str, dict[str, Any]] = {}
-        for session in sessions:
-            project_id = str(session["project_id"])
-            aggregate = aggregates.setdefault(project_id, {"count": 0, "last": 0.0, "active": 0, "workspace": session["workspace"]})
-            aggregate["count"] += 1
-            aggregate["last"] = max(float(aggregate["last"]), float(session["timestamp"]))
-            if not session["archived"]:
-                aggregate["active"] += 1
+        try:
+            sessions_root_stamp = self.sessions_root.stat().st_mtime_ns
+        except OSError:
+            sessions_root_stamp = 0
+        aggregate_signature_source = (
+            sessions_root_stamp,
+            tuple(sorted((key, workspace_key(value.get("workspace"))) for key, value in projects.items())),
+            tuple(sorted(
+                (str(key), bool(value.get("archived", False)))
+                for key, value in (payload.get("sessions", {}) or {}).items()
+                if isinstance(value, dict)
+            )),
+        )
+        aggregate_signature = hashlib.sha256(
+            json.dumps(aggregate_signature_source, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        cached_aggregates = self._aggregate_cache
+        if cached_aggregates and cached_aggregates[0] == aggregate_signature and time.monotonic() - cached_aggregates[1] < 30:
+            aggregates = {key: dict(value) for key, value in cached_aggregates[2].items()}
+        elif (
+            isinstance(payload.get("project_projection"), dict)
+            and payload["project_projection"].get("signature") == aggregate_signature
+            and isinstance(payload["project_projection"].get("aggregates"), dict)
+        ):
+            aggregates = {
+                str(key): dict(value)
+                for key, value in payload["project_projection"]["aggregates"].items()
+                if isinstance(value, dict)
+            }
+            self._aggregate_cache = (aggregate_signature, time.monotonic(), aggregates)
+        else:
+            aggregates = {}
+            custom_sessions = payload.get("sessions", {}) if isinstance(payload.get("sessions"), dict) else {}
+            for directory in self._session_dirs():
+                workspace, _provenance = self._infer_cached(directory)
+                project_id = project_id_for_workspace(workspace) if workspace else "unknown"
+                local = custom_sessions.get(directory.name, {}) if isinstance(custom_sessions, dict) else {}
+                archived = bool(local.get("archived", False))
+                try:
+                    timestamp = float(directory.stat().st_mtime)
+                except OSError:
+                    timestamp = 0.0
+                # Sessions from tests, generated run directories, and other nested
+                # scratch workspaces remain available in the global Session audit,
+                # but do not each create a top-level user Project.  Opening one as
+                # an actual workspace calls register_project and makes it explicit.
+                if project_id not in projects and (
+                    (_is_ephemeral_workspace(workspace) and not _same_workspace_parent(workspace, current_workspace))
+                    or _inside_registered_project(workspace, projects)
+                ):
+                    continue
+                aggregate = aggregates.setdefault(project_id, {"count": 0, "last": 0.0, "active": 0, "workspace": workspace})
+                aggregate["count"] += 1
+                aggregate["last"] = max(float(aggregate["last"]), timestamp)
+                if not archived:
+                    aggregate["active"] += 1
+            self._aggregate_cache = (
+                aggregate_signature,
+                time.monotonic(),
+                {key: dict(value) for key, value in aggregates.items()},
+            )
+            projection = {
+                "signature": aggregate_signature,
+                "aggregates": {key: dict(value) for key, value in aggregates.items()},
+                "built_at": time.time(),
+            }
+            with self._lock:
+                latest = self._load()
+                latest["project_projection"] = projection
+                self._save(latest)
         for project_id, aggregate in aggregates.items():
             if project_id == "unknown" or project_id in projects:
                 continue
@@ -363,25 +514,18 @@ class ProjectPortfolio:
                 "active_session": "",
                 "discovered": True,
             }
-        discovered_records = {
-            project_id: dict(record)
-            for project_id, record in projects.items()
-            if project_id != "unknown"
-            and project_id not in payload.get("projects", {})
-            and record.get("workspace")
-            and Path(str(record["workspace"])).is_dir()
-        }
-        if discovered_records:
-            with self._lock:
-                persisted = self._load()
-                for project_id, record in discovered_records.items():
-                    record.pop("discovered", None)
-                    persisted["projects"].setdefault(project_id, record)
-                self._save(persisted)
         output = []
         current_key = workspace_key(current_workspace)
         for project_id, record in projects.items():
             if bool(record.get("archived", False)) and not include_archived:
+                continue
+            if (
+                _is_ephemeral_workspace(record.get("workspace"))
+                and record.get("source") != "registered"
+                and not _same_workspace_parent(record.get("workspace"), current_workspace)
+                and not bool(record.get("pinned"))
+                and not bool(current_key and workspace_key(record.get("workspace")) == current_key)
+            ):
                 continue
             aggregate = aggregates.get(project_id, {})
             item = dict(record)

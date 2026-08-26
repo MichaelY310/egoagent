@@ -62,6 +62,9 @@ const EgoIRWorkbench = lazy(() => import('./components/EgoIRWorkbench'));
 const ResearchLab = lazy(() => import('./components/ResearchLab'));
 const StudioHome = lazy(() => import('./components/StudioHome'));
 const CoCCharacterDesk = lazy(() => import('./components/CoCCharacterDesk'));
+// HEART_FLOW_DEMO_HOOK: remove this lazy import, its tab and render block to
+// uninstall the optional experiment; no Project/Session code is affected.
+const HeartFlowDemo = lazy(() => import('./heartflow/HeartFlowDemo'));
 
 const DEFAULT_CONFIG: HarnessConfig = {
   name: 'new_harness',
@@ -90,6 +93,7 @@ const STUDIO_TABS: Array<{ id: TabType; icon: string; label: string; detail: str
   { id: 'identity', icon: '◎', label: 'Identity', detail: '角色、Ego 与能力', group: 'manage' },
   { id: 'environment', icon: '◈', label: 'Environment', detail: '工具与运行环境', group: 'manage' },
   { id: 'sessions', icon: '▥', label: 'Sessions', detail: '会话与执行记录', group: 'manage' },
+  { id: 'flow', icon: '◍', label: 'Heart Flow', detail: '跨项目专注与续接实验', group: 'manage' },
   { id: 'settings', icon: '⚙', label: 'Settings', detail: '模型与 Workbench 设置', group: 'system' },
 ];
 
@@ -1946,6 +1950,12 @@ export default function App() {
       {tab === 'sessions' && (
         <div className="studio-page">
           <SessionExplorer />
+        </div>
+      )}
+
+      {tab === 'flow' && (
+        <div className="studio-page studio-page-scroll">
+          <HeartFlowDemo onOpenSessions={() => setTab('sessions')} />
         </div>
       )}
 
