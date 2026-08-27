@@ -52,6 +52,53 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  /* An explicitly selected Workbench theme must not inherit the host IDE's
+     light VS Code tokens.  Without a complete dark token set the content
+     panes used EgoAgent's dark colors while the toolbar and form controls
+     kept Void's light colors, producing the white/black patchwork. */
+  --bg: #1e1e1e;
+  --panel-bg: #181818;
+  --node-bg: #252526;
+  --node-border: #3c3c3c;
+  --text: #cccccc;
+  --text-dim: #969696;
+  --accent: #3794ff;
+  --accent2: #3794ff;
+  --success: #89d185;
+  --warning: #cca700;
+  --highlight: #3794ff;
+  --edge-color: #6b6b6b;
+  --surface-1: #181818;
+  --surface-2: #1f1f1f;
+  --surface-3: #252526;
+  --surface-hover: #2a2d2e;
+  --surface-raised: #252526;
+  --surface-sunken: #111827;
+  --surface-accent: #1e3a5f;
+  --border: #2b2b2b;
+  --border-strong: #454545;
+  --focus: #007fd4;
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #181818;
+  --text-primary: #e6e6e6;
+  --text-secondary: #cccccc;
+  --text-muted: #969696;
+  --border-color: #2b2b2b;
+  --accent-color: #3794ff;
+  --input-background: #242424;
+  --button-bg: #252526;
+  --button-text: #dddddd;
+  --link: #7ecfff;
+  --shadow-color: rgba(0,0,0,.45);
+  --portfolio-bg: #0d1b2a;
+  --portfolio-deep: #0a1628;
+  --portfolio-panel: #16213e;
+  --portfolio-border: #1e3a5f;
+  --portfolio-hover: #0f2744;
+  --portfolio-tab: #101f30;
+  --portfolio-text: #dddddd;
+  --portfolio-muted: #718096;
+  --portfolio-accent: #7ecfff;
 }
 
 :root[data-theme="light"] {

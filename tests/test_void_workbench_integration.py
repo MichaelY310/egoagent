@@ -59,6 +59,22 @@ class VoidWorkbenchIntegrationTests(unittest.TestCase):
         self.assertIn("⑂ Fork", heart_flow)
         self.assertIn("⇄ Merge", heart_flow)
 
+    def test_packaging_updates_the_extension_directory_void_actually_serves(self):
+        package_script = (ROOT / "harness_editor" / "scripts" / "package-extension.mjs").read_text(encoding="utf-8")
+        self.assertIn("canonicalWorkbench", package_script)
+        self.assertIn("runtimeWorkbench", package_script)
+        self.assertIn("'void-web', 'extensions', 'egoagent-dag-chat'", package_script)
+        self.assertIn("await cp(source, runtimeWorkbench, { recursive: true })", package_script)
+
+    def test_explicit_dark_theme_does_not_inherit_light_ide_tokens(self):
+        css = (ROOT / "harness_editor" / "src" / "index.css").read_text(encoding="utf-8")
+        dark_block = css[css.index(':root[data-theme="dark"]'):css.index(':root[data-theme="light"]')]
+        self.assertIn("--bg: #1e1e1e", dark_block)
+        self.assertIn("--surface-1: #181818", dark_block)
+        self.assertIn("--surface-raised: #252526", dark_block)
+        self.assertIn("--input-background: #242424", dark_block)
+        self.assertNotIn("var(--vscode-", dark_block)
+
     def test_editor_review_has_visible_per_block_accept_and_refuse_actions(self):
         source = (EXTENSION / "extension-v21.js").read_text(encoding="utf-8")
         manifest = json.loads((EXTENSION / "package.json").read_text(encoding="utf-8"))
