@@ -2391,6 +2391,17 @@ async function openWorkbenchWorkspace(message) {
   await vscode.commands.executeCommand('vscode.openFolder', target, Boolean(message.newWindow ?? true));
 }
 
+async function pickWorkbenchProjectFolder(message) {
+  const selected = await vscode.window.showOpenDialog({
+    title: String(message.title || '选择 Project 文件夹'),
+    openLabel: String(message.openLabel || '选择文件夹'),
+    canSelectFiles: false,
+    canSelectFolders: true,
+    canSelectMany: false,
+  });
+  return selected?.[0] ? fsPathForBackend(selected[0]) : '';
+}
+
 function openWorkbench(requestedTab) {
   const restoredTab = workbenchContext?.workspaceState.get(workbenchWorkspaceKey(), 'home');
   const tab = WORKBENCH_TABS.has(requestedTab) ? requestedTab : WORKBENCH_TABS.has(restoredTab) ? restoredTab : 'home';
@@ -2433,6 +2444,14 @@ function openWorkbench(requestedTab) {
     }
     if (message.type === 'open-file') void openWorkbenchFile(message);
     if (message.type === 'open-workspace') void openWorkbenchWorkspace(message);
+    if (message.type === 'pick-project-folder') {
+      try {
+        const path = await pickWorkbenchProjectFolder(message);
+        postWorkbenchShellMessage({ type: 'request-result', requestId: message.requestId, ok: true, value: path });
+      } catch (error) {
+        postWorkbenchShellMessage({ type: 'request-result', requestId: message.requestId, ok: false, error: error?.message || String(error) });
+      }
+    }
     if (message.type === 'review-changes') void vscode.commands.executeCommand('egoagent.reviewChanges');
     if (message.type === 'review-change') {
       try {

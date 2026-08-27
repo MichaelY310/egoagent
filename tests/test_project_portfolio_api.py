@@ -93,6 +93,28 @@ class ProjectPortfolioApiTests(unittest.TestCase):
             urllib.request.urlopen(request, timeout=10)
         self.assertEqual(raised.exception.code, 400)
 
+    def test_project_can_be_created_and_registered_without_path_escape(self):
+        _, created = self.request("POST", "/api/projects/create", {
+            "parent": str(self.root),
+            "name": "gamma-project",
+            "title": "Gamma Project",
+        })
+        target = self.root / "gamma-project"
+        self.assertTrue(target.is_dir())
+        self.assertEqual(created["project"]["workspace"], str(target.resolve()))
+        self.assertEqual(created["project"]["title"], "Gamma Project")
+
+        request = urllib.request.Request(
+            self.base + "/api/projects/create",
+            data=json.dumps({"parent": str(self.root), "name": "..\\escape"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            urllib.request.urlopen(request, timeout=10)
+        self.assertEqual(raised.exception.code, 400)
+        self.assertFalse((self.root.parent / "escape").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

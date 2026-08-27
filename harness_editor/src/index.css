@@ -31,6 +31,74 @@
   --accent-color: var(--accent);
   --input-background: var(--vscode-input-background, #242424);
   --font-mono: var(--vscode-editor-font-family, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace);
+  --surface-raised: #252526;
+  --surface-sunken: #111827;
+  --surface-accent: #1e3a5f;
+  --border-strong: #454545;
+  --button-bg: #252526;
+  --button-text: #dddddd;
+  --link: #7ecfff;
+  --shadow-color: rgba(0,0,0,.45);
+  --portfolio-bg: #0d1b2a;
+  --portfolio-deep: #0a1628;
+  --portfolio-panel: #16213e;
+  --portfolio-border: #1e3a5f;
+  --portfolio-hover: #0f2744;
+  --portfolio-tab: #101f30;
+  --portfolio-text: #dddddd;
+  --portfolio-muted: #718096;
+  --portfolio-accent: #7ecfff;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --panel-bg: #f6f7f9;
+  --node-bg: #ffffff;
+  --node-border: #c8ccd2;
+  --text: #2f3337;
+  --text-dim: #66707a;
+  --accent: #0969da;
+  --accent2: #0969da;
+  --success: #1a7f37;
+  --warning: #9a6700;
+  --highlight: #0969da;
+  --edge-color: #8c959f;
+  --surface-1: #f6f7f9;
+  --surface-2: #eef1f4;
+  --surface-3: #ffffff;
+  --surface-hover: #e7ebef;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f0f3f6;
+  --surface-accent: #dbeafe;
+  --border: #d0d7de;
+  --border-strong: #afb8c1;
+  --focus: #0969da;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f6f7f9;
+  --text-primary: #1f2328;
+  --text-secondary: #424a53;
+  --text-muted: #66707a;
+  --border-color: #d0d7de;
+  --accent-color: #0969da;
+  --input-background: #ffffff;
+  --button-bg: #f6f8fa;
+  --button-text: #24292f;
+  --link: #0969da;
+  --shadow-color: rgba(31,35,40,.18);
+  --portfolio-bg: #ffffff;
+  --portfolio-deep: #f6f8fa;
+  --portfolio-panel: #eef4fb;
+  --portfolio-border: #d0d7de;
+  --portfolio-hover: #eaf2fb;
+  --portfolio-tab: #f0f3f6;
+  --portfolio-text: #24292f;
+  --portfolio-muted: #66707a;
+  --portfolio-accent: #0969da;
 }
 
 html, body, #root {
@@ -1282,13 +1350,13 @@ html, body, #root {
   z-index: 200;
   height: 35px;
   display: grid;
-  grid-template-columns: auto minmax(200px, auto) minmax(220px, 560px) 1fr;
+  grid-template-columns: auto minmax(200px, auto) minmax(220px, 560px) 1fr auto;
   align-items: center;
   gap: 10px;
   padding: 0 10px;
   border-bottom: 1px solid var(--border);
-  background: #181818;
-  color: #c8c8c8;
+  background: var(--surface-1);
+  color: var(--text);
   user-select: none;
 }
 
@@ -1305,18 +1373,18 @@ html, body, #root {
 }
 
 .studio-title-path { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12px; }
-.studio-title-path strong { color: #f0f0f0; font-weight: 600; }
-.studio-title-path span { color: #666; }
-.studio-title-path b { overflow: hidden; color: #9d9d9d; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.studio-title-path strong { color: var(--text-primary); font-weight: 600; }
+.studio-title-path span { color: var(--text-dim); }
+.studio-title-path b { overflow: hidden; color: var(--text-dim); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .studio-command-center {
   justify-self: center;
   width: min(100%, 520px);
   overflow: hidden;
   padding: 4px 14px;
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: #242424;
-  color: #a9a9a9;
+  background: var(--surface-2);
+  color: var(--text-dim);
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1340,7 +1408,7 @@ html, body, #root {
   z-index: 200;
   height: 38px;
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 9px;
   padding: 0 10px;
@@ -1355,13 +1423,46 @@ html, body, #root {
 .workbench-route-tabs > button { padding: 0 11px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 11px; }
 .workbench-route-tabs > button:hover { color: var(--text-primary); background: var(--surface-2); }
 .workbench-route-tabs > button.active { border-bottom-color: var(--focus); color: var(--text-primary); }
-.workbench-route-menu { position: absolute; z-index: 430; top: 36px; right: 0; width: 278px; max-height: min(520px, calc(100vh - 58px)); overflow: auto; padding: 5px; border: 1px solid #454545; border-radius: 5px; background: #252526; box-shadow: 0 12px 36px rgba(0,0,0,.45); }
-.workbench-route-menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 3px; background: transparent; color: #ccc; text-align: left; cursor: pointer; }
-.workbench-route-menu button:hover,.workbench-route-menu button.active { background: #37373d; color: #fff; }
-.workbench-route-menu button > span { display: grid; width: 24px; place-items: center; color: #9cdcfe; font-size: 15px; }
+.workbench-route-menu { position: absolute; z-index: 430; top: 38px; right: 178px; width: 278px; max-height: min(520px, calc(100vh - 58px)); overflow: auto; padding: 5px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface-raised); box-shadow: 0 12px 36px var(--shadow-color); }
+.workbench-route-menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 3px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.workbench-route-menu button:hover,.workbench-route-menu button.active { background: var(--surface-hover); color: var(--text-primary); }
+.workbench-route-menu button > span { display: grid; width: 24px; place-items: center; color: var(--link); font-size: 15px; }
 .workbench-route-menu button > div { display: grid; min-width: 0; gap: 2px; }
 .workbench-route-menu b { font-size: 11px; font-weight: 500; }
-.workbench-route-menu small { overflow: hidden; color: #858585; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.workbench-route-menu small { overflow: hidden; color: var(--text-dim); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.workbench-theme { justify-self: end; display: flex; align-items: center; gap: 3px; min-width: 0; color: var(--text-dim); font-size: 11px; }
+.workbench-theme select { max-width: 86px; padding: 3px 17px 3px 4px; border: 1px solid transparent; border-radius: 3px; outline: none; background: transparent; color: var(--text); font: inherit; cursor: pointer; }
+.workbench-theme select:hover,.workbench-theme select:focus { border-color: var(--border); background: var(--surface-2); }
+.workbench-theme option { background: var(--surface-raised); color: var(--text-primary); }
+
+.portfolio-add-project,.portfolio-session-action { border: 1px solid var(--portfolio-border); border-radius: 4px; background: var(--portfolio-panel); color: var(--portfolio-accent); cursor: pointer; }
+.portfolio-add-project { padding: 4px 7px; font-size: 10px; white-space: nowrap; }
+.portfolio-session-action { padding: 0 3px; border-color: transparent; background: transparent; color: var(--portfolio-muted); flex-shrink: 0; }
+.portfolio-session-action:hover { border-color: var(--portfolio-border); color: var(--portfolio-accent); }
+.project-dialog-backdrop { position: absolute; inset: 0; z-index: 650; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.52); backdrop-filter: blur(2px); }
+.project-dialog { width: min(560px, 100%); max-height: 92%; overflow: auto; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-raised); color: var(--text); box-shadow: 0 18px 60px var(--shadow-color); }
+.project-dialog>header { display: flex; align-items: flex-start; gap: 18px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.project-dialog>header>div { display: grid; flex: 1; gap: 3px; }
+.project-dialog>header b { color: var(--text-primary); font-size: 14px; }
+.project-dialog>header small,.project-dialog label>small { color: var(--text-dim); font-size: 10px; line-height: 1.45; }
+.project-dialog>header button { border: 0; background: transparent; color: var(--text-dim); font-size: 18px; cursor: pointer; }
+.project-dialog-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 10px 16px 0; }
+.project-dialog-tabs button { padding: 8px; border: 0; border-bottom: 2px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; }
+.project-dialog-tabs button.active { border-bottom-color: var(--focus); color: var(--text-primary); }
+.project-dialog-body { display: grid; gap: 13px; padding: 16px; }
+.project-dialog-body label { display: grid; gap: 5px; color: var(--text-secondary); font-size: 11px; }
+.project-dialog input { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 4px; outline: none; background: var(--input-background); color: var(--text-primary); font: inherit; }
+.project-dialog input:focus { border-color: var(--focus); }
+.project-path-row { display: flex; gap: 7px; }
+.project-path-row button { flex: none; padding: 0 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--button-bg); color: var(--button-text); cursor: pointer; }
+.project-dialog-body .project-open-choice { display: flex; align-items: center; gap: 7px; }
+.project-open-choice input { width: auto; }
+.project-dialog-error { padding: 8px 10px; border: 1px solid #d1242f; border-radius: 4px; background: color-mix(in srgb, #d1242f 10%, var(--surface-raised)); color: #f48771; font-size: 11px; }
+:root[data-theme="light"] .project-dialog-error { color: #a40e26; }
+.project-dialog>footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.project-dialog>footer button { padding: 6px 13px; border: 1px solid var(--border); border-radius: 4px; background: var(--button-bg); color: var(--button-text); cursor: pointer; }
+.project-dialog>footer button.primary { border-color: var(--focus); background: var(--focus); color: white; }
+.project-dialog>footer button:disabled { opacity: .5; cursor: default; }
 .embedded-workbench .studio-page,
 .embedded-workbench .studio-page-loading { inset: 38px 0 0; }
 .embedded-workbench { padding: 38px 0 0; }
@@ -1377,7 +1478,7 @@ html, body, #root {
   align-items: stretch;
   padding: 3px 0 2px;
   border-right: 1px solid var(--border);
-  background: #181818;
+  background: var(--surface-1);
 }
 .activity-button {
   position: relative;
@@ -1544,12 +1645,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 @media (max-width: 900px) {
-  .studio-titlebar { grid-template-columns: auto 1fr auto; }
+  .studio-titlebar { grid-template-columns: auto 1fr auto auto; }
   .studio-command-center { display: none; }
-  .studio-connection { grid-column: 3; }
+  .studio-connection { grid-column: 4; }
   .sidebar { width: 210px; min-width: 210px; }
   .right-panel { width: 280px; min-width: 280px; }
-  .workbench-toolbar { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .workbench-toolbar { grid-template-columns: auto minmax(0, 1fr) auto auto; }
   .workbench-toolbar .studio-title-path { display: none; }
   .workbench-route-tabs > button { padding-inline: 8px; }
 }
@@ -1558,6 +1659,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .workbench-toolbar { gap: 5px; padding-inline: 6px; }
   .workbench-toolbar .studio-connection { width: 18px; overflow: hidden; padding-inline: 5px; gap: 0; font-size: 0; }
   .workbench-toolbar .studio-connection > span { flex: 0 0 7px; }
+  .workbench-theme select { width: 20px; padding-inline: 2px; color: transparent; }
+  .workbench-route-menu { right: 32px; width: min(278px, calc(100vw - 44px)); }
 }
 
 /* Sessions remains usable when the IDE editor group is narrow.  The fixed
@@ -1565,7 +1668,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
    the iframe, so a visible "训练数据" click could land on a session row. */
 @media (max-width: 760px) {
   .session-explorer { flex-direction: column; overflow: auto; }
-  .session-explorer-list { width: 100% !important; min-height: 150px; max-height: 34%; flex: 0 0 210px; border-right: 0 !important; border-bottom: 1px solid #1e3a5f; }
+  .session-explorer-list { width: 100% !important; min-height: 150px; max-height: 34%; flex: 0 0 210px; border-right: 0 !important; border-bottom: 1px solid var(--portfolio-border); }
   .session-explorer-detail { min-height: 360px; overflow: visible !important; }
 }
 

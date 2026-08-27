@@ -31,6 +31,7 @@ import {
   type WorkbenchRoute,
 } from './workbenchSession';
 import type { IdeContextItem } from './ideBridge';
+import { applyWorkbenchTheme, readWorkbenchTheme, type WorkbenchTheme } from './theme';
 import {
   appendMessageTokenBatch,
   appendTraceTokenBatch,
@@ -256,6 +257,7 @@ export default function App() {
   const restoredBuilder = restoredBuilderRef.current;
   const [tab, setTab] = useState<TabType>(readInitialTab);
   const [showAdvancedNavigation, setShowAdvancedNavigation] = useState(false);
+  const [theme, setTheme] = useState<WorkbenchTheme>(readWorkbenchTheme);
   const [runtimeOnline, setRuntimeOnline] = useState<boolean | null>(null);
   const [config, setConfig] = useState<HarnessConfig>(restoredBuilder.config);
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<Node>(restoredBuilder.nodes);
@@ -308,6 +310,26 @@ export default function App() {
   const [interruptedRuns, setInterruptedRuns] = useState<InterruptedRun[]>([]);
   const [recoveryBusy, setRecoveryBusy] = useState<string | null>(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
+
+  useEffect(() => applyWorkbenchTheme(theme), [theme]);
+
+  useEffect(() => {
+    if (!showAdvancedNavigation) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.workbench-more, .workbench-route-menu, .activity-more, .activity-advanced')) return;
+      setShowAdvancedNavigation(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowAdvancedNavigation(false);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [showAdvancedNavigation]);
 
   const refreshInterruptedRuns = useCallback(async () => {
     try {
@@ -1366,15 +1388,23 @@ export default function App() {
             aria-expanded={showAdvancedNavigation}
             onClick={() => setShowAdvancedNavigation((visible) => !visible)}
           >More</button>
-          {showAdvancedNavigation && <div className="workbench-route-menu" role="menu">
-            {STUDIO_TABS.filter((item) => item.group !== 'primary').map((item) => <button
-              key={item.id}
-              role="menuitem"
-              className={tab === item.id ? 'active' : ''}
-              onClick={() => { setTab(item.id); setShowAdvancedNavigation(false); }}
-            ><span>{item.icon}</span><div><b>{item.label}</b><small>{item.detail}</small></div></button>)}
-          </div>}
         </nav> : <div className="studio-command-center">{activeTabMeta.detail}</div>}
+        {EMBEDDED_IN_IDE && showAdvancedNavigation && <div className="workbench-route-menu" role="menu">
+          {STUDIO_TABS.filter((item) => item.group !== 'primary').map((item) => <button
+            key={item.id}
+            role="menuitem"
+            className={tab === item.id ? 'active' : ''}
+            onClick={() => { setTab(item.id); setShowAdvancedNavigation(false); }}
+          ><span>{item.icon}</span><div><b>{item.label}</b><small>{item.detail}</small></div></button>)}
+        </div>}
+        <label className="workbench-theme" title="Workbench 外观">
+          <span aria-hidden="true">◐</span>
+          <select aria-label="Workbench 主题" value={theme} onChange={(event) => setTheme(event.target.value as WorkbenchTheme)}>
+            <option value="system">跟随 IDE</option>
+            <option value="light">浅色</option>
+            <option value="dark">深色</option>
+          </select>
+        </label>
         <button
           type="button"
           className={`studio-connection ${runtimeOnline === false ? 'offline' : runtimeOnline === null ? 'checking' : ''}`}

@@ -30,12 +30,18 @@ Session 的模型上下文、完整审计历史和轨迹仍保存在原 Session 
 
 在 Workbench 左侧打开 `Sessions`：
 
+- 点左上角 `＋ Project` 可管理另一个 workspace：
+  - `选择已有文件夹` 只登记路径，不移动、不复制目录；
+  - `创建新文件夹` 先选父目录、再输入文件夹名，只创建空 workspace；
+  - 勾选“完成后在新的 IDE 窗口打开”不会关闭当前 Project；
 - 左栏按 Project 展示 Session 数、运行数、最近活动和路径；
 - 可查看全部 Project，或只查看当前 Project；
 - 可搜索 Project、Session 标题和首条用户任务摘要；
 - 可置顶 Project 或 Session；
 - 双击/打开多个 Session 后，它们以持久化标签页保留，刷新 Workbench 不丢失；
-- 每个 Session 都可进入精确轨迹回放，或执行 Fork / Merge。
+- 每个 Session 行右侧的 `⑂ / ⇄` 和详情栏的 `Fork / Merge` 调用同一套分支服务；
+- Heart Flow 的续接胶囊也复用同一个 Fork / Merge 对话框，不存在另一套隐藏实现；
+- 每个 Session 都可进入精确轨迹回放。
 
 旧 Session 会按顺序从 `session.json`、`trajectory.jsonl`、历史 System working-directory
 消息推断所属 workspace，不需要一次性迁移或重写历史。无法可靠归属的记录进入
@@ -62,6 +68,7 @@ Project 中可能失效。可用方法为：
 GET  /api/projects?workspace=<optional-workspace>
 GET  /api/projects/sessions?project_id=<id>&workspace=<path>
 POST /api/projects/register
+POST /api/projects/create
 POST /api/projects/update
 POST /api/projects/session/update
 

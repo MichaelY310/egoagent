@@ -690,6 +690,10 @@ export async function registerProject(workspace: string, title?: string) {
   return request('POST', '/api/projects/register', { workspace, title });
 }
 
+export async function createProject(parent: string, name: string, title?: string) {
+  return request('POST', '/api/projects/create', { parent, name, title });
+}
+
 export async function updateProject(project_id: string, changes: Partial<Pick<ProjectPortfolioItem, 'title' | 'description' | 'tags' | 'pinned' | 'archived' | 'active_session'>>) {
   return request('POST', '/api/projects/update', { project_id, changes });
 }

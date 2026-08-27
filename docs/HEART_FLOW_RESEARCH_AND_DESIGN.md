@@ -136,6 +136,8 @@ Agent 上下文。
    `现在处理`。
 7. 回到原 Project，顶部和 Capsule 面板直接显示离开前的落点；点 `查看 Session` 进入真实
    Session/轨迹，点 `在 IDE 打开` 会在新窗口打开 workspace。
+8. 如果想沿着这个落点尝试两个方向，直接点胶囊右上角 `Fork`；如果另一个 Session
+   已经完成了相关探索，点 `Merge`。这里复用 Sessions 页面完全相同的血缘与合并实现。
 
 ## 建议的用户实验
 

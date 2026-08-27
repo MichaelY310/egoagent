@@ -39,6 +39,26 @@ class VoidWorkbenchIntegrationTests(unittest.TestCase):
             r"createWebviewPanel\('egoagent\.workbench'[\s\S]{0,400}retainContextWhenHidden: false",
         )
 
+    def test_workbench_navigation_projects_branching_and_themes_are_discoverable(self):
+        app = (ROOT / "harness_editor" / "src" / "App.tsx").read_text(encoding="utf-8")
+        sessions = (ROOT / "harness_editor" / "src" / "components" / "SessionExplorer.tsx").read_text(encoding="utf-8")
+        heart_flow = (ROOT / "harness_editor" / "src" / "heartflow" / "HeartFlowDemo.tsx").read_text(encoding="utf-8")
+        project_dialog = (ROOT / "harness_editor" / "src" / "components" / "ProjectDialog.tsx").read_text(encoding="utf-8")
+        extension = (EXTENSION / "extension-v21.js").read_text(encoding="utf-8")
+
+        # The popup must be a toolbar sibling, not a child of the scrolling
+        # nav that used to clip it and make More look unresponsive.
+        self.assertRegex(app, r"</nav> : <div[\s\S]{0,300}EMBEDDED_IN_IDE && showAdvancedNavigation")
+        self.assertIn('aria-label="Workbench 主题"', app)
+        self.assertIn("Project = workspace 文件夹", sessions)
+        self.assertIn("＋ Project", sessions)
+        self.assertIn("选择已有文件夹", project_dialog)
+        self.assertIn("创建新文件夹", project_dialog)
+        self.assertIn("pick-project-folder", extension)
+        self.assertIn("SessionBranchDialog", heart_flow)
+        self.assertIn("⑂ Fork", heart_flow)
+        self.assertIn("⇄ Merge", heart_flow)
+
     def test_editor_review_has_visible_per_block_accept_and_refuse_actions(self):
         source = (EXTENSION / "extension-v21.js").read_text(encoding="utf-8")
         manifest = json.loads((EXTENSION / "package.json").read_text(encoding="utf-8"))

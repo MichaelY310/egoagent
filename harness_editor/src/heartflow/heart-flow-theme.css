@@ -1,0 +1,46 @@
+.capsule-session-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+:root[data-theme="light"] .heart-flow-shell {
+  --hf-bg: #f6f8fa;
+  --hf-card: #ffffff;
+  --hf-line: #d0d7de;
+  --hf-text: #24292f;
+  --hf-dim: #66707a;
+  --hf-cyan: #0969da;
+  --hf-green: #1a7f37;
+  --hf-warm: #9a6700;
+  background: radial-gradient(circle at 16% -10%, rgba(9, 105, 218, .08), transparent 34%), var(--hf-bg);
+}
+
+:root[data-theme="light"] .heart-flow-hero p,
+:root[data-theme="light"] .heart-flow-focus-copy p { color: #57606a; }
+:root[data-theme="light"] .heart-flow-policy,
+:root[data-theme="light"] .heart-flow-panel { background: rgba(255, 255, 255, .94); }
+:root[data-theme="light"] .heart-flow-focus { background: linear-gradient(100deg, #fff, #f6f8fa); box-shadow: 0 15px 45px rgba(31, 35, 40, .08); }
+:root[data-theme="light"] .heart-flow-focus.active { border-color: #7fb4bd; background: linear-gradient(100deg, #f0fbfc, #fff); }
+:root[data-theme="light"] .heart-flow-focus-mark strong { color: #1f2328; }
+:root[data-theme="light"] .hf-button { border-color: #afb8c1; background: #f6f8fa; color: #24292f; }
+:root[data-theme="light"] .hf-button:hover { border-color: #8c959f; background: #eaeef2; }
+:root[data-theme="light"] .hf-button.primary { border-color: #0969da; background: #0969da; color: #fff; }
+:root[data-theme="light"] .heart-flow-projects article,
+:root[data-theme="light"] .capsule-list,
+:root[data-theme="light"] .flow-event { background: #f6f8fa; }
+:root[data-theme="light"] .heart-flow-projects article.focused { border-color: #54aeff; background: #ddf4ff; }
+:root[data-theme="light"] .project-sigil { border-color: #afb8c1; background: #fff; color: #0969da; }
+:root[data-theme="light"] .project-meta,
+:root[data-theme="light"] .project-meta button,
+:root[data-theme="light"] .capsule-footer,
+:root[data-theme="light"] .heart-flow-empty { color: #66707a; }
+:root[data-theme="light"] .heart-flow-hint { background: #fff8c5; color: #6e5b1f; }
+:root[data-theme="light"] .capsule-field textarea { border-color: #d0d7de; background: #fff; color: #24292f; }
+:root[data-theme="light"] .capsule-field.next textarea { border-color: #54aeff; background: #f0fbfc; color: #24292f; }
+:root[data-theme="light"] .capsule-list>b,
+:root[data-theme="light"] .inbox-section>b { color: #424a53; }
+:root[data-theme="light"] .capsule-list li,
+:root[data-theme="light"] .capsule-list>span { color: #57606a; }
+:root[data-theme="light"] .flow-event.urgent { border-color: #ff8182; background: #ffebe9; }

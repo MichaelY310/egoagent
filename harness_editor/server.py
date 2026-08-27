@@ -3005,6 +3005,41 @@ class APIHandler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "project": project})
             return
 
+        if path == "/api/projects/create":
+            body = self._read_body()
+            try:
+                parent = Path(str(body.get("parent") or "")).expanduser().resolve()
+                name = str(body.get("name") or "").strip()
+                invalid_chars = set('<>:"/\\|?*')
+                reserved = {
+                    "con", "prn", "aux", "nul",
+                    *(f"com{index}" for index in range(1, 10)),
+                    *(f"lpt{index}" for index in range(1, 10)),
+                }
+                if not parent.is_dir():
+                    raise ValueError(f"Parent folder does not exist: {parent}")
+                if not name or name in {".", ".."} or name.endswith((" ", ".")):
+                    raise ValueError("Project folder name is invalid")
+                if any(character in invalid_chars or ord(character) < 32 for character in name):
+                    raise ValueError("Project folder name contains invalid characters")
+                if name.split(".", 1)[0].lower() in reserved:
+                    raise ValueError("Project folder name is reserved by Windows")
+                target = (parent / name).resolve()
+                if target.parent != parent:
+                    raise ValueError("Project folder must be a direct child of the selected parent")
+                if target.exists():
+                    raise ValueError(f"Project folder already exists: {target}")
+                target.mkdir()
+                project = _project_portfolio().register_project(
+                    target,
+                    title=body.get("title") or name,
+                )
+            except (OSError, ValueError, TypeError) as error:
+                self._send_error(str(error), 400)
+                return
+            self._send_json({"ok": True, "project": project})
+            return
+
         if path == "/api/projects/update":
             body = self._read_body()
             try:

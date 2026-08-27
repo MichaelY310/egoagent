@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { API_BASE as BASE } from '../api/runtime';
 import TrajectoryReplay from "./TrajectoryReplay";
 import SessionBranchDialog from "./SessionBranchDialog";
+import ProjectDialog from './ProjectDialog';
 import { annotationKey, TrainingDataPanel, TrainingFeedback, useSessionAnnotations } from "./TrainingDataControls";
 import {
   getTrainingAnnotations,
@@ -77,6 +78,8 @@ export default function SessionExplorer() {
   const [analyzeStatus, setAnalyzeStatus] = useState<string>("");
   const [analyzeResult, setAnalyzeResult] = useState<any>(null);
   const [branchAction, setBranchAction] = useState<'fork' | 'merge' | null>(null);
+  const [showProjectDialog, setShowProjectDialog] = useState(false);
+  const [visibleSessionLimit, setVisibleSessionLimit] = useState(120);
   // 气泡聊天面板状态
   const [showAnalyzeChat, setShowAnalyzeChat] = useState(false);
   const [analyzeChatMessages, setAnalyzeChatMessages] = useState<AnalyzeMessage[]>([]);
@@ -120,6 +123,14 @@ export default function SessionExplorer() {
   }, [annotationState.onSaved]);
 
   const sessionAnnotationByName = new Map(sessionAnnotations.map((item) => [item.target_id, item]));
+
+  const handleProjectCreated = async (project: ProjectPortfolioItem, openNow: boolean) => {
+    setShowProjectDialog(false);
+    setSelectedProject(project.id);
+    setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
+    await fetchSessions();
+    if (openNow) openWorkspaceInIde(project.workspace, true);
+  };
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -213,6 +224,8 @@ export default function SessionExplorer() {
     (selectedProject === 'all' || !selectedProject || s.project_id === selectedProject)
     && (!filter || `${s.name} ${s.summary || ''} ${s.project_title || ''}`.toLowerCase().includes(filter.toLowerCase()))
   ));
+  const visibleSessions = filteredSessions.slice(0, visibleSessionLimit);
+  useEffect(() => setVisibleSessionLimit(120), [selectedProject, filter]);
   const selectedInfo = sessions.find((session) => session.name === selected);
   const selectedProjectInfo = projects.find((project) => project.id === selectedInfo?.project_id);
 
@@ -282,18 +295,21 @@ export default function SessionExplorer() {
   };
 
   return (
-    <div className="session-explorer" style={{ display: "flex", height: "100%", background: "#0d1b2a", position: "relative" }}>
+    <div className="session-explorer" style={{ display: "flex", height: "100%", background: "var(--portfolio-bg)", color: 'var(--portfolio-text)', position: "relative" }}>
       {/* Left: Session List */}
       <div className="session-explorer-list" style={{
         width: 320,
-        borderRight: "1px solid #1e3a5f",
+        borderRight: "1px solid var(--portfolio-border)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
       }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid #1e3a5f" }}>
-          <h3 style={{ margin: 0, color: "#7ecfff", fontSize: 14 }}>Project &amp; Session Portfolio</h3>
-          <div style={{ marginTop: 3, color: '#718096', fontSize: 10 }}>一个项目可同时打开多个 Session；跨项目合并会保留来源。</div>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--portfolio-border)" }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h3 style={{ margin: 0, color: "var(--portfolio-accent)", fontSize: 14, flex: 1 }}>Project &amp; Session Portfolio</h3>
+            <button type="button" className="portfolio-add-project" onClick={() => setShowProjectDialog(true)}>＋ Project</button>
+          </div>
+          <div style={{ marginTop: 3, color: 'var(--portfolio-muted)', fontSize: 10 }}>Project = workspace 文件夹；一个 Project 可同时打开多个 Session，跨项目合并会保留来源。</div>
           <input
             type="text"
             placeholder="Filter sessions..."
@@ -304,26 +320,26 @@ export default function SessionExplorer() {
               boxSizing: "border-box",
               marginTop: 8,
               padding: "6px 10px",
-              background: "#16213e",
-              border: "1px solid #1e3a5f",
+              background: "var(--input-background)",
+              border: "1px solid var(--portfolio-border)",
               borderRadius: 4,
-              color: "#ccc",
+              color: "var(--portfolio-text)",
               fontSize: 12,
             }}
           />
         </div>
-        <div style={{ maxHeight: 190, overflow: 'auto', padding: '7px 8px', borderBottom: '1px solid #1e3a5f', background: '#0a1628' }}>
+        <div style={{ maxHeight: 190, overflow: 'auto', padding: '7px 8px', borderBottom: '1px solid var(--portfolio-border)', background: 'var(--portfolio-deep)' }}>
           <button
             type="button"
             onClick={() => setSelectedProject('all')}
-            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '6px 8px', color: selectedProject === 'all' ? '#fff' : '#a8b3c7', background: selectedProject === 'all' ? '#1e3a5f' : 'transparent', border: 0, borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '6px 8px', color: selectedProject === 'all' ? 'var(--text-primary)' : 'var(--text-secondary)', background: selectedProject === 'all' ? 'var(--portfolio-panel)' : 'transparent', border: 0, borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
           ><span>全部项目</span><small>{sessions.length}</small></button>
           {projects.map((project) => <div key={project.id} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
             <button
               type="button"
               onClick={() => setSelectedProject(project.id)}
               title={`${project.workspace || '无法归属'}\n${project.running_count || 0} running · ${project.session_count} Sessions`}
-              style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 7, padding: '6px 8px', color: selectedProject === project.id ? '#fff' : '#a8b3c7', background: selectedProject === project.id ? '#1e3a5f' : 'transparent', border: 0, borderRadius: 4, cursor: 'pointer', textAlign: 'left', fontSize: 11 }}
+              style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 7, padding: '6px 8px', color: selectedProject === project.id ? 'var(--text-primary)' : 'var(--text-secondary)', background: selectedProject === project.id ? 'var(--portfolio-panel)' : 'transparent', border: 0, borderRadius: 4, cursor: 'pointer', textAlign: 'left', fontSize: 11 }}
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.current ? '● ' : ''}{project.title}</span>
               <small style={{ color: project.running_count ? '#4ade80' : '#718096' }}>{project.running_count ? `${project.running_count} live` : project.session_count}</small>
@@ -333,7 +349,7 @@ export default function SessionExplorer() {
           </div>)}
         </div>
         <div style={{ flex: 1, overflow: "auto", padding: "8px 0" }}>
-          {filteredSessions.map((s) => {
+          {visibleSessions.map((s) => {
             const mark = sessionAnnotationByName.get(s.name);
             return (
             <div
@@ -342,15 +358,17 @@ export default function SessionExplorer() {
               style={{
                 padding: "8px 16px",
                 cursor: "pointer",
-                background: selected === s.name ? "#1e3a5f" : "transparent",
-                borderLeft: selected === s.name ? "3px solid #7ecfff" : "3px solid transparent",
+                background: selected === s.name ? "var(--portfolio-panel)" : "transparent",
+                borderLeft: selected === s.name ? "3px solid var(--portfolio-accent)" : "3px solid transparent",
                 transition: "all 0.15s",
               }}
-              onMouseEnter={(e) => { if (selected !== s.name) e.currentTarget.style.background = "#0f2744"; }}
+              onMouseEnter={(e) => { if (selected !== s.name) e.currentTarget.style.background = "var(--portfolio-hover)"; }}
               onMouseLeave={(e) => { if (selected !== s.name) e.currentTarget.style.background = "transparent"; }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#ddd", fontFamily: "monospace" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--portfolio-text)", fontFamily: "monospace" }}>
                 <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</span>
+                {!s.name.includes('/') && <button type="button" className="portfolio-session-action" title="Fork 这个 Session" aria-label={`Fork ${s.name}`} onClick={(event) => { event.stopPropagation(); void selectSession(s.name); setBranchAction('fork'); }}>⑂</button>}
+                {!s.name.includes('/') && sessions.some((item) => item.name !== s.name && !item.name.includes('/')) && <button type="button" className="portfolio-session-action" title="把另一个 Session 合并进来" aria-label={`Merge ${s.name}`} onClick={(event) => { event.stopPropagation(); void selectSession(s.name); setBranchAction('merge'); }}>⇄</button>}
                 <button type="button" title={s.pinned ? '取消 Session 置顶' : '置顶 Session'} onClick={(event) => { event.stopPropagation(); void toggleSessionPin(s); }} style={{ marginLeft: 'auto', padding: 0, border: 0, color: s.pinned ? '#e2c08d' : '#53657a', background: 'transparent', cursor: 'pointer', flexShrink: 0 }}>{s.pinned ? '★' : '☆'}</button>
                 {mark?.rating === "up" && <span title="已点赞" style={{ color: "#89d185", flexShrink: 0 }}>👍</span>}
                 {mark?.rating === "down" && <span title="已点踩" style={{ color: "#f48771", flexShrink: 0 }}>👎</span>}
@@ -377,17 +395,22 @@ export default function SessionExplorer() {
               No sessions found
             </div>
           )}
+          {filteredSessions.length > visibleSessions.length && <button
+            type="button"
+            onClick={() => setVisibleSessionLimit((current) => current + 120)}
+            style={{ width: 'calc(100% - 24px)', margin: '6px 12px 10px', padding: '6px', border: '1px solid var(--portfolio-border)', borderRadius: 4, background: 'var(--portfolio-panel)', color: 'var(--portfolio-accent)', cursor: 'pointer', fontSize: 10 }}
+          >再显示 {Math.min(120, filteredSessions.length - visibleSessions.length)} 个 · 还有 {filteredSessions.length - visibleSessions.length} 个</button>}
         </div>
-        <div style={{ padding: "8px 16px", borderTop: "1px solid #1e3a5f" }}>
+        <div style={{ padding: "8px 16px", borderTop: "1px solid var(--portfolio-border)" }}>
           <button
             onClick={fetchSessions}
             style={{
               width: "100%",
               padding: "6px",
-              background: "#1e3a5f",
+              background: "var(--portfolio-panel)",
               border: "none",
               borderRadius: 4,
-              color: "#7ecfff",
+              color: "var(--portfolio-accent)",
               cursor: "pointer",
               fontSize: 12,
             }}
@@ -399,11 +422,11 @@ export default function SessionExplorer() {
 
       {/* Middle: Detail Panel */}
       <div className="session-explorer-detail" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ minHeight: 35, display: 'flex', alignItems: 'end', gap: 3, padding: '5px 8px 0', overflowX: 'auto', borderBottom: '1px solid #1e3a5f', background: '#0a1628' }}>
+        <div style={{ minHeight: 35, display: 'flex', alignItems: 'end', gap: 3, padding: '5px 8px 0', overflowX: 'auto', borderBottom: '1px solid var(--portfolio-border)', background: 'var(--portfolio-deep)' }}>
           {openSessions.map((name) => {
             const info = sessions.find((item) => item.name === name);
             if (!info) return null;
-            return <div key={name} title={`${info.project_title || ''}\n${name}`} style={{ display: 'flex', alignItems: 'center', minWidth: 110, maxWidth: 230, height: 29, padding: '0 5px 0 9px', border: `1px solid ${selected === name ? '#365f85' : '#24364a'}`, borderBottom: selected === name ? '1px solid #0d1b2a' : undefined, borderRadius: '5px 5px 0 0', background: selected === name ? '#0d1b2a' : '#101f30', color: selected === name ? '#fff' : '#8ea0b7', fontSize: 10 }}>
+            return <div key={name} title={`${info.project_title || ''}\n${name}`} style={{ display: 'flex', alignItems: 'center', minWidth: 110, maxWidth: 230, height: 29, padding: '0 5px 0 9px', border: '1px solid var(--portfolio-border)', borderBottom: selected === name ? '1px solid var(--portfolio-bg)' : undefined, borderRadius: '5px 5px 0 0', background: selected === name ? 'var(--portfolio-bg)' : 'var(--portfolio-tab)', color: selected === name ? 'var(--text-primary)' : 'var(--portfolio-muted)', fontSize: 10 }}>
               <button type="button" onClick={() => void selectSession(name)} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: 0, border: 0, color: 'inherit', background: 'transparent', textAlign: 'left', cursor: 'pointer' }}>{info.title || name}</button>
               <button type="button" onClick={() => closeSessionTab(name)} title="关闭标签（不会删除 Session）" style={{ padding: '1px 3px', border: 0, color: '#718096', background: 'transparent', cursor: 'pointer' }}>×</button>
             </div>;
@@ -423,13 +446,13 @@ export default function SessionExplorer() {
             {/* Header with actions */}
             <div style={{
               padding: "12px 20px",
-              borderBottom: "1px solid #1e3a5f",
+              borderBottom: "1px solid var(--portfolio-border)",
               display: "flex",
               alignItems: "center",
               flexWrap: "wrap",
               gap: 12,
             }}>
-              <h3 title={selected} style={{ margin: 0, color: "#fff", fontSize: 14, flex: "1 1 220px", minWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <h3 title={selected} style={{ margin: 0, color: "var(--text-primary)", fontSize: 14, flex: "1 1 220px", minWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {selectedProjectInfo?.title ? `${selectedProjectInfo.title} / ` : ''}{selected}
               </h3>
               <TrainingFeedback
@@ -440,12 +463,12 @@ export default function SessionExplorer() {
                 onSaved={onAnnotationSaved}
                 compact
               />
-              {!selected.includes('/') && <button type="button" onClick={() => setBranchAction('fork')} title="复制完整上下文到一个独立分支" style={{ padding: '5px 9px', border: '1px solid #454545', borderRadius: 4, cursor: 'pointer', color: '#ddd', background: '#252526', fontSize: 10, flexShrink: 0 }}>⑂ Fork</button>}
-              {!selected.includes('/') && sessions.some((session) => session.name !== selected && !session.name.includes('/')) && <button type="button" onClick={() => setBranchAction('merge')} title="合并两个 Session 的分支新增内容" style={{ padding: '5px 9px', border: '1px solid #454545', borderRadius: 4, cursor: 'pointer', color: '#ddd', background: '#252526', fontSize: 10, flexShrink: 0 }}>⇄ Merge</button>}
-              <div style={{ display: "flex", flexShrink: 0, background: "#181818", border: "1px solid #3c3c3c", borderRadius: 4, overflow: "hidden" }}>
-                {selectedInfo?.has_trajectory && <button type="button" onClick={() => setDetailMode("replay")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "replay" ? "white" : "#999", background: detailMode === "replay" ? "#0e639c" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>精确回放</button>}
-                <button type="button" onClick={() => setDetailMode("messages")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "messages" ? "white" : "#999", background: detailMode === "messages" ? "#0e639c" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>审计聊天</button>
-                <button type="button" onClick={() => setDetailMode("training")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "training" ? "white" : "#999", background: detailMode === "training" ? "#0e639c" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>训练数据</button>
+              {!selected.includes('/') && <button type="button" onClick={() => setBranchAction('fork')} title="复制完整上下文到一个独立分支" style={{ padding: '5px 9px', border: '1px solid var(--border-strong)', borderRadius: 4, cursor: 'pointer', color: 'var(--button-text)', background: 'var(--button-bg)', fontSize: 10, flexShrink: 0 }}>⑂ Fork</button>}
+              {!selected.includes('/') && sessions.some((session) => session.name !== selected && !session.name.includes('/')) && <button type="button" onClick={() => setBranchAction('merge')} title="合并两个 Session 的分支新增内容" style={{ padding: '5px 9px', border: '1px solid var(--border-strong)', borderRadius: 4, cursor: 'pointer', color: 'var(--button-text)', background: 'var(--button-bg)', fontSize: 10, flexShrink: 0 }}>⇄ Merge</button>}
+              <div style={{ display: "flex", flexShrink: 0, background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 4, overflow: "hidden" }}>
+                {selectedInfo?.has_trajectory && <button type="button" onClick={() => setDetailMode("replay")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "replay" ? "white" : "var(--text-dim)", background: detailMode === "replay" ? "var(--focus)" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>精确回放</button>}
+                <button type="button" onClick={() => setDetailMode("messages")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "messages" ? "white" : "var(--text-dim)", background: detailMode === "messages" ? "var(--focus)" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>审计聊天</button>
+                <button type="button" onClick={() => setDetailMode("training")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "training" ? "white" : "var(--text-dim)", background: detailMode === "training" ? "var(--focus)" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>训练数据</button>
               </div>
               <button
                 type="button"
@@ -473,8 +496,8 @@ export default function SessionExplorer() {
             {analyzeResult && analyzeResult.status !== undefined && (
               <div style={{
                 padding: "12px 20px",
-                borderBottom: "1px solid #1e3a5f",
-                background: "#16213e",
+                borderBottom: "1px solid var(--portfolio-border)",
+                background: "var(--portfolio-panel)",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: "bold", color: "#7ecfff" }}>
@@ -488,10 +511,10 @@ export default function SessionExplorer() {
                     style={{
                       marginLeft: "auto",
                       padding: "3px 10px",
-                      background: "#1e3a5f",
-                      border: "1px solid #2563eb",
+                      background: "var(--portfolio-panel)",
+                      border: "1px solid var(--focus)",
                       borderRadius: 4,
-                      color: "#7ecfff",
+                      color: "var(--portfolio-accent)",
                       cursor: "pointer",
                       fontSize: 11,
                     }}
@@ -503,7 +526,7 @@ export default function SessionExplorer() {
                   <pre style={{
                     margin: 0,
                     padding: 10,
-                    background: "#0a1628",
+                    background: "var(--portfolio-deep)",
                     borderRadius: 4,
                     color: "#b8d4e3",
                     fontSize: 11,
@@ -521,7 +544,7 @@ export default function SessionExplorer() {
 
             {/* Eval Report */}
             {evalReport && (
-              <div style={{ padding: "12px 20px", borderBottom: "1px solid #1e3a5f" }}>
+              <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--portfolio-border)" }}>
                 {(() => {
                   const eff = getEfficiency(evalReport.report);
                   return eff !== null ? (
@@ -530,7 +553,7 @@ export default function SessionExplorer() {
                       <div style={{
                         width: 120,
                         height: 8,
-                        background: "#1e3a5f",
+                        background: "var(--portfolio-border)",
                         borderRadius: 4,
                         overflow: "hidden",
                       }}>
@@ -551,7 +574,7 @@ export default function SessionExplorer() {
                 <pre style={{
                   margin: 0,
                   padding: 12,
-                  background: "#0a1628",
+                  background: "var(--portfolio-deep)",
                   borderRadius: 6,
                   color: "#b8d4e3",
                   fontSize: 11,
@@ -669,23 +692,23 @@ export default function SessionExplorer() {
       {showAnalyzeChat && (
         <div style={{
           width: 420,
-          borderLeft: "1px solid #1e3a5f",
+          borderLeft: "1px solid var(--portfolio-border)",
           display: "flex",
           flexDirection: "column",
-          background: "#0a1628",
+          background: "var(--portfolio-deep)",
           position: "relative",
         }}>
           {/* Header */}
           <div style={{
             padding: "10px 16px",
-            borderBottom: "1px solid #1e3a5f",
+            borderBottom: "1px solid var(--portfolio-border)",
             display: "flex",
             alignItems: "center",
             gap: 8,
-            background: "#16213e",
+            background: "var(--portfolio-panel)",
           }}>
             <span style={{ fontSize: 14 }}>💬</span>
-            <span style={{ flex: 1, fontSize: 13, color: "#fff", fontWeight: "bold" }}>
+            <span style={{ flex: 1, fontSize: 13, color: "var(--text-primary)", fontWeight: "bold" }}>
               分析过程
             </span>
             <span style={{ fontSize: 11, color: "#888" }}>
@@ -738,9 +761,9 @@ export default function SessionExplorer() {
                       <div style={{
                         marginBottom: 6,
                         padding: "8px 12px",
-                        background: "#1a2744",
+                        background: "var(--portfolio-panel)",
                         borderRadius: "12px 12px 12px 4px",
-                        color: "#e0e0e0",
+                        color: "var(--portfolio-text)",
                         fontSize: 12,
                         lineHeight: 1.5,
                         whiteSpace: "pre-wrap",
@@ -755,8 +778,8 @@ export default function SessionExplorer() {
                     )}
                     <div style={{
                       padding: "5px 10px",
-                      background: "#0f2744",
-                      border: "1px solid #1e3a5f",
+                      background: "var(--portfolio-hover)",
+                      border: "1px solid var(--portfolio-border)",
                       borderRadius: 6,
                       fontSize: 11,
                       color: "#fbbf24",
@@ -793,9 +816,9 @@ export default function SessionExplorer() {
                   <div key={i} style={{
                     marginBottom: 10,
                     padding: "10px 14px",
-                    background: "#1a2744",
+                    background: "var(--portfolio-panel)",
                     borderRadius: "12px 12px 12px 4px",
-                    color: "#e0e0e0",
+                    color: "var(--portfolio-text)",
                     fontSize: 12,
                     lineHeight: 1.5,
                     whiteSpace: "pre-wrap",
@@ -839,8 +862,8 @@ export default function SessionExplorer() {
           {/* Footer info */}
           <div style={{
             padding: "8px 16px",
-            borderTop: "1px solid #1e3a5f",
-            background: "#16213e",
+            borderTop: "1px solid var(--portfolio-border)",
+            background: "var(--portfolio-panel)",
             fontSize: 11,
             color: "#666",
             textAlign: "center",
@@ -864,6 +887,7 @@ export default function SessionExplorer() {
         onClose={() => setBranchAction(null)}
         onCreated={handleSessionCreated}
       />}
+      {showProjectDialog && <ProjectDialog onClose={() => setShowProjectDialog(false)} onCreated={(project, openNow) => void handleProjectCreated(project, openNow)} />}
     </div>
   );
 }

@@ -6,12 +6,16 @@ import {
   parkHeartFlowProject,
   stopHeartFlow,
   updateHeartFlowSettings,
+  listProjectSessions,
   type HeartFlowCapsule,
   type HeartFlowStatus,
+  type PortfolioSession,
   type ProjectPortfolioItem,
 } from '../api/client';
 import { openWorkspaceInIde } from '../ideBridge';
+import SessionBranchDialog from '../components/SessionBranchDialog';
 import './heart-flow.css';
+import './heart-flow-theme.css';
 
 const relativeTime = (timestamp = 0) => {
   if (!timestamp) return '尚未记录';
@@ -34,6 +38,8 @@ export default function HeartFlowDemo({ onOpenSessions }: { onOpenSessions?: () 
   const [clock, setClock] = useState(Date.now());
   const [goal, setGoal] = useState('');
   const [nextAction, setNextAction] = useState('');
+  const [branchAction, setBranchAction] = useState<'fork' | 'merge' | null>(null);
+  const [branchSessions, setBranchSessions] = useState<PortfolioSession[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -89,6 +95,23 @@ export default function HeartFlowDemo({ onOpenSessions }: { onOpenSessions?: () 
       session: status?.reentry_capsule?.session || undefined,
       capsule: { goal, next_action: nextAction },
     });
+  };
+
+  const openBranch = async (action: 'fork' | 'merge') => {
+    if (!status?.reentry_capsule?.session) {
+      setError('当前续接胶囊还没有绑定 Session。先在这个 Project 中运行一次 Agent。');
+      return;
+    }
+    setBusy(`branch:${action}`);
+    setError('');
+    try {
+      setBranchSessions(await listProjectSessions({ limit: 1000 }));
+      setBranchAction(action);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy('');
+    }
   };
 
   const focused = status?.focused_project;
@@ -166,7 +189,7 @@ export default function HeartFlowDemo({ onOpenSessions }: { onOpenSessions?: () 
         </section>
 
         <section className="heart-flow-panel capsule-panel">
-          <header><div><small>READY-TO-RESUME CAPSULE</small><h3>把中断点变成下一步</h3></div>{capsule && <button className="text-button" onClick={onOpenSessions}>查看 Session</button>}</header>
+          <header><div><small>READY-TO-RESUME CAPSULE</small><h3>把中断点变成下一步</h3></div>{capsule && <div className="capsule-session-actions"><button className="text-button" onClick={() => void openBranch('fork')}>⑂ Fork</button><button className="text-button" onClick={() => void openBranch('merge')}>⇄ Merge</button><button className="text-button" onClick={onOpenSessions}>查看 Session</button></div>}</header>
           {!focused ? <div className="heart-flow-empty">选择一个 Project 后，这里会从最近 Session 提取目标、证据、阻塞和精确下一步。</div> : <>
             <label className="capsule-field"><span>当前目标</span><textarea value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="这个 Project 现在真正要完成什么？" /></label>
             <label className="capsule-field next"><span>恢复后第一步</span><textarea value={nextAction} onChange={(event) => setNextAction(event.target.value)} placeholder="尽可能写成一个可以立即执行的动作" /></label>
@@ -187,6 +210,21 @@ export default function HeartFlowDemo({ onOpenSessions }: { onOpenSessions?: () 
           {(status?.inbox.length || 0) > 0 && <button className="hf-button wide" disabled={Boolean(busy)} onClick={() => void run('ack', () => acknowledgeHeartFlowEvents(status?.inbox.map((item) => item.id)))}>清空已读</button>}
         </section>
       </div>
+      {branchAction && capsule?.session && <SessionBranchDialog
+        action={branchAction}
+        source={capsule.session}
+        sourceProjectId={capsule.project_id}
+        sourceWorkspace={capsule.workspace}
+        sessions={branchSessions.map((session) => ({
+          name: session.name,
+          message_count: session.message_count,
+          project_id: session.project_id,
+          project_title: status?.projects.find((project) => project.id === session.project_id)?.title,
+          workspace: session.workspace,
+        }))}
+        onClose={() => setBranchAction(null)}
+        onCreated={() => { setBranchAction(null); onOpenSessions?.(); }}
+      />}
     </div>
   );
 }
