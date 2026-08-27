@@ -1370,7 +1370,7 @@ export default function App() {
   }, [config.name, execState.running, execState.waiting_for_input, execState.paused, execState.pending_node, execState.current_node, waitingNodeId, execState.run_id]);
 
   return (
-    <div className={`app-container ${EMBEDDED_IN_IDE ? 'embedded-workbench' : ''}`}>
+    <div className={`app-container ${EMBEDDED_IN_IDE ? 'embedded-workbench' : ''}`} data-workbench-tab={tab}>
       <header className={EMBEDDED_IN_IDE ? 'workbench-toolbar' : 'studio-titlebar'}>
         <span className="studio-product-mark" aria-hidden="true">E</span>
         <div className="studio-title-path">

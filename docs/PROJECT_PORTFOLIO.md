@@ -28,7 +28,13 @@ Session 的模型上下文、完整审计历史和轨迹仍保存在原 Session 
 
 ## Project & Session Portfolio
 
-在 Workbench 左侧打开 `Sessions`：
+在 IDE 右上角点 `Open Agent Workbench`，再按以下路径进入：
+
+1. 顶栏点 `More`；
+2. 在弹出的菜单点 `Sessions`；
+3. 进入 `Project & Session Portfolio` 后，点左上角 `＋ Project`。
+
+这里的 Project 就是一个 workspace 文件夹，不是要把当前项目“装进”另一个项目：
 
 - 点左上角 `＋ Project` 可管理另一个 workspace：
   - `选择已有文件夹` 只登记路径，不移动、不复制目录；
@@ -42,6 +48,10 @@ Session 的模型上下文、完整审计历史和轨迹仍保存在原 Session 
 - 每个 Session 行右侧的 `⑂ / ⇄` 和详情栏的 `Fork / Merge` 调用同一套分支服务；
 - Heart Flow 的续接胶囊也复用同一个 Fork / Merge 对话框，不存在另一套隐藏实现；
 - 每个 Session 都可进入精确轨迹回放。
+
+Workbench 顶栏右侧的 `◐` 下拉框可选择 `跟随 IDE / 浅色 / 深色`。选择会保存在浏览器
+本地，下次打开仍然生效；Builder、Evaluate、Library、Improve、Sessions、Settings 和
+More 中的管理页面共用同一套主题，不再各自写死黑色或白色面板。
 
 旧 Session 会按顺序从 `session.json`、`trajectory.jsonl`、历史 System working-directory
 消息推断所属 workspace，不需要一次性迁移或重写历史。无法可靠归属的记录进入

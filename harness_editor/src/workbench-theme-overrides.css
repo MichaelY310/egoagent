@@ -1,0 +1,231 @@
+/*
+ * Theme compatibility for the older Workbench surfaces.
+ *
+ * New components use the semantic tokens from index.css directly.  These
+ * scoped overrides keep the older, feature-heavy screens readable while they
+ * are gradually migrated away from literal colors.  Keeping this in one file
+ * also makes it hard for a future screen to accidentally reintroduce the
+ * black/white patchwork that existed before the theme selector.
+ */
+
+/* Builder shell and navigation use the same palette in either mode. */
+.activity-button { color: var(--text-dim); }
+.activity-button:hover { color: var(--text-primary); background: var(--surface-hover); }
+.activity-button.active { border-left-color: var(--focus); color: var(--text-primary); background: var(--surface-2); }
+.activity-advanced,
+.activity-button::after { border-color: var(--border-strong); background: var(--surface-raised); color: var(--text-primary); box-shadow: 0 12px 36px var(--shadow-color); }
+.activity-advanced button { color: var(--text-secondary); }
+.activity-advanced button:hover,
+.activity-advanced button.active { background: var(--surface-hover); color: var(--text-primary); }
+.activity-advanced small { color: var(--text-dim); }
+.panel-section input,
+.panel-section select,
+.panel-section textarea { border-color: var(--border); background: var(--input-background); color: var(--text-primary); }
+.panel-disclosure > summary { color: var(--text-secondary); }
+.panel-disclosure > summary > small { background: var(--surface-2); color: var(--text-dim); }
+.identity-chip-list > span { border-color: var(--border); background: var(--surface-accent); color: var(--link); }
+.identity-chip-list > span:hover { border-color: var(--focus); background: var(--surface-hover); color: var(--text-primary); }
+.toolbar { background: color-mix(in srgb, var(--surface-raised) 94%, transparent); box-shadow: 0 3px 12px var(--shadow-color); }
+.toolbar .btn,
+.task-panel-actions button { border-color: var(--border); background: var(--button-bg); color: var(--button-text); }
+.toolbar .btn:hover,
+.task-panel-actions button:hover { border-color: var(--border-strong); background: var(--surface-hover); color: var(--text-primary); }
+.react-flow__background { background: var(--bg); }
+.react-flow__controls { border-color: var(--border); }
+.react-flow__controls button { border-color: var(--border); background: var(--button-bg); color: var(--button-text); }
+.react-flow__controls button:hover { background: var(--surface-hover); }
+.react-flow__minimap { border-color: var(--border); background: var(--surface-1); }
+.condition-edge-label { border-color: var(--border); background: var(--surface-raised); }
+.dag-structured-editor,
+.dag-permission-editor { border-color: var(--border); background: var(--surface-raised); color: var(--text-primary); }
+.chat-output-panel,
+.chat-input-bar { border-color: var(--border); background: var(--surface-1); }
+.chat-bubble { background: var(--surface-raised) !important; color: var(--text-primary) !important; }
+.chat-input-field { border-color: var(--border); background: var(--input-background); color: var(--text-primary); }
+.status-bar { background: color-mix(in srgb, var(--surface-raised) 92%, transparent); }
+
+/* Home */
+:root[data-theme="light"] .studio-home { color: var(--text-primary); }
+:root[data-theme="light"] .studio-home-hero { border-color: var(--border); }
+:root[data-theme="light"] .studio-home-hero h1,
+:root[data-theme="light"] .studio-home-card h2,
+:root[data-theme="light"] .studio-home-card p b,
+:root[data-theme="light"] .studio-metrics strong { color: var(--text-primary); }
+:root[data-theme="light"] .studio-home-hero p,
+:root[data-theme="light"] .studio-home-card p,
+:root[data-theme="light"] .studio-run-list em { color: var(--text-secondary); }
+:root[data-theme="light"] .studio-home-actions button,
+:root[data-theme="light"] .studio-card-actions button,
+:root[data-theme="light"] .studio-home-card header > button,
+:root[data-theme="light"] .studio-journey > button,
+:root[data-theme="light"] .studio-home-card { border-color: var(--border); background: var(--surface-raised); color: var(--text-primary); }
+:root[data-theme="light"] .studio-home-actions button:hover,
+:root[data-theme="light"] .studio-card-actions button:hover,
+:root[data-theme="light"] .studio-home-card header > button:hover,
+:root[data-theme="light"] .studio-journey > button:hover,
+:root[data-theme="light"] .studio-run-list button:hover { background: var(--surface-hover); }
+:root[data-theme="light"] .studio-metrics { border-color: var(--border); background: var(--surface-sunken); }
+:root[data-theme="light"] .studio-metrics > div,
+:root[data-theme="light"] .studio-run-list button { border-color: var(--border); color: var(--text-secondary); }
+:root[data-theme="light"] .play-card { background: linear-gradient(115deg, var(--surface-raised), var(--surface-accent)); }
+
+/* Capability library and package marketplace */
+:root[data-theme="light"] .capability-library,
+:root[data-theme="light"] .package-marketplace { color: var(--text-primary); }
+:root[data-theme="light"] .capability-hero { border-color: var(--border); }
+:root[data-theme="light"] .capability-hero h2,
+:root[data-theme="light"] .capability-summary b,
+:root[data-theme="light"] .capability-card-body h3,
+:root[data-theme="light"] .capability-drawer h2 { color: var(--text-primary); }
+:root[data-theme="light"] .capability-search,
+:root[data-theme="light"] .capability-toolbar > button,
+:root[data-theme="light"] .capability-toolbar > select,
+:root[data-theme="light"] .capability-card-actions button,
+:root[data-theme="light"] .capability-card,
+:root[data-theme="light"] .capability-drawer dl div,
+:root[data-theme="light"] .package-builder,
+:root[data-theme="light"] .package-grid article { border-color: var(--border); background: var(--surface-raised); color: var(--text-primary); }
+:root[data-theme="light"] .capability-search input { color: var(--text-primary); }
+:root[data-theme="light"] .capability-card:hover,
+:root[data-theme="light"] .capability-toolbar > button:hover,
+:root[data-theme="light"] .capability-toolbar > select:hover,
+:root[data-theme="light"] .capability-card-actions button:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+:root[data-theme="light"] .capability-card-body p,
+:root[data-theme="light"] .capability-hero p,
+:root[data-theme="light"] .capability-drawer > p,
+:root[data-theme="light"] .package-marketplace > header p,
+:root[data-theme="light"] .package-grid article > p { color: var(--text-muted); }
+:root[data-theme="light"] .capability-card-actions { border-color: var(--border); }
+:root[data-theme="light"] .capability-drawer { border-color: var(--border); background: var(--surface-raised); box-shadow: -12px 0 40px var(--shadow-color); }
+:root[data-theme="light"] .capability-drawer label code,
+:root[data-theme="light"] .package-import,
+:root[data-theme="light"] .package-search,
+:root[data-theme="light"] .package-grid pre { border-color: var(--border); background: var(--surface-sunken); color: var(--text-secondary); }
+:root[data-theme="light"] .package-chips button,
+:root[data-theme="light"] .package-chips span,
+:root[data-theme="light"] .permission-chips label { border-color: var(--border); background: var(--surface-2); color: var(--text-muted); }
+
+/* Evaluate.  Status colors stay semantic; all neutral surfaces follow theme. */
+:root[data-theme="light"] .task-bench { background: var(--bg); color: var(--text-primary); }
+:root[data-theme="light"] .task-library { border-color: var(--border); background: linear-gradient(180deg, var(--surface-1), var(--bg)); }
+:root[data-theme="light"] .task-brand,
+:root[data-theme="light"] .task-header,
+:root[data-theme="light"] .task-config-bar,
+:root[data-theme="light"] .task-slot-bindings,
+:root[data-theme="light"] .task-ide-context,
+:root[data-theme="light"] .task-dag-panel,
+:root[data-theme="light"] .task-panel-title,
+:root[data-theme="light"] .task-detail-panel,
+:root[data-theme="light"] .task-detail-panel > nav,
+:root[data-theme="light"] .task-input { border-color: var(--border); background: var(--surface-1); }
+:root[data-theme="light"] .task-interop,
+:root[data-theme="light"] .task-card,
+:root[data-theme="light"] .task-timeline button,
+:root[data-theme="light"] .task-score,
+:root[data-theme="light"] .task-artifacts details,
+:root[data-theme="light"] .task-evolution-log > div,
+:root[data-theme="light"] .task-evolution-log > details,
+:root[data-theme="light"] .task-trace-peek { border-color: var(--border); background: var(--surface-raised); color: var(--text-primary); box-shadow: 0 12px 32px var(--shadow-color); }
+:root[data-theme="light"] .task-card:hover { background: var(--surface-hover); }
+:root[data-theme="light"] .task-card.active { background: var(--surface-accent); }
+:root[data-theme="light"] .task-interop input,
+:root[data-theme="light"] .task-interop button,
+:root[data-theme="light"] .task-config-bar select,
+:root[data-theme="light"] .task-slot-bindings select,
+:root[data-theme="light"] .task-env-summary,
+:root[data-theme="light"] .task-controls button,
+:root[data-theme="light"] .task-ide-context button,
+:root[data-theme="light"] .task-input input { border-color: var(--border); background: var(--input-background); color: var(--text-primary); }
+:root[data-theme="light"] .task-header p,
+:root[data-theme="light"] .task-card small,
+:root[data-theme="light"] .task-timeline em,
+:root[data-theme="light"] .task-check p,
+:root[data-theme="light"] .task-trace-peek pre,
+:root[data-theme="light"] .task-detail-panel pre { color: var(--text-muted); }
+:root[data-theme="light"] .task-detail-panel > nav button.active { color: var(--text-primary); }
+
+/* EgoIR */
+:root[data-theme="light"] .egoir-workbench { background: var(--bg); color: var(--text-primary); }
+:root[data-theme="light"] .egoir-workbench > header,
+:root[data-theme="light"] .egoir-toolbar,
+:root[data-theme="light"] .egoir-editor,
+:root[data-theme="light"] .egoir-workbench > main > aside { border-color: var(--border); background: var(--surface-1); }
+:root[data-theme="light"] .egoir-workbench header select,
+:root[data-theme="light"] .egoir-editor > textarea,
+:root[data-theme="light"] .egoir-workbench aside textarea { border-color: var(--border); background: var(--input-background); color: var(--text-primary); }
+:root[data-theme="light"] .egoir-workbench aside details { border-color: var(--border); background: var(--surface-raised); }
+:root[data-theme="light"] .egoir-workbench aside summary { color: var(--text-primary); }
+:root[data-theme="light"] .egoir-workbench header p,
+:root[data-theme="light"] .egoir-workbench aside p,
+:root[data-theme="light"] .egoir-workbench aside label,
+:root[data-theme="light"] .egoir-workbench aside pre { color: var(--text-muted); }
+
+/* Agent Changes and Checkpoints */
+:root[data-theme="light"] .change-dashboard,
+:root[data-theme="light"] .checkpoint-dashboard { background: var(--bg); color: var(--text-primary); }
+:root[data-theme="light"] .change-dashboard-header,
+:root[data-theme="light"] .change-dashboard-file,
+:root[data-theme="light"] .change-dashboard-file-head,
+:root[data-theme="light"] .change-dashboard-hunk,
+:root[data-theme="light"] .change-dashboard-hunk-head,
+:root[data-theme="light"] .checkpoint-create,
+:root[data-theme="light"] .checkpoint-timeline,
+:root[data-theme="light"] .checkpoint-preview,
+:root[data-theme="light"] .checkpoint-impact { border-color: var(--border); background: var(--surface-raised); }
+:root[data-theme="light"] .change-dashboard-header h2,
+:root[data-theme="light"] .change-dashboard-file-head strong,
+:root[data-theme="light"] .checkpoint-header h2,
+:root[data-theme="light"] .checkpoint-preview-title h3,
+:root[data-theme="light"] .checkpoint-impact-main strong { color: var(--text-primary); }
+:root[data-theme="light"] .change-dashboard button,
+:root[data-theme="light"] .checkpoint-create input,
+:root[data-theme="light"] .checkpoint-create textarea { border-color: var(--border); background: var(--button-bg); color: var(--button-text); }
+:root[data-theme="light"] .change-inline-diff { color: var(--text-secondary); background: var(--surface-sunken); }
+:root[data-theme="light"] .checkpoint-card { color: var(--text-secondary); }
+:root[data-theme="light"] .checkpoint-card:hover,
+:root[data-theme="light"] .checkpoint-card.selected { background: var(--surface-accent); }
+:root[data-theme="light"] .checkpoint-dot { border-color: var(--surface-raised); }
+
+/* Inline-style legacy managers now expose stable roots. */
+.identity-manager,
+.environment-manager,
+.settings-workbench,
+.evolution-workbench,
+.research-workbench,
+.background-runs-workbench { color: var(--text-primary); }
+.identity-manager input,
+.identity-manager select,
+.identity-manager textarea,
+.environment-manager input,
+.environment-manager select,
+.environment-manager textarea,
+.settings-workbench input,
+.settings-workbench select,
+.settings-workbench textarea,
+.evolution-workbench input,
+.evolution-workbench select,
+.evolution-workbench textarea,
+.research-workbench input,
+.research-workbench select,
+.research-workbench textarea,
+.background-runs-workbench input,
+.background-runs-workbench select,
+.background-runs-workbench textarea { border-color: var(--border) !important; background: var(--input-background) !important; color: var(--text-primary) !important; }
+:root[data-theme="light"] .identity-manager > div:first-child,
+:root[data-theme="light"] .environment-manager > div:first-child { border-color: var(--border) !important; background: var(--surface-1); }
+:root[data-theme="light"] .identity-manager h3,
+:root[data-theme="light"] .environment-manager h3 { color: var(--text-primary) !important; }
+:root[data-theme="light"] .identity-manager div[style*="background: rgb(42, 63, 95)"],
+:root[data-theme="light"] .environment-manager div[style*="background: rgb(42, 63, 95)"] { background: var(--surface-accent) !important; }
+:root[data-theme="light"] .evolution-workbench div[style*="background: rgb(10, 22, 40)"],
+:root[data-theme="light"] .research-workbench pre,
+:root[data-theme="light"] .background-runs-workbench pre { background: var(--surface-sunken) !important; color: var(--text-secondary) !important; }
+:root[data-theme="light"] .research-workbench section,
+:root[data-theme="light"] .background-runs-workbench section,
+:root[data-theme="light"] .background-runs-workbench details { border-color: var(--border) !important; }
+:root[data-theme="light"] .proof-evolution-lab details { border-color: var(--border) !important; }
+
+/* Neutral scrollbars should not stay charcoal in light mode. */
+:root[data-theme="light"] * { scrollbar-color: #afb8c1 transparent; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb { background-color: #afb8c1; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background-color: #8c959f; }

@@ -63,11 +63,11 @@ export default function Settings() {
   };
 
   return (
-    <div style={{ padding: 32, maxWidth: 700, margin: "0 auto" }}>
-      <h2 style={{ color: "#fff", marginBottom: 24, fontSize: 18 }}>⚙️ Settings</h2>
+    <div className="settings-workbench" style={{ padding: 32, maxWidth: 700, margin: "0 auto" }}>
+      <h2 style={{ color: "var(--text-primary)", marginBottom: 24, fontSize: 18 }}>⚙️ Settings</h2>
 
       <div style={{
-        background: "#16213e",
+        background: "var(--surface-raised)",
         borderRadius: 8,
         padding: 20,
         marginBottom: 20,
@@ -76,7 +76,7 @@ export default function Settings() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <div>
             <h3 style={{ color: "#7ecfff", fontSize: 14, margin: "0 0 5px" }}>Model provider</h3>
-            <div style={{ color: "#cbd5e1", fontSize: 12 }}>
+            <div style={{ color: "var(--text-secondary)", fontSize: 12 }}>
               {aiStatus ? `${aiStatus.provider} · ${aiStatus.model || "no model"}` : "Loading…"}
             </div>
           </div>
@@ -88,7 +88,7 @@ export default function Settings() {
             {probing ? "Probing…" : "Probe capabilities"}
           </button>
         </div>
-        <div style={{ marginTop: 12, fontSize: 11, color: "#94a3b8", lineHeight: 1.7 }}>
+        <div style={{ marginTop: 12, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.7 }}>
           <div>Configured: <b style={{ color: aiStatus?.configured ? "#86efac" : "#fca5a5" }}>{aiStatus?.configured ? "yes" : "no"}</b></div>
           <div>API key: {aiStatus?.has_api_key ? "present (kept server-side)" : "not required / missing"}</div>
           <div>Health: {aiStatus?.health === true ? "healthy" : aiStatus?.health === false ? "failed" : "not probed"}</div>
@@ -104,8 +104,8 @@ export default function Settings() {
         )}
         {aiStatus?.last_probe?.checks && (
           <details style={{ marginTop: 12 }}>
-            <summary style={{ cursor: "pointer", color: "#94a3b8", fontSize: 11 }}>Protocol checks and latency</summary>
-            <pre style={{ background: "#08111f", padding: 10, borderRadius: 4, color: "#cbd5e1", fontSize: 10, overflow: "auto" }}>{JSON.stringify(aiStatus.last_probe.checks, null, 2)}</pre>
+            <summary style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: 11 }}>Protocol checks and latency</summary>
+            <pre style={{ background: "var(--surface-sunken)", padding: 10, borderRadius: 4, color: "var(--text-secondary)", fontSize: 10, overflow: "auto" }}>{JSON.stringify(aiStatus.last_probe.checks, null, 2)}</pre>
           </details>
         )}
         {aiStatus?.last_request && (
@@ -126,7 +126,7 @@ export default function Settings() {
 
       {/* Session Analyzer Config */}
       <div style={{
-        background: "#16213e",
+        background: "var(--surface-raised)",
         borderRadius: 8,
         padding: 20,
         marginBottom: 20,
@@ -149,10 +149,10 @@ export default function Settings() {
             style={{
               width: "100%",
               padding: "8px 12px",
-              background: "#0d1b2a",
-              border: "1px solid #1e3a5f",
+              background: "var(--input-background)",
+              border: "1px solid var(--border)",
               borderRadius: 4,
-              color: "#ddd",
+              color: "var(--text-primary)",
               fontSize: 13,
             }}
           >
@@ -172,10 +172,10 @@ export default function Settings() {
             style={{
               width: "100%",
               padding: "8px 12px",
-              background: "#0d1b2a",
-              border: "1px solid #1e3a5f",
+              background: "var(--input-background)",
+              border: "1px solid var(--border)",
               borderRadius: 4,
-              color: "#ddd",
+              color: "var(--text-primary)",
               fontSize: 13,
             }}
           >
@@ -188,7 +188,7 @@ export default function Settings() {
 
       {/* Improver Config */}
       <div style={{
-        background: "#16213e",
+        background: "var(--surface-raised)",
         borderRadius: 8,
         padding: 20,
         marginBottom: 20,

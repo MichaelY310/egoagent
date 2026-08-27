@@ -6,11 +6,11 @@ import {
 } from '../api/client';
 
 const panel: CSSProperties = {
-  background: '#16213e', border: '1px solid #1e3a5f', borderRadius: 8,
+  background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8,
   padding: 20, marginBottom: 20,
 };
 const row: CSSProperties = { display: 'grid', gridTemplateColumns: '210px 1fr', gap: 14, alignItems: 'center', margin: '11px 0' };
-const control: CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', background: '#0d1b2a', color: '#ddd', border: '1px solid #334155', borderRadius: 5 };
+const control: CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', background: 'var(--input-background)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 5 };
 
 export default function SecuritySettings() {
   const [settings, setSettings] = useState<WorkspaceSecuritySettings | null>(null);
@@ -83,7 +83,7 @@ export default function SecuritySettings() {
 
     {settings.profile === 'unrestricted' && <div style={{ border: '1px solid #7f1d1d', color: '#fecaca', background: '#450a0a55', padding: 10, borderRadius: 5, fontSize: 12 }}>Unrestricted 会扩大提示注入、误删文件和凭据外传的影响范围。请只对可信工作区短时使用。</div>}
     {message && <p style={{ color: message.startsWith('✓') ? '#86efac' : '#fca5a5', fontSize: 11 }}>{message}</p>}
-    <details style={{ margin: '10px 0', color: '#94a3b8', fontSize: 11 }}><summary>查看当前有效后端策略</summary><pre style={{ maxHeight: 230, overflow: 'auto', background: '#08111f', padding: 10 }}>{JSON.stringify(effective, null, 2)}</pre></details>
+    <details style={{ margin: '10px 0', color: 'var(--text-muted)', fontSize: 11 }}><summary>查看当前有效后端策略</summary><pre style={{ maxHeight: 230, overflow: 'auto', background: 'var(--surface-sunken)', color: 'var(--text-secondary)', padding: 10 }}>{JSON.stringify(effective, null, 2)}</pre></details>
     <button disabled={busy} onClick={() => void save()} style={{ padding: '9px 16px', border: 0, borderRadius: 5, color: '#fff', background: '#0369a1', cursor: 'pointer' }}>{busy ? '保存中…' : '保存安全设置'}</button>
   </section>;
 }

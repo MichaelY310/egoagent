@@ -12,7 +12,7 @@ type ScienceProject = ProjectSummary & {
   stages: Record<string, { actor: string; at: number; payload: Record<string, unknown> }>;
 };
 
-const card: React.CSSProperties = { background: '#151521', border: '1px solid #303044', borderRadius: 10, padding: 16 };
+const card: React.CSSProperties = { background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 };
 const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', background: '#0d0d16', color: '#eee', border: '1px solid #3a3a50', borderRadius: 6, padding: '9px 10px' };
 const button: React.CSSProperties = { border: '1px solid #4a6a83', borderRadius: 6, padding: '8px 12px', color: '#dff4ff', background: '#193348', cursor: 'pointer' };
 
@@ -101,7 +101,7 @@ export default function ResearchLab() {
     catch (error) { setMessage(String(error)); } finally { setBusy(false); }
   };
 
-  return <div style={{ height: '100%', overflow: 'auto', background: '#0b0b12', color: '#ddd', padding: 20, boxSizing: 'border-box' }}>
+  return <div className="research-workbench" style={{ height: '100%', overflow: 'auto', background: 'var(--bg)', color: 'var(--text-primary)', padding: 20, boxSizing: 'border-box' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
       <h2 style={{ margin: 0, color: '#9bddff' }}>Research Lab</h2>
       <button style={button} onClick={() => setView('science')}>证据科学循环</button>

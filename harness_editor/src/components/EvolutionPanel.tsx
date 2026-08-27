@@ -213,17 +213,17 @@ export default function EvolutionPanel() {
   };
 
   const cardStyle: React.CSSProperties = {
-    background: "#202020",
+    background: "var(--surface-raised)",
     borderRadius: 8,
-    border: "1px solid #353535",
+    border: "1px solid var(--border)",
     padding: "14px 16px",
     marginBottom: 12,
   };
 
   return (
-    <div style={{ padding: 20, maxWidth: 980, margin: "0 auto", color: "#e0e0e0" }}>
-      <h2 style={{ color: "#f3f3f3", marginBottom: 4 }}>Improve</h2>
-      <p style={{ color: "#888", fontSize: 12, marginBottom: 20 }}>
+    <div className="evolution-workbench" style={{ padding: 20, maxWidth: 980, margin: "0 auto", color: "var(--text-primary)" }}>
+      <h2 style={{ color: "var(--text-primary)", marginBottom: 4 }}>Improve</h2>
+      <p style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 20 }}>
         从真实失败开始，只添加必要能力；通过 held-out、回滚与因果证书后再部署。
       </p>
 

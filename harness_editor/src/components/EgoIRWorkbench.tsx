@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as api from '../api/client';
 
-const button: React.CSSProperties = { padding: '7px 11px', border: '1px solid #365270', borderRadius: 5, background: '#18314f', color: '#dbeafe', cursor: 'pointer', fontSize: 11 };
+const button: React.CSSProperties = { padding: '7px 11px', border: '1px solid var(--border)', borderRadius: 5, background: 'var(--button-bg)', color: 'var(--button-text)', cursor: 'pointer', fontSize: 11 };
 
 export default function EgoIRWorkbench() {
   const [harnesses, setHarnesses] = useState<any[]>([]);

@@ -299,7 +299,7 @@ export default function IdentityManager() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100%", gap: 0 }}>
+    <div className="identity-manager" style={{ display: "flex", height: "100%", gap: 0 }}>
       {/* 左侧列表 */}
       <div style={{ width: 280, borderRight: "1px solid #333", padding: 12, overflowY: "auto", flexShrink: 0 }}>
         <h3 style={{ margin: "0 0 8px", fontSize: 14, color: "#aaa" }}>🤖 Identities</h3>
@@ -675,6 +675,6 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
 }
 
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 11, color: "#888", marginBottom: 2 };
-const inputStyle: React.CSSProperties = { width: "100%", padding: "4px 8px", fontSize: 12, background: "#1a1a2e", border: "1px solid #444", color: "#ddd", borderRadius: 4, boxSizing: "border-box" };
-const textareaStyle: React.CSSProperties = { width: "100%", padding: "6px 8px", fontSize: 12, background: "#1a1a2e", border: "1px solid #444", color: "#ddd", borderRadius: 4, boxSizing: "border-box", resize: "vertical" };
+const inputStyle: React.CSSProperties = { width: "100%", padding: "4px 8px", fontSize: 12, background: "var(--input-background)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 4, boxSizing: "border-box" };
+const textareaStyle: React.CSSProperties = { width: "100%", padding: "6px 8px", fontSize: 12, background: "var(--input-background)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 4, boxSizing: "border-box", resize: "vertical" };
 const btnStyle: React.CSSProperties = { padding: "4px 10px", fontSize: 12, background: "#2a5f3f", color: "#cfc", border: "none", borderRadius: 4, cursor: "pointer" };

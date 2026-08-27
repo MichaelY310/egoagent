@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import * as api from '../api/client';
 
-const button: React.CSSProperties = { padding: '6px 10px', border: '1px solid #365270', borderRadius: 5, background: '#18314f', color: '#dbeafe', cursor: 'pointer', fontSize: 10 };
-const area: React.CSSProperties = { boxSizing: 'border-box', width: '100%', minHeight: 120, padding: 8, border: '1px solid #334155', borderRadius: 5, background: '#060b14', color: '#dbeafe', font: '9px/1.45 Consolas, monospace', resize: 'vertical' };
+const button: React.CSSProperties = { padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 5, background: 'var(--button-bg)', color: 'var(--button-text)', cursor: 'pointer', fontSize: 10 };
+const area: React.CSSProperties = { boxSizing: 'border-box', width: '100%', minHeight: 120, padding: 8, border: '1px solid var(--border)', borderRadius: 5, background: 'var(--input-background)', color: 'var(--text-primary)', font: '9px/1.45 Consolas, monospace', resize: 'vertical' };
 
 const PROPOSAL = {
   format: 'ego.evolution-proposal.v1', id: 'proposal_example', target: 'react_single',
@@ -73,7 +73,7 @@ export default function ProofEvolutionLab() {
   useEffect(() => { refresh().catch((error) => setResult({ error: error.message })); }, []);
   const run = async (action: () => Promise<any>) => { setBusy(true); try { setResult(await action()); await refresh(); } catch (error: any) { setResult({ error: error.message }); } finally { setBusy(false); } };
 
-  return <div style={{ background: '#101b31', border: '1px solid #6d28d9', borderRadius: 8, padding: 14, marginBottom: 12 }}>
+  return <div className="proof-evolution-lab" style={{ background: 'var(--surface-raised)', border: '1px solid #6d28d9', borderRadius: 8, padding: 14, marginBottom: 12 }}>
     <h3 style={{ margin: '0 0 5px', color: '#d8b4fe', fontSize: 14 }}>Proof-carrying Evolution Lab</h3>
     <p style={{ margin: '0 0 10px', color: '#94a3b8', fontSize: 10, lineHeight: 1.55 }}>不根据关键词强迫进化。先用相同 shadow tasks 实测每个候选层；在性能近似最优者中选择最小改动层。来自同一来源的重复轨迹只算一条证据，永久进化还需要独立可信验证。变更必须在 validation + held-out + regression 全部通过后才进入 trusted。</p>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 9 }}>

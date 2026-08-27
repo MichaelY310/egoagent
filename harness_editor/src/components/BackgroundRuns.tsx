@@ -203,7 +203,7 @@ export default function BackgroundRuns() {
   };
 
   return (
-    <div style={{ padding: 24, maxWidth: 1180, margin: "0 auto", color: "#e2e8f0" }}>
+    <div className="background-runs-workbench" style={{ padding: 24, maxWidth: 1180, margin: "0 auto", color: "var(--text-primary)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12 }}>
         <div>
           <h2 style={{ margin: "0 0 5px", fontSize: 18 }}>Background Agents</h2>
@@ -212,7 +212,7 @@ export default function BackgroundRuns() {
         <button style={button} onClick={() => void refresh()}>↻ Refresh</button>
       </div>
 
-      <section style={{ marginTop: 16, background: "#111c33", border: "1px solid #263a5a", borderRadius: 8, padding: 14 }}>
+      <section style={{ marginTop: 16, background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 8, padding: 14 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 9 }}>
           <label style={{ fontSize: 10, color: "#94a3b8" }}>Harness<select style={{ ...input, width: "100%", display: "block", marginTop: 4 }} value={form.harness} onChange={(e) => setForm({ ...form, harness: e.target.value })}>{harnesses.map((value) => <option key={value}>{value}</option>)}</select></label>
           <label style={{ fontSize: 10, color: "#94a3b8" }}>Identity<select style={{ ...input, width: "100%", display: "block", marginTop: 4 }} value={form.identity} onChange={(e) => setForm({ ...form, identity: e.target.value })}>{identities.map((value) => <option key={value}>{value}</option>)}</select></label>
@@ -245,7 +245,7 @@ export default function BackgroundRuns() {
 
       <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
         {runs.map((run) => (
-          <details key={run.id} style={{ background: "#111c33", border: "1px solid #263a5a", borderRadius: 8, padding: 12 }}>
+          <details key={run.id} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
             <summary style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
               <b style={{ color: "#7dd3fc" }}>{run.id.slice(0, 10)}</b>
               <span style={{ color: terminal.has(run.status) ? run.status === "succeeded" ? "#86efac" : "#fca5a5" : "#fcd34d" }}>{run.status}{run.pause_requested ? " (pausing…)" : ""}</span>

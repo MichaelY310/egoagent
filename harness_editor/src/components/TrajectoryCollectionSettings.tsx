@@ -5,8 +5,8 @@ import {
   type TrajectoryCollectionSettings,
 } from "../api/client";
 
-const box: React.CSSProperties = { background: "#181818", border: "1px solid #303030", borderRadius: 6, padding: 16, marginBottom: 18 };
-const input: React.CSSProperties = { width: "100%", boxSizing: "border-box", background: "#1e1e1e", border: "1px solid #3c3c3c", borderRadius: 3, color: "#d4d4d4", padding: "7px 9px", fontSize: 12 };
+const box: React.CSSProperties = { background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 6, padding: 16, marginBottom: 18 };
+const input: React.CSSProperties = { width: "100%", boxSizing: "border-box", background: "var(--input-background)", border: "1px solid var(--border)", borderRadius: 3, color: "var(--text-primary)", padding: "7px 9px", fontSize: 12 };
 
 export default function TrajectoryCollectionSettingsPanel() {
   const [settings, setSettings] = useState<TrajectoryCollectionSettings | null>(null);

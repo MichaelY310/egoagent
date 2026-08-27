@@ -58,8 +58,8 @@ const EMPTY_PROFILE: ModelProfile = {
 };
 
 const card: React.CSSProperties = {
-  background: "#111c33",
-  border: "1px solid #263a5a",
+  background: "var(--surface-raised)",
+  border: "1px solid var(--border)",
   borderRadius: 8,
   padding: 14,
 };
@@ -67,19 +67,19 @@ const card: React.CSSProperties = {
 const field: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  background: "#08111f",
-  border: "1px solid #334155",
-  color: "#e2e8f0",
+  background: "var(--input-background)",
+  border: "1px solid var(--border)",
+  color: "var(--text-primary)",
   borderRadius: 5,
   padding: "7px 8px",
   fontSize: 11,
 };
 
 const button: React.CSSProperties = {
-  border: "1px solid #365270",
+  border: "1px solid var(--border)",
   borderRadius: 5,
-  background: "#18314f",
-  color: "#dbeafe",
+  background: "var(--button-bg)",
+  color: "var(--button-text)",
   padding: "6px 9px",
   cursor: "pointer",
   fontSize: 11,
@@ -169,7 +169,7 @@ export default function ModelProfiles() {
   };
 
   return (
-    <section style={{ background: "#16213e", border: "1px solid #1e3a5f", borderRadius: 8, padding: 20, marginBottom: 20 }}>
+    <section style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 8, padding: 20, marginBottom: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
         <div>
           <h3 style={{ color: "#7ecfff", fontSize: 14, margin: "0 0 5px" }}>Role-aware model routing</h3>
@@ -257,7 +257,7 @@ export default function ModelProfiles() {
           {profiles.map((profile) => {
             const index = ordered.indexOf(profile.id);
             return (
-              <div key={profile.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", background: "#08111f", borderRadius: 5 }}>
+              <div key={profile.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", background: "var(--surface-sunken)", borderRadius: 5 }}>
                 <input type="checkbox" checked={index >= 0} onChange={(e) => updateRole(profile.id, e.target.checked)} />
                 <span style={{ color: "#cbd5e1", fontSize: 11, flex: 1 }}>{index >= 0 ? `${index + 1}. ` : ""}{profile.name}</span>
                 <button style={button} disabled={index <= 0} onClick={() => moveRole(profile.id, -1)}>↑</button>

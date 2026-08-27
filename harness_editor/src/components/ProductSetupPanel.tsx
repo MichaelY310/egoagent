@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import * as api from '../api/client';
 
-const card: React.CSSProperties = { background: '#111c33', border: '1px solid #263a5a', borderRadius: 8, padding: 14 };
-const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '7px 8px', border: '1px solid #334155', borderRadius: 5, background: '#08111f', color: '#e2e8f0', fontSize: 11 };
-const button: React.CSSProperties = { padding: '7px 10px', border: '1px solid #365270', borderRadius: 5, background: '#18314f', color: '#dbeafe', cursor: 'pointer', fontSize: 11 };
+const card: React.CSSProperties = { background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 };
+const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '7px 8px', border: '1px solid var(--border)', borderRadius: 5, background: 'var(--input-background)', color: 'var(--text-primary)', fontSize: 11 };
+const button: React.CSSProperties = { padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 5, background: 'var(--button-bg)', color: 'var(--button-text)', cursor: 'pointer', fontSize: 11 };
 
 const PRESETS: Record<string, { base_url: string; model: string; api_key_env: string }> = {
   deepseek: { base_url: 'https://api.deepseek.com', model: 'deepseek-chat', api_key_env: 'DEEPSEEK_API_KEY' },
@@ -51,7 +51,7 @@ export default function ProductSetupPanel() {
   const checks = diagnostics?.checks || {};
 
   return (
-    <section style={{ background: '#16213e', border: '1px solid #1e3a5f', borderRadius: 8, padding: 20, marginBottom: 20 }}>
+    <section style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, padding: 20, marginBottom: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
         <div><h3 style={{ color: '#7ecfff', fontSize: 14, margin: '0 0 5px' }}>First-run setup & product health</h3><p style={{ color: '#94a3b8', fontSize: 11, margin: 0 }}>Secrets stay in the gitignored server-side .env.local. Diagnostics never return them.</p></div>
         <span style={{ color: diagnostics?.healthy ? '#86efac' : '#fca5a5', fontSize: 11 }}>{diagnostics?.healthy ? '✓ ready' : '● attention needed'}</span>
@@ -91,7 +91,7 @@ export default function ProductSetupPanel() {
       <details style={{ ...card, marginTop: 12 }}>
         <summary style={{ color: '#dbeafe', cursor: 'pointer', fontSize: 12 }}>3. Dependency health & diagnostics bundle</summary>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6, marginTop: 10 }}>
-          {['python', 'node', 'npm', 'git', 'docker', 'void_runtime', 'studio_dependencies'].map((name) => <div key={name} style={{ padding: 7, borderRadius: 5, background: '#08111f', color: checks[name]?.available ? '#86efac' : '#fca5a5', fontSize: 10 }}><b>{checks[name]?.available ? '✓' : '×'} {name}</b><div style={{ color: '#64748b', marginTop: 3 }}>{checks[name]?.version || checks[name]?.reason || checks[name]?.path || 'not found'}</div></div>)}
+          {['python', 'node', 'npm', 'git', 'docker', 'void_runtime', 'studio_dependencies'].map((name) => <div key={name} style={{ padding: 7, borderRadius: 5, background: 'var(--surface-sunken)', color: checks[name]?.available ? '#16833f' : '#cf222e', fontSize: 10 }}><b>{checks[name]?.available ? '✓' : '×'} {name}</b><div style={{ color: 'var(--text-muted)', marginTop: 3 }}>{checks[name]?.version || checks[name]?.reason || checks[name]?.path || 'not found'}</div></div>)}
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button style={button} disabled={busy} onClick={() => void refresh()}>Run checks again</button><button style={button} disabled={busy} onClick={() => void act(api.createDiagnosticsBundle, (result) => `Redacted diagnostics created: ${result.path}`)}>Create diagnostics ZIP</button></div>
       </details>
@@ -100,7 +100,7 @@ export default function ProductSetupPanel() {
         <summary style={{ color: '#dbeafe', cursor: 'pointer', fontSize: 12 }}>4. Offline update & rollback</summary>
         <p style={{ color: '#94a3b8', fontSize: 10, lineHeight: 1.5 }}>Updates are explicit local archives with an ego.update.v1 manifest. Runtime data and secrets are protected. Every update creates a rollback snapshot first.</p>
         <div style={{ display: 'flex', gap: 7 }}><input style={input} value={updateArchive} onChange={(e) => setUpdateArchive(e.target.value)} placeholder="Absolute path to update .zip" /><button disabled={busy || !updateArchive.trim()} style={button} onClick={() => { if (window.confirm('Apply this local update and restart services afterwards?')) void act(() => api.applyProductUpdate(updateArchive.trim()), (result) => `Updated ${result.files} files. Rollback: ${result.rollback_id}`); }}>Apply update</button></div>
-        <div style={{ display: 'grid', gap: 5, marginTop: 9 }}>{rollbacks.map((item) => <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 7, background: '#08111f', borderRadius: 5, fontSize: 10 }}><span style={{ flex: 1, color: '#94a3b8' }}>{item.id} · {item.version || 'unknown version'} · {item.replaced?.length || 0} replaced</span><button style={{ ...button, color: '#fecaca' }} disabled={busy || item.rolled_back_at} onClick={() => { if (window.confirm(`Rollback ${item.id}?`)) void act(() => api.rollbackProductUpdate(item.id), () => `Rollback restored. Restart services to load the previous version.`); }}>{item.rolled_back_at ? 'rolled back' : 'Rollback'}</button></div>)}</div>
+        <div style={{ display: 'grid', gap: 5, marginTop: 9 }}>{rollbacks.map((item) => <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 7, background: 'var(--surface-sunken)', borderRadius: 5, fontSize: 10 }}><span style={{ flex: 1, color: 'var(--text-muted)' }}>{item.id} · {item.version || 'unknown version'} · {item.replaced?.length || 0} replaced</span><button style={{ ...button, color: '#cf222e' }} disabled={busy || item.rolled_back_at} onClick={() => { if (window.confirm(`Rollback ${item.id}?`)) void act(() => api.rollbackProductUpdate(item.id), () => `Rollback restored. Restart services to load the previous version.`); }}>{item.rolled_back_at ? 'rolled back' : 'Rollback'}</button></div>)}</div>
       </details>
       {message && <div style={{ marginTop: 10, color: /error|missing|failed|not found/i.test(message) ? '#fca5a5' : '#93c5fd', fontSize: 11, wordBreak: 'break-word' }}>{message}</div>}
     </section>

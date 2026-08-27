@@ -154,7 +154,7 @@ export default function EnvironmentManager() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100%", gap: 0 }}>
+    <div className="environment-manager" style={{ display: "flex", height: "100%", gap: 0 }}>
       {/* 左侧环境列表 */}
       <div style={{ width: 240, borderRight: "1px solid #333", padding: 12, overflowY: "auto", flexShrink: 0 }}>
         <h3 style={{ margin: "0 0 8px", fontSize: 14, color: "#aaa" }}>🌍 Environments</h3>
@@ -362,5 +362,5 @@ export default function EnvironmentManager() {
 }
 
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 11, color: "#888", marginBottom: 2 };
-const textareaStyle: React.CSSProperties = { width: "100%", padding: "6px 8px", fontSize: 12, background: "#1a1a2e", border: "1px solid #444", color: "#ddd", borderRadius: 4, boxSizing: "border-box", resize: "vertical" };
+const textareaStyle: React.CSSProperties = { width: "100%", padding: "6px 8px", fontSize: 12, background: "var(--input-background)", border: "1px solid var(--border)", color: "var(--text-primary)", borderRadius: 4, boxSizing: "border-box", resize: "vertical" };
 const btnStyle: React.CSSProperties = { padding: "4px 10px", fontSize: 12, background: "#2a5f3f", color: "#cfc", border: "none", borderRadius: 4, cursor: "pointer" };
