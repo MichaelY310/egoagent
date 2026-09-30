@@ -1,0 +1,15 @@
+{
+  "task_prompt": "Transform only the conversation metadata supplied by the current Flow node. Preserve every user requirement, durable fact, exact path, command result, error signature, decision and unfinished action. Remove or summarize only demonstrably redundant material. Return exactly the requested structured format with no preamble.",
+  "tool_access": {"whitelist": [], "blacklist": []},
+  "knowledge_access": {"whitelist": [], "blacklist": []},
+  "allow_create_agent": false,
+  "allow_create_identity": false,
+  "allow_modify_agent": false,
+  "allow_modify_identity": false,
+  "allow_add_skill_to_self": false,
+  "allow_add_knowledge_to_self": false,
+  "allow_add_skill_to_other": false,
+  "allow_add_knowledge_to_other": false,
+  "allow_add_tool_to_environment": false,
+  "allow_add_knowledge_to_environment": false
+}

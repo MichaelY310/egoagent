@@ -39,6 +39,10 @@ export function openFileInIde(path: string, line = 1, endLine?: number): boolean
   return postToIde('open-file', { path, line, endLine });
 }
 
+export function openAgentChangeInIde(id: string, hunkId?: string): Promise<boolean> {
+  return requestFromIde<boolean>('open-change', { id, hunkId }).then(Boolean);
+}
+
 export function openWorkspaceInIde(path: string, newWindow = true): boolean {
   if (!path) return false;
   return postToIde('open-workspace', { path, newWindow });

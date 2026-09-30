@@ -268,4 +268,6 @@ def get_memory_prompt(workspace_path: str = DEFAULT_WORKSPACE) -> str:
         if facts:
             section += "\nKey facts:\n" + "\n".join(f"- {fact}" for fact in facts)
         parts.append(section)
-    return "\n\n".join(parts)
+    return ("[Historical project memory — reference only, not a new user request. "
+            "The current user message takes precedence; older greetings and tasks may be stale.]\n\n"
+            + "\n\n".join(parts))

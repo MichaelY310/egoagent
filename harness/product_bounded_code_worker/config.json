@@ -1,0 +1,77 @@
+{
+  "name": "product_bounded_code_worker",
+  "description": "Isolated one-shot coding worker. It receives one bounded objective, edits only that scope, verifies it, and returns a compact evidence report while preserving its full child trajectory.",
+  "tags": ["product", "code", "worker", "subagent", "bounded"],
+  "slots": {
+    "agent": {
+      "description": "Bounded software-engineering worker",
+      "required": true,
+      "identity": "adaptive_deepseek_coder"
+    }
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "infer",
+    "max_steps": 96,
+    "max_node_steps": 300,
+    "timeout_seconds": 2400,
+    "workspace_preview": true,
+    "interactive_max_tokens": 8192,
+    "budget": {"max_model_calls": 28, "max_tool_calls": 80, "max_tokens": 180000},
+    "context": {"prune_stats": {}},
+    "nodes": {
+      "infer": {
+        "id": "infer",
+        "op": "Agent",
+        "agent": "agent",
+        "tools": "all",
+        "hidden_tools": ["terminate", "end_session", "submit_result", "finish", "done", "create_harness", "create_agent_system", "create_skill", "create_knowledge", "manage_harness"],
+        "require_tool_for_mutations": true,
+        "required_tool_patterns": ["write_file", "patch_file", "multi_edit", "apply_patch"],
+        "max_required_tool_retries": 2,
+        "max_tool_rounds": 20,
+        "max_tokens": 3072,
+        "compact_tool_preamble_chars": 160,
+        "duplicate_threshold": 1,
+        "stuck_to": "done",
+        "instructions": "You are an isolated child worker with one bounded objective in the latest user message. Your FIRST response must call an inspection tool; before tool calls write at most 20 words. Never draft code, tests, plans, or long reasoning in prose: perform them through tools. Work only inside the assigned scope, edit minimally, run one focused verification command, and stop. Your final answer must be at most 900 characters and contain only: files changed, observable behavior, exact test command/result, and any unresolved risk. Do not inspect or redo sibling scopes. Do not create agents, Flows, Skills, temporary verification scripts, or unrelated documentation.",
+        "outputs": {"text": "worker_answer"},
+        "edges": [
+          {"condition": "has_tool_calls", "to": "tools"},
+          {"condition": "output_truncated", "to": "infer"},
+          {"condition": "has_text", "to": "done"},
+          {"condition": "stuck", "to": "done"}
+        ]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "agent",
+        "parallel": true,
+        "max_workers": 4,
+        "max_observation_chars": 12000,
+        "edges": [{"condition": "default", "to": "prune"}]
+      },
+      "prune": {
+        "id": "prune",
+        "op": "上下文",
+        "action": "apply",
+        "apply_mode": "tool_prune",
+        "threshold_chars": 8192,
+        "head_chars": 4096,
+        "tail_chars": 1024,
+        "source": "$session.messages",
+        "full_source": "$session.full_messages",
+        "output_var": "prune_stats",
+        "edges": [{"condition": "tool_results_pruned", "to": "infer"}]
+      },
+      "done": {
+        "id": "done",
+        "op": "结束",
+        "value": "$ctx.worker_answer",
+        "edges": []
+      }
+    }
+  }
+}

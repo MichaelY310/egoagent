@@ -32,7 +32,7 @@ Studio keeps common configuration in visual controls and reserves an “Advanced
 - EgoIR for typed structural editing and round trips;
 - the full runtime format only when an advanced field is unavailable in those representations.
 
-Both guides include `ego.dag-contracts.v1`, so an Agent does not need to guess node ports or control events. Writes remain revision-checked and validated before commit.
+Both guides include `ego.dag-contracts.v1` and the optional `ego.flow-graph.v2` socket schema, so an Agent does not need to guess node ports or control events. A control edge connects `event:<name>` to `flow`; a typed data edge connects `output:<name>` to `input:<name>` and is persisted in `pipeline.data_links` plus an executable `$node.<source>.<port>` input reference. Writes remain revision-checked and validated before commit.
 
 ## Validation boundaries
 

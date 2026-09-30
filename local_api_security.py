@@ -3,12 +3,37 @@
 from __future__ import annotations
 
 import os
+import hmac
+from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlparse
 
 
 LOCAL_ORIGIN_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def remote_cookie_name():
+    return 'egoagent_remote_' + os.environ.get('EGOAGENT_REMOTE_ID', '')
+
+
+def remote_request_authorized(headers):
+    """SSH hosts can have other users: loopback alone is NOT authentication."""
+    expected = os.environ.get('EGOAGENT_REMOTE_TOKEN', '')
+    if not expected:
+        return True
+    supplied = headers.get('X-EgoAgent-Remote-Token', '')
+    if not supplied:
+        try:
+            cookies = SimpleCookie(headers.get('Cookie', ''))
+            cookie = cookies.get(remote_cookie_name())
+            supplied = cookie.value if cookie else ''
+        except Exception:
+            supplied = ''
+    if not supplied:
+        protocols = headers.get('Sec-WebSocket-Protocol', '').split(',')
+        supplied = next((p.strip()[15:] for p in protocols if p.strip().startswith('egoagent-token.')), '')
+    return hmac.compare_digest(str(supplied).encode('utf-8'), expected.encode('utf-8'))
 
 
 class UnsafeResourcePath(ValueError):

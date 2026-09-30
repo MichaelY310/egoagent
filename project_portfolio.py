@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -284,6 +285,30 @@ class ProjectPortfolio:
             self._save(payload)
             return dict(record)
 
+    def trash_session(self, name: str) -> dict[str, Any]:
+        """Move one exact Session directory to a local recoverable trash."""
+        session_dir = self._session_dir(name)
+        trash_root = (self.state_path.parent / "session_trash").resolve()
+        trash_root.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        destination = trash_root / f"{session_dir.name}_{stamp}"
+        suffix = 1
+        while destination.exists():
+            destination = trash_root / f"{session_dir.name}_{stamp}_{suffix}"
+            suffix += 1
+        with self._lock:
+            shutil.move(str(session_dir), str(destination))
+            payload = self._load()
+            payload.get("sessions", {}).pop(name, None)
+            for project in payload.get("projects", {}).values():
+                if isinstance(project, dict) and project.get("active_session") == name:
+                    project["active_session"] = ""
+            self._session_cache.pop(str(session_dir), None)
+            self._attribution_cache.pop(str(session_dir), None)
+            self._aggregate_cache = None
+            self._save(payload)
+        return {"name": name, "trashed_to": str(destination), "recoverable": True}
+
     def _session_dir(self, name: str) -> Path:
         if not name or Path(name).name != name or name in {".", ".."}:
             raise ValueError("Invalid session name")
@@ -354,6 +379,7 @@ class ProjectPortfolio:
             "working_message_count": working,
             "summary": _first_user_summary(directory),
             "harness": str(metadata.get("harness") or self._harness_from_name(directory.name)),
+            "agent_config": dict(metadata.get("agent_config")) if isinstance(metadata.get("agent_config"), dict) else {},
             "session_id": str(metadata.get("session_id") or ""),
             "trace_id": str(metadata.get("trace_id") or ""),
             "has_trajectory": (directory / "trajectory.jsonl").is_file(),
@@ -361,6 +387,16 @@ class ProjectPortfolio:
             "trajectory_agents": list(metadata.get("trajectory_agents") or []),
             "health": metadata.get("health") if isinstance(metadata.get("health"), dict) else None,
         }
+        if record["agent_config"]:
+            record["harness"] = str(record["agent_config"].get("harness") or record["harness"])
+            identities = [
+                str(value).replace("\\", "/").rstrip("/").split("/")[-1]
+                for value in dict(record["agent_config"].get("agents") or {}).values()
+                if str(value).strip()
+            ]
+            record["identity"] = identities[0] if identities else ""
+        else:
+            record["identity"] = ""
         self._session_cache[key] = (signature, record)
         return dict(record)
 

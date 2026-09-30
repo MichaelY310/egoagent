@@ -21,6 +21,7 @@ NODE_CONTRACTS = node_registry_catalog()
 def dag_contract_catalog() -> dict[str, Any]:
     return {
         "version": CONTRACT_VERSION,
+        "graph_schema": "ego.flow-graph.v2",
         "port_types": sorted(PORT_TYPES),
         "references": [
             "$ctx.key", "$node.node_id.port", "$last.port", "$session.messages",
@@ -43,6 +44,7 @@ def dag_contract_catalog() -> dict[str, Any]:
             "budget": "model/tool/process/token/cost/time limits",
             "event_log": "optional replayable JSONL event stream",
             "permissions": "runtime permission policy",
+            "data_links": "typed node-output to node-input links; mirrored as $node references",
         },
         "nodes": copy.deepcopy(NODE_CONTRACTS),
         "authoring_rules": [

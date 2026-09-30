@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as api from '../api/client';
-import { openFileInIde, reviewAgentChangeInIde } from '../ideBridge';
+import { openAgentChangeInIde, openFileInIde, reviewAgentChangeInIde } from '../ideBridge';
 
 type ReviewHunk = {
   id: string;
@@ -67,6 +67,17 @@ export default function ChangeDashboard() {
     () => changes.reduce((total, change) => total + change.hunks.filter((hunk) => hunk.status === 'pending').length, 0),
     [changes],
   );
+
+  const openChange = async (change: ReviewChange, hunk?: ReviewHunk) => {
+    try {
+      if (change.change_type === 'text' && await openAgentChangeInIde(change.id, hunk?.id)) return;
+      if (!openFileInIde(change.file_path, (hunk?.old_start ?? 0) + 1)) {
+        setError('请在 EgoAgent IDE 中打开此看板，才能跳转到文件编辑器。');
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
 
   const apply = useCallback(async (
     change: ReviewChange,
@@ -144,7 +155,7 @@ export default function ChangeDashboard() {
           return <section className={`change-dashboard-file ${change.status}`} key={change.id}>
             <div className="change-dashboard-file-head">
               <div>
-                <button className="change-open-file" onClick={() => openFileInIde(change.file_path)} title="在 Void 编辑器打开"><strong>{change.change_type === 'move' ? `${change.source_path} → ${change.file_path}` : change.file_path}</strong></button>
+                <button className="change-open-file" onClick={() => void openChange(change)} title="在 Void 编辑器打开此事务的红绿审阅"><strong>{change.change_type === 'move' ? `${change.source_path} → ${change.file_path}` : change.file_path}</strong></button>
                 <span>{change.tool_name} · {change.change_type}{change.is_new_file ? ' · 新文件' : ''}{change.is_deleted_file ? ' · 删除文件' : ''}</span>
               </div>
               <div>
@@ -156,7 +167,7 @@ export default function ChangeDashboard() {
             <details className="change-revisions"><summary>事务与 revision</summary><code>{change.transaction_id}</code><code>base {change.base_revision}</code><code>live {change.materialized_revision}</code><code>proposed {change.proposed_revision}</code></details>
             {change.hunks.map((hunk) => <article className={`change-dashboard-hunk ${hunk.status}`} key={hunk.id}>
               <div className="change-dashboard-hunk-head">
-                <button className="change-open-hunk" onClick={() => openFileInIde(change.file_path, hunk.old_start + 1)}>#{hunk.ordinal + 1} · {hunk.tag} · L{hunk.old_start + 1}</button>
+                <button className="change-open-hunk" onClick={() => void openChange(change, hunk)}>#{hunk.ordinal + 1} · {hunk.tag} · L{hunk.old_start + 1}</button>
                 <div>{hunk.status === 'pending' ? <><button className="accept" onClick={() => apply(change, 'accept', hunk.id)} disabled={!!busy}>接受</button><button className="reject" onClick={() => apply(change, 'reject', hunk.id)} disabled={!!busy}>拒绝</button></> : <><span>{hunk.status}</span>{hunk.can_undo && <button onClick={() => apply(change, 'undo', hunk.id)} disabled={!!busy}>撤销决定</button>}</>}</div>
               </div>
               {change.change_type === 'binary'

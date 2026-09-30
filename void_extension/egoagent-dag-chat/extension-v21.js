@@ -1,6 +1,8 @@
 // Versioned entry filename prevents Void's Web Extension Host from combining
 // a cached main module with current media files after local upgrades.
 const vscode = require('vscode');
+const remoteWorkspaces = require('./remote-workspaces');
+const fetch = remoteWorkspaces.fetch;
 
 const DOCUMENT_SELECTOR = [
   { scheme: 'file' },
@@ -15,6 +17,7 @@ function escapeHtml(value) {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;');
 }
+
 
 function splitLines(text) {
   return String(text).replaceAll('\r\n', '\n').split('\n');
@@ -111,6 +114,28 @@ function normalizedClipboardText(value) {
   return String(value || '').replaceAll('\r\n', '\n').replace(/\n$/, '');
 }
 
+function clipboardLineCount(value) {
+  const normalized = String(value || '').replaceAll('\r\n', '\n').replace(/\n+$/, '');
+  return normalized ? normalized.split('\n').length : 0;
+}
+
+async function readClipboardAfterCopy(previousText = '', timeoutMs = 600) {
+  // On Windows the terminal copy command can resolve a little before the OS
+  // clipboard becomes visible to the extension host.  Reading immediately
+  // occasionally returned the previous editor/clipboard value, so the Chat
+  // later classified it as a generic Clipboard attachment.  Wait briefly for
+  // a changed value, while still accepting an intentionally repeated copy.
+  const startedAt = Date.now();
+  let latest = '';
+  do {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    try { latest = await vscode.env.clipboard.readText(); } catch { latest = ''; }
+    if (latest && normalizedClipboardText(latest) !== normalizedClipboardText(previousText)) return latest;
+    if (latest && Date.now() - startedAt >= 150) return latest;
+  } while (Date.now() - startedAt < timeoutMs);
+  return latest;
+}
+
 function extractLocalSymbols(document) {
   const results = [];
   const language = document.languageId;
@@ -154,6 +179,7 @@ class LocalMetrics {
 class AIClient {
   constructor() {
     this.statusCache = new Map();
+    this.statusPending = new Map();
   }
 
   get enabled() {
@@ -161,7 +187,7 @@ class AIClient {
   }
 
   get backendUrl() {
-    return vscode.workspace.getConfiguration('egoagent').get('backendUrl', 'http://127.0.0.1:8765').replace(/\/$/, '');
+    return remoteWorkspaces.backendUrl();
   }
 
   operationRole(operation) {
@@ -187,11 +213,13 @@ class AIClient {
   }
 
   async request(operation, payload, timeoutMs, cancellationToken) {
+    if (cancellationToken?.isCancellationRequested) throw new Error('AI request cancelled');
     if (!this.enabled) throw new Error('AI assistance is disabled in EgoAgent settings');
     const role = this.operationRole(operation);
     if (role && !(await this.supports(role))) {
       throw new Error(`Configured model is unavailable or does not support the '${role}' role`);
     }
+    if (cancellationToken?.isCancellationRequested) throw new Error('AI request cancelled');
     const controller = new AbortController();
     const timeout = Number(timeoutMs || vscode.workspace.getConfiguration('egoagent').get('ai.requestTimeoutMs', 60000));
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -222,33 +250,42 @@ class AIClient {
   }
 
   async status(force = false, role = 'chat') {
-    const cached = this.statusCache.get(role);
+    const key = `${this.backendUrl}|${role}`;
+    const cached = this.statusCache.get(key);
     if (!force && cached && Date.now() - cached.at < 15000) return cached.value;
-    try {
-      const response = await fetch(`${this.backendUrl}/api/ai/status?role=${encodeURIComponent(role)}`);
-      const value = response.ok ? await response.json() : { configured: false, fallback: 'deterministic-local' };
-      this.statusCache.set(role, { value, at: Date.now() });
+    if (this.statusPending.has(key)) return this.statusPending.get(key);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    const pending = (async () => {
+      let value;
+      try {
+        const response = await fetch(`${this.backendUrl}/api/ai/status?role=${encodeURIComponent(role)}`, { signal: controller.signal });
+        value = response.ok ? await response.json() : { configured: false };
+      } catch { value = { configured: false }; }
+      finally { clearTimeout(timer); this.statusPending.delete(key); }
+      this.statusCache.set(key, { value, at: Date.now() });
       return value;
-    } catch {
-      const value = { configured: false, fallback: 'deterministic-local' };
-      this.statusCache.set(role, { value, at: Date.now() });
-      return value;
-    }
+    })();
+    this.statusPending.set(key, pending);
+    return pending;
   }
 }
 
 function fsPathForBackend(value) {
   // Remote Void documents use vscode-remote URIs. `fsPath` for a non-file URI
   // may include a UNC authority, while `path` is the stable `/C:/...` value
-  // that maps to the backend's Windows absolute path.
+  // that maps to the backend's Windows path, or a Linux absolute path.
   let text = String(value?.path || value?.fsPath || value || '').replaceAll('\\', '/');
   try { text = decodeURIComponent(text); } catch {}
   text = text.replace(/^\/+([A-Za-z]:\/)/, '$1');
-  return text.replace(/\/+$/, '');
+  return text === '/' ? text : text.replace(/\/+$/, '');
 }
 
 function normalizedFsPath(value) {
-  return fsPathForBackend(value).toLowerCase();
+  const path = fsPathForBackend(value);
+  // Linux foo.py and Foo.py are different files. Only Windows/UNC paths
+  // should use the case-insensitive comparison of the original local IDE.
+  return /^[A-Za-z]:\//.test(path) || path.startsWith('//') ? path.toLowerCase() : path;
 }
 
 function sameDocumentPath(uri, filePath) {
@@ -763,7 +800,8 @@ class ChangeReviewManager {
   }
 
   pendingBackendChangesForDocument(document) {
-    const matching = this.backendChanges.filter((change) => {
+    const scopedChanges = this.activeBackendTransactionId ? this.activeBackendChanges() : [];
+    const matching = scopedChanges.filter((change) => {
       if (!(change.hunks || []).some((hunk) => hunk.status === 'pending')) return false;
       try { return sameDocumentPath(document.uri, change.file_path); } catch { return false; }
     }).sort((left, right) => reviewChangeRecency(right) - reviewChangeRecency(left));
@@ -920,7 +958,7 @@ class ChangeReviewManager {
         targets.push({ source: 'local', proposalId: proposal.id, hunkId: hunk.id, at: Number(hunk.decidedAt || proposal.createdAt || 0) });
       }
     }
-    for (const change of this.backendChanges) {
+    for (const change of this.activeBackendChanges()) {
       try { if (!sameDocumentPath(document.uri, change.file_path)) continue; } catch { continue; }
       for (const hunk of change.hunks || []) {
         if (!hunk.can_undo) continue;
@@ -1024,7 +1062,7 @@ class ChangeReviewManager {
       }
     }
     const latestByPath = new Map();
-    for (const change of [...this.backendChanges].sort((left, right) => reviewChangeRecency(right) - reviewChangeRecency(left))) {
+    for (const change of [...this.activeBackendChanges()].sort((left, right) => reviewChangeRecency(right) - reviewChangeRecency(left))) {
       if (!(change.hunks || []).some((hunk) => hunk.status === 'pending')) continue;
       const path = normalizedFsPath(change.file_path);
       if (path && !latestByPath.has(path)) latestByPath.set(path, change);
@@ -1067,230 +1105,7 @@ class ChangeReviewManager {
   }
 }
 
-class LocalCompletionProvider {
-  constructor(context, metrics, aiClient, onMetricsChanged) {
-    this.metrics = metrics;
-    this.aiClient = aiClient;
-    this.onMetricsChanged = onMetricsChanged;
-    this.enabled = context.globalState.get('egoagent.localCompletionEnabled', true);
-    this.lastSuggestion = undefined;
-    this.lastOfferedKey = '';
-    this.requestSerial = 0;
-    this.cache = new Map();
-    this.recentEdits = [];
-    this.context = context;
-    context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
-      for (const change of event.contentChanges || []) {
-        this.recentEdits.unshift({
-          path: displayPath(event.document.uri),
-          language: event.document.languageId,
-          line: Number(change.range?.start?.line || 0) + 1,
-          removed: Number(change.rangeLength || 0),
-          inserted: String(change.text || '').slice(0, 800),
-          at: Date.now(),
-        });
-      }
-      this.recentEdits = this.recentEdits.slice(0, 20);
-    }));
-  }
-
-  async toggle() {
-    this.enabled = !this.enabled;
-    await this.context.globalState.update('egoagent.localCompletionEnabled', this.enabled);
-    vscode.window.showInformationMessage(`EgoAgent AI Tab 补全已${this.enabled ? '开启' : '暂停'}`);
-    return this.enabled;
-  }
-
-  accept(key) {
-    if (!this.lastSuggestion || (key && this.lastSuggestion.key !== key)) return false;
-    this.metrics.bump('completionsAccepted');
-    this.onMetricsChanged?.();
-    this.lastSuggestion = undefined;
-    return true;
-  }
-
-  reject(key) {
-    if (!this.lastSuggestion || (key && this.lastSuggestion.key !== key)) return false;
-    this.metrics.bump('completionsRejected');
-    this.onMetricsChanged?.();
-    this.lastSuggestion = undefined;
-    return true;
-  }
-
-  async debounce(delay, token) {
-    if (!delay) return !token?.isCancellationRequested;
-    return new Promise((resolve) => {
-      let finished = false;
-      let cancellation;
-      const finish = (value) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        cancellation?.dispose?.();
-        resolve(value);
-      };
-      const timer = setTimeout(() => finish(true), delay);
-      cancellation = token?.onCancellationRequested?.(() => finish(false));
-      if (token?.isCancellationRequested) finish(false);
-    });
-  }
-
-  cacheGet(key) {
-    const entry = this.cache.get(key);
-    if (!entry || Date.now() - entry.at > 30000) {
-      if (entry) this.cache.delete(key);
-      return undefined;
-    }
-    this.cache.delete(key);
-    this.cache.set(key, entry);
-    return entry;
-  }
-
-  cacheSet(key, value) {
-    this.cache.set(key, { ...value, at: Date.now() });
-    while (this.cache.size > 64) this.cache.delete(this.cache.keys().next().value);
-  }
-
-  completionContext(document) {
-    const current = document.uri.toString();
-    const imports = document.getText().split(/\r?\n/)
-      .filter((line) => /^\s*(?:import\b|from\s+\S+\s+import\b|require\s*\(|const\s+\S+\s*=\s*require\s*\()/i.test(line))
-      .slice(0, 40);
-    const openFiles = (vscode.window.visibleTextEditors || [])
-      .filter((editor) => editor.document.uri.toString() !== current)
-      .slice(0, 4)
-      .map((editor) => ({
-        path: displayPath(editor.document.uri),
-        language: editor.document.languageId,
-        excerpt: editor.document.getText().slice(0, 3000),
-      }));
-    return { imports, open_files: openFiles, recent_edits: this.recentEdits.slice(0, 10) };
-  }
-
-  normalizeSuggestion(raw, prefix, suffix) {
-    let suggestion = String(raw || '').replaceAll('\u0000', '');
-    suggestion = suggestion.replace(/^```(?:\w+)?\s*\n?/, '').replace(/\n?```\s*$/, '');
-    const prefixTail = String(prefix || '').slice(-500);
-    if (prefixTail && suggestion.startsWith(prefixTail)) suggestion = suggestion.slice(prefixTail.length);
-    const suffixHead = String(suffix || '').slice(0, 500);
-    for (let size = Math.min(suggestion.length, suffixHead.length); size > 0; size -= 1) {
-      if (suggestion.endsWith(suffixHead.slice(0, size))) {
-        suggestion = suggestion.slice(0, -size);
-        break;
-      }
-    }
-    return suggestion.slice(0, 6000);
-  }
-
-  async provideInlineCompletionItems(document, position, completionContext, token) {
-    if (!this.enabled || !vscode.workspace.getConfiguration('egoagent').get('localCompletion.enabled', true)) return [];
-    const before = document.lineAt(position.line).text.slice(0, position.character);
-    const text = document.getText();
-    const offset = document.offsetAt(position);
-    const prefix = text.slice(Math.max(0, offset - 12000), offset);
-    const suffix = text.slice(offset, offset + 6000);
-    const requestId = ++this.requestSerial;
-    const documentVersion = document.version;
-    const extraContext = this.completionContext(document);
-    const contextFingerprint = JSON.stringify(extraContext).slice(-6000);
-    const cacheKey = `${document.uri}|${documentVersion}|${offset}|${prefix.slice(-3000)}|${suffix.slice(0, 1500)}|${contextFingerprint}`;
-    const cached = this.cacheGet(cacheKey);
-    let suggestion;
-    let source = 'deterministic-local';
-    const startedAt = Date.now();
-    if (cached) {
-      suggestion = cached.text;
-      source = cached.source;
-      this.metrics.bump('completionCacheHits');
-    } else if (this.aiClient.enabled && await this.aiClient.supports('autocomplete')) {
-      const delay = Number(vscode.workspace.getConfiguration('egoagent').get('ai.completionDelayMs', 280));
-      if (!(await this.debounce(delay, token))) {
-        this.metrics.bump('completionCancelled');
-        return [];
-      }
-      try {
-        const result = await this.aiClient.request('completion', {
-          prefix,
-          suffix,
-          language: document.languageId,
-          path: displayPath(document.uri),
-          trigger_kind: completionContext?.triggerKind,
-          ...extraContext,
-        }, 30000, token);
-        if (!token?.isCancellationRequested) {
-          suggestion = this.normalizeSuggestion(result.completion, prefix, suffix);
-          source = `model:${result.profile_id || result.model || 'autocomplete'}`;
-        }
-      } catch {
-        // Provider outages must never break typing; the deterministic engine
-        // remains an immediate offline fallback.
-      }
-    }
-    if (!suggestion) suggestion = this.suggest(document, position, before);
-    suggestion = this.normalizeSuggestion(suggestion, prefix, suffix);
-    if (!suggestion) return [];
-    if (token?.isCancellationRequested || requestId !== this.requestSerial || document.version !== documentVersion) {
-      this.metrics.bump('completionStaleDiscarded');
-      return [];
-    }
-    if (!cached) this.cacheSet(cacheKey, { text: suggestion, source });
-    this.metrics.bump('completionLatencyTotalMs', Date.now() - startedAt);
-    this.metrics.bump('completionLatencySamples');
-    const key = `${document.uri}:${position.line}:${position.character}:${suggestion}`;
-    if (key !== this.lastOfferedKey) {
-      this.metrics.bump('completionsOffered');
-      this.onMetricsChanged?.();
-      this.lastOfferedKey = key;
-    }
-    this.lastSuggestion = { uri: document.uri.toString(), text: suggestion, key, source, at: Date.now() };
-    const item = new vscode.InlineCompletionItem(suggestion, new vscode.Range(position, position));
-    item.command = {
-      command: 'egoagent.completionAccepted',
-      title: 'Record EgoAgent completion acceptance',
-      arguments: [key],
-    };
-    return [item];
-  }
-
-  suggest(document, position, before) {
-    const language = document.languageId;
-    const indent = /^\s*/.exec(before)?.[0] || '';
-    const trimmed = before.trim();
-    const intent = /(?:#|\/\/|<!--)\s*(?:todo|complete|补全|生成)\s*[:：]\s*(.+?)(?:-->)?$/i.exec(trimmed)?.[1];
-    if (intent) {
-      if (language === 'python') return `\n${indent}result = {"status": "ok", "task": ${JSON.stringify(intent)}}\n${indent}return result`;
-      if (['javascript', 'javascriptreact', 'typescript', 'typescriptreact'].includes(language)) {
-        return `\n${indent}const result = { status: 'ok', task: ${JSON.stringify(intent)} };\n${indent}return result;`;
-      }
-      return `\n${indent}${intent}`;
-    }
-    if (language === 'python') {
-      if (/if\s+__name__\s*==\s*$/.test(trimmed)) return ' "__main__":\n    main()';
-      if (/^def\s+[A-Za-z_]\w*\([^)]*\):$/.test(trimmed)) return `\n${indent}    """Describe inputs, behavior, and return value."""\n${indent}    raise NotImplementedError`;
-      if (/^class\s+[A-Za-z_]\w*(?:\([^)]*\))?:$/.test(trimmed)) return `\n${indent}    """Domain object managed by EgoAgent."""\n${indent}    pass`;
-    }
-    if (['javascript', 'javascriptreact', 'typescript', 'typescriptreact'].includes(language)) {
-      if (/console\.$/.test(trimmed)) return 'log()';
-      if (/^(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*\([^)]*\)\s*\{$/.test(trimmed)) {
-        return `\n${indent}  throw new Error('Not implemented');\n${indent}}`;
-      }
-      if (/^try\s*\{$/.test(trimmed)) return `\n${indent}  \n${indent}} catch (error) {\n${indent}  console.error(error);\n${indent}  throw error;\n${indent}}`;
-    }
-    if (language === 'html' && /<([a-z][\w-]*)$/.test(trimmed)) {
-      const tag = /<([a-z][\w-]*)$/.exec(trimmed)[1];
-      return `></${tag}>`;
-    }
-
-    const word = /[A-Za-z_$][\w$]{2,}$/.exec(before)?.[0];
-    if (word) {
-      const pattern = new RegExp(`\\b${word.replaceAll('$', '\\$&')}[A-Za-z0-9_$]+\\b`, 'g');
-      const candidates = document.getText().match(pattern) || [];
-      const candidate = [...new Set(candidates)].find((value) => value !== word);
-      if (candidate) return candidate.slice(word.length);
-    }
-    return undefined;
-  }
-}
+const LocalCompletionProvider = require('./completion').createCompletionProvider(vscode, displayPath);
 
 class NextEditPredictor {
   constructor(context, aiClient, reviewManager, metrics) {
@@ -1781,9 +1596,11 @@ class DagChatViewProvider {
           await Promise.all([this.refreshAIStatus(), this.refreshBackendReviewState(), refreshWorkbenchRuntimeStatus()]);
           return;
         }
-        if (message.type === 'openWorkbench' || message.type === 'openStudio') return openWorkbench(message.tab || 'home');
+        if (message.type === 'openWorkbench' || message.type === 'openStudio') return openWorkbench(message.tab || 'home', { linkRunId: message.linkRunId });
+        if (message.type === 'openRemoteWorkspace') return remoteWorkspaces.openRemoteWorkspaces();
         if (message.type === 'notifyError') return vscode.window.showErrorMessage(message.message || 'EgoAgent request failed');
         if (message.type === 'requestEditorContext') return this.sendEditorContext(message.requestId);
+        if (message.type === 'attachTerminalContext') return vscode.commands.executeCommand('egoagent.attachTerminalSelectionToChat');
         if (message.type === 'resolveContextPaste') return this.resolveContextPaste(message);
         if (message.type === 'resolveContextDrop') return this.resolveContextDrop(message);
         if (message.type === 'openContextLocation') return this.openContextLocation(message.context);
@@ -2063,18 +1880,31 @@ class DagChatViewProvider {
 
   droppedResourceStrings(transfer) {
     const found = new Set();
+    const isResource = (value) => /^(?:file|vscode-remote):\//i.test(value)
+      || /^[A-Za-z]:[\\/]/.test(value) || /^\/(?!\/)/.test(value) || /^\\\\[^\\]/.test(value);
     const visit = (value) => {
       if (Array.isArray(value)) { value.forEach(visit); return; }
-      if (value && typeof value === 'object') { Object.values(value).forEach(visit); return; }
+      if (value && typeof value === 'object') {
+        // CodeEditors can serialize a URI as components instead of a string.
+        // Keep its authority: a file from another remote must not be silently
+        // interpreted as a same-named file in the current workspace.
+        if (['file', 'vscode-remote'].includes(value.scheme) && typeof value.path === 'string') {
+          try { found.add(vscode.Uri.from(value).toString()); } catch {}
+          return;
+        }
+        Object.values(value).forEach(visit); return;
+      }
       if (typeof value !== 'string') return;
       const text = value.trim();
       if (!text) return;
-      if (/^(?:file|vscode-remote):\/\//i.test(text) || /^[A-Za-z]:[\\/]/.test(text)) found.add(text);
+      // Parse JSON first: otherwise a serialized Linux path could accidentally
+      // be treated as an entire resource including its enclosing quotes.
+      try { visit(JSON.parse(text)); return; } catch {}
+      if (!/[\r\n]/.test(text) && isResource(text)) found.add(text);
       for (const line of text.split(/\r?\n/)) {
         const candidate = line.trim().replace(/^<|>$/g, '');
-        if (/^(?:file|vscode-remote):\/\//i.test(candidate) || /^[A-Za-z]:[\\/]/.test(candidate)) found.add(candidate);
+        if (isResource(candidate)) found.add(candidate);
       }
-      try { visit(JSON.parse(text)); } catch {}
     };
     Object.values(transfer || {}).forEach(visit);
     return [...found];
@@ -2083,12 +1913,56 @@ class DagChatViewProvider {
   async contextForDroppedResource(value) {
     let uri;
     try {
-      uri = /^(?:file|vscode-remote):\/\//i.test(value) ? vscode.Uri.parse(value) : workspaceUriForPath(value);
+      if (/^(?:file|vscode-remote):\//i.test(value)) {
+        uri = vscode.Uri.parse(value);
+        // Explorer's CodeFiles uses filesystem paths/file: URIs even when the
+        // editor lives in WSL/SSH. Rebind only these local filesystem references
+        // to this workspace; preserve explicit remote authorities for validation.
+        if (uri.scheme === 'file' && !uri.authority) uri = workspaceUriForPath(uri.fsPath);
+      } else uri = workspaceUriForPath(value);
     } catch { return null; }
     if (!vscode.workspace.getWorkspaceFolder(uri)) return null;
     try {
       const stat = await vscode.workspace.fs.stat(uri);
-      if (stat.type & vscode.FileType.Directory) return null;
+      if (stat.type & vscode.FileType.Directory) {
+        const relativePath = displayPath(uri).replace(/[\\/]?$/, '/');
+        const lines = [];
+        let truncated = false;
+        const maxEntries = 400;
+        const maxDepth = 3;
+        const visitDirectory = async (directory, depth) => {
+          if (lines.length >= maxEntries) { truncated = true; return; }
+          let entries;
+          try { entries = await vscode.workspace.fs.readDirectory(directory); } catch { return; }
+          entries.sort((left, right) => {
+            const leftDir = Boolean(left[1] & vscode.FileType.Directory);
+            const rightDir = Boolean(right[1] & vscode.FileType.Directory);
+            return leftDir === rightDir ? left[0].localeCompare(right[0]) : leftDir ? -1 : 1;
+          });
+          for (const [name, type] of entries) {
+            if (lines.length >= maxEntries) { truncated = true; break; }
+            const child = vscode.Uri.joinPath(directory, name);
+            const childPath = displayPath(child).replace(/\\/g, '/');
+            const directoryEntry = Boolean(type & vscode.FileType.Directory);
+            lines.push(`${directoryEntry ? '[dir]' : '[file]'} ${childPath}${directoryEntry ? '/' : ''}`);
+            if (directoryEntry && !(type & vscode.FileType.SymbolicLink)) {
+              if (depth < maxDepth) await visitDirectory(child, depth + 1);
+              else truncated = true;
+            }
+          }
+        };
+        await visitDirectory(uri, 1);
+        const listing = [`Directory attached from current Workspace: ${relativePath}`, ...lines].join('\n');
+        return {
+          kind: 'folder',
+          title: relativePath,
+          path: relativePath,
+          absolutePath: fsPathForBackend(uri),
+          language: 'directory',
+          content: listing.slice(0, 50000),
+          truncated: truncated || listing.length > 50000,
+        };
+      }
       const document = await vscode.workspace.openTextDocument(uri);
       const content = document.getText();
       const relativePath = displayPath(uri);
@@ -2122,7 +1996,7 @@ class DagChatViewProvider {
       type: 'contextDropResolved',
       requestId,
       contexts,
-      error: contexts.length ? '' : '只能拖入当前 Workspace 内的文本文件或当前编辑器选区',
+      error: contexts.length ? '' : '只能拖入当前 Workspace 内的文件、文件夹或当前编辑器选区',
     });
   }
 
@@ -2154,18 +2028,24 @@ class DagChatViewProvider {
       }
     }
     if (!contexts.length) {
-      return vscode.window.showWarningMessage(selectionOnly ? '请先在编辑器中选中代码' : '只能附加当前 Workspace 内的文本文件');
+      return vscode.window.showWarningMessage(selectionOnly ? '请先在编辑器中选中代码' : '只能附加当前 Workspace 内的文件或文件夹');
     }
     this.view?.show?.(true);
     try { await vscode.commands.executeCommand('egoagent.dagChat.focus'); } catch {}
     this.view?.webview.postMessage({ type: 'externalContextsAttached', contexts });
-    vscode.window.showInformationMessage(`已把 ${contexts.length} 个${selectionOnly ? '代码选区' : '文件'}插入 EgoAgent Chat`);
+    vscode.window.showInformationMessage(`已把 ${contexts.length} 个${selectionOnly ? '代码选区' : '文件/文件夹'}插入 EgoAgent Chat`);
     return contexts;
   }
 
   async openContextLocation(context) {
     if (!context?.absolutePath) return;
-    const document = await vscode.workspace.openTextDocument(workspaceUriForPath(context.absolutePath));
+    const uri = workspaceUriForPath(context.absolutePath);
+    const stat = await vscode.workspace.fs.stat(uri);
+    if (stat.type & vscode.FileType.Directory) {
+      await vscode.commands.executeCommand('revealInExplorer', uri);
+      return;
+    }
+    const document = await vscode.workspace.openTextDocument(uri);
     const editor = await vscode.window.showTextDocument(document, { preview: false });
     const start = Math.min(Math.max(0, Number(context.startLine || 1) - 1), Math.max(0, document.lineCount - 1));
     const end = Math.min(Math.max(start, Number(context.endLine || context.startLine || 1) - 1), Math.max(0, document.lineCount - 1));
@@ -2187,8 +2067,8 @@ class DagChatViewProvider {
 
   getHtml(webview) {
     const media = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media'));
-    const backendUrl = vscode.workspace.getConfiguration('egoagent').get('backendUrl', 'http://127.0.0.1:8765');
-    const wsUrl = backendUrl.replace(/^http/, 'ws').replace(/:8765\/?$/, ':8766');
+    const backendUrl = remoteWorkspaces.backendUrl();
+    const wsUrl = remoteWorkspaces.webSocketUrl(backendUrl);
     const csp = [
       "default-src 'none'",
       `style-src ${webview.cspSource}`,
@@ -2199,30 +2079,34 @@ class DagChatViewProvider {
 
     return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="${csp}"><link rel="stylesheet" href="${media}/chat.css?v=36"><title>EgoAgent</title></head>
-  <body data-api="${escapeHtml(backendUrl)}" data-ws="${escapeHtml(wsUrl)}">
-  <header class="topbar"><div class="brand"><span class="brand-mark">E</span><span>EgoAgent</span><span class="local-badge">AI + LOCAL 0.21.11</span></div><div class="topbar-actions"><button id="workbenchQuick" class="workbench-link" title="在编辑区打开 Agent Workbench">Workbench</button><div id="connection" class="connection offline"><span></span>连接中</div></div></header>
+  <meta http-equiv="Content-Security-Policy" content="${csp}"><link rel="stylesheet" href="${media}/chat.css?v=48"><title>EgoAgent</title></head>
+  <body data-api="${escapeHtml(backendUrl)}" data-ws="${escapeHtml(wsUrl)}" data-api-token="${escapeHtml(remoteWorkspaces.accessToken)}"><script src="${media}/remote-network.js"></script><script src="${media}/vendor/markdown-it.umd.min.js?v=15.0.2"></script><script src="${media}/markdown.js?v=1"></script>
+  <header class="topbar"><div class="brand"><span class="brand-mark">E</span><span>EgoAgent</span><span class="local-badge">AI + LOCAL 0.21.24</span></div><div class="topbar-actions"><button id="remoteQuick" class="workbench-link" title="打开 SSH 或 WSL 项目；文件、终端和 Agent 一起切换">SSH / WSL</button><button id="workbenchQuick" class="workbench-link" title="在编辑区打开 Agent Workbench">Workbench</button><div id="connection" class="connection offline"><span></span>连接中</div></div></header>
   <details id="agentConfigDetails" class="agent-config">
-    <summary><span>Agent 配置</span><small id="agentConfigSummary">加载中…</small></summary>
+    <summary><span>Agent 配置</span><small id="agentConfigSummary">同一 Session 可逐轮切换 · 加载中…</small></summary>
   <section class="selectors">
-    <label>模式<select id="modeSelect" aria-label="运行模式"><option value="chat">Chat · 只读问答</option><option value="plan">Plan · 只读规划</option><option value="agent">Agent · 执行任务</option><option value="debug">Debug · 复现修复</option><option value="evolve">Evolve · 限域进化</option><option value="evaluate">Evaluate · 隔离评测</option></select></label>
+<label>模式<select id="modeSelect" aria-label="运行模式"><option value="chat">Chat · 只读问答</option><option value="plan">Plan · 只读规划</option><option value="agent">Agent · 执行任务</option><option value="debug">Debug · 复现修复</option><option value="evolve">Evolve · 限域进化</option><option value="evaluate">Evaluate · 评测权限</option></select></label>
     <label>搜索 Harness<input id="harnessFilter" type="search" placeholder="例如 aider / research / browser" autocomplete="off"></label>
     <label>Harness<select id="harnessSelect" aria-label="Harness"></select></label>
-    <div class="harness-options"><label><input id="showWorkers" type="checkbox">显示内部 Worker</label><span id="harnessCount"></span></div>
+    <label>Flow 版本<select id="harnessVersionSelect" aria-label="Flow 版本"></select></label>
+    <div id="flowVersionNotice" class="harness-meta" hidden></div>
+    <div class="harness-options"><small>内部组件仅在 Build 中作为 SubFlow 复用</small><span id="harnessCount"></span></div>
     <label>默认 Identity<select id="identitySelect" aria-label="默认 Identity"></select></label>
     <div id="harnessMeta" class="harness-meta"></div><details id="bindingsDetails"><summary>Agent 绑定与 DAG</summary><div id="slotBindings" class="slot-bindings"></div><div id="dagNodes" class="dag-nodes"></div></details>
   </section></details>
-  <div class="session-strip" aria-label="当前项目的 Agent Sessions"><div id="sessionTabs" class="session-tabs"><span class="session-empty">新 Session</span></div><button id="newSession" class="new-session" title="在当前项目新建独立 Session" aria-label="新建 Session">＋</button><button id="openSessionPortfolio" class="new-session" title="打开跨项目 Session Portfolio" aria-label="打开 Session Portfolio">▥</button></div>
-  <nav class="tabs" aria-label="EgoAgent views"><button class="tab active" data-tab="chat">对话</button><button class="tab" data-tab="run">运行</button><button class="tab" data-tab="changes">改动 <span id="pendingBadge" class="count-badge">0</span></button><button class="tab" data-tab="context">上下文</button></nav>
+  <div class="session-strip" aria-label="当前项目的 Agent Sessions"><div id="sessionTabs" class="session-tabs"><span class="session-empty">新 Session</span></div><button id="newSession" class="new-session" title="在当前项目新建独立 Session" aria-label="新建 Session">＋</button><button id="openSessionPortfolio" class="new-session" title="打开跨项目 Session Portfolio" aria-label="打开 Session Portfolio">▥</button><button id="linkSessionWorkbench" class="new-session observe-session-button" title="在 Build 中只读观察当前 Session" aria-label="在 Build 中观察当前 Session" disabled>观察</button></div>
+  <div id="sessionContextMenu" class="session-context-menu" role="menu" hidden><button data-session-action="rename" role="menuitem">重命名</button><button data-session-action="observe" role="menuitem">在 Build 中观察</button><button data-session-action="fork" role="menuitem">Fork Session</button><button data-session-action="stop" role="menuitem">结束运行</button><button data-session-action="delete" class="danger" role="menuitem">移到回收站</button></div>
+  <nav class="tabs" aria-label="EgoAgent views"><button class="tab active" data-tab="chat">对话</button><button class="tab" data-tab="changes">改动 <span id="pendingBadge" class="count-badge">0</span></button><button class="tab" data-tab="context">上下文</button></nav>
   <button id="workbenchStatus" class="workbench-status" hidden><span class="workbench-status-dot"></span><strong>Agent 就绪</strong><small></small></button>
+  <div class="approval-controls"><button id="approvalMode" title="只影响当前 Session 的工具审批，不会关闭沙箱或解除禁止规则">工具审批：手动审批</button><small id="approvalModeHint">高风险操作需要你确认</small></div>
+  <dialog id="approvalModeDialog" aria-labelledby="approvalModeTitle"><h3 id="approvalModeTitle">自动批准当前 Session 的工具操作？</h3><p>后续工具权限请求（包括当前等待的请求）将自动批准，可能修改文件、执行命令或访问网络。Host / Workspace guard 模式下命令以你的账号运行，并非操作系统沙箱。</p><p>明确禁止的操作、只读模式、文件访问边界和容器限制仍然生效。Flow 的人工审核/输入节点仍需你回答。只对当前 Session 生效，可随时切回手动。</p><div class="approval-actions"><button id="cancelAutoApproval">保持手动</button><button id="confirmAutoApproval">确认自动批准</button></div></dialog>
   <main>
     <section id="chatTab" class="tab-panel active"><div id="messages" class="messages"><div id="emptyState" class="empty-state"><div class="empty-icon">⌁</div><strong>用自己的 DAG 开始工作</strong><span>聊天、补全、编辑与审查优先使用已配置模型；服务不可用时自动回退本地能力。</span></div></div>
-      <div id="contextChips" class="context-chips"></div><div class="composer"><div id="prompt" class="composer-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="给 DAG Agent 一个任务… 可粘贴或拖入文件 / 选区"></div><div id="agentActivity" class="agent-activity idle" role="status" aria-live="polite" aria-busy="false"><span class="agent-activity-indicator" aria-hidden="true"></span><span id="composerHint">就绪 · 发送消息开始</span></div><div class="composer-actions"><div class="context-picker-wrap"><button id="attachContext" class="icon-button" title="插入结构化上下文">＠</button><div id="contextPicker" class="context-picker" hidden><button data-attach-kind="file"><strong>@file</strong><small>当前文件</small></button><button data-attach-kind="selection"><strong>@selection</strong><small>当前选区</small></button><button data-attach-kind="workspace"><strong>@workspace</strong><small>当前项目代码地图</small></button></div></div><span class="composer-meta">Enter 发送 · Shift+Enter 换行</span><button id="send" class="primary">发送</button></div></div>
+      <div id="contextChips" class="context-chips"></div><div class="composer"><div id="prompt" class="composer-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="给 DAG Agent 一个任务… 可粘贴或拖入文件 / 选区"></div><div id="agentActivity" class="agent-activity idle" role="status" aria-live="polite" aria-busy="false"><span class="agent-activity-indicator" aria-hidden="true"></span><span id="composerHint">就绪 · 发送消息开始</span><button id="stopCurrentRun" class="agent-stop" title="停止当前 Session" hidden>停止</button></div><div class="composer-actions"><div class="context-picker-wrap"><button id="attachContext" class="icon-button" title="插入结构化上下文">＠</button><div id="contextPicker" class="context-picker" hidden><button data-attach-kind="file"><strong>@file</strong><small>当前文件</small></button><button data-attach-kind="selection"><strong>@selection</strong><small>当前选区</small></button><button data-attach-kind="workspace"><strong>@workspace</strong><small>当前项目代码地图</small></button><button data-attach-kind="terminal"><strong>@terminal</strong><small>当前终端选区</small></button></div></div><span class="composer-meta">Enter 发送 · Shift+Enter 换行</span><button id="send" class="primary">发送</button></div></div>
     </section>
-    <section id="runTab" class="tab-panel"><div class="run-actions"><button id="start" class="primary">▶ 启动 DAG</button><button id="stop" class="danger" disabled>■ 停止</button><button id="clear">清空消息</button></div><div class="metric-grid"><div><span>状态</span><strong id="runStatus">空闲</strong></div><div><span>步数</span><strong id="stepCount">0</strong></div><div><span>当前节点</span><strong id="currentNode">—</strong></div><div><span>消息</span><strong id="messageCount">0</strong></div><div><span>执行边界</span><strong id="sandboxStatus">Workspace guard</strong></div></div><h3>执行轨迹</h3><div id="trace" class="trace"><div class="muted">尚未执行</div></div><h3>最近工具调用</h3><div id="toolHistory" class="tool-history"><div class="muted">尚无工具调用</div></div></section>
     <section id="changesTab" class="tab-panel"><div class="change-toolbar"><button id="mockChanges" class="primary">✦ AI 多段改动</button><button id="inlineEdit">AI 内联编辑</button><button id="localReview">AI 代码审查</button><button id="refreshChanges">↻</button></div><div id="changeSummary" class="context-summary"></div><div id="reviewIssues" class="review-issues"></div><div id="changeList" class="change-list"><div class="muted">尚无改动</div></div></section>
     <section id="contextTab" class="tab-panel"><div class="context-actions workbench-actions"><button id="openWorkbench">工作台</button><button id="openHarnessBuilder">DAG 构建</button><button id="openEvaluation">评测</button><button id="openEvolution">进化</button><button id="openSecurity">安全设置</button></div><div class="context-actions"><button id="refreshContext">↻ 刷新</button><button id="createCheckpoint">＋ 检查点</button><button id="codeMap">代码地图</button><button id="previewApp">应用预览</button><button id="commitMessage">提交消息</button></div><div id="editorContext" class="editor-context"></div><div id="contextSummary" class="context-summary"></div><details open><summary>本轮上下文计划</summary><div id="contextPlan" class="context-list"><div class="muted">发送消息后显示自动选择、排除原因与 token 预算。</div></div></details><details><summary>记忆</summary><div id="memoryList" class="context-list"></div></details><details><summary>项目规则 / AGENTS.md</summary><div id="rulesList" class="context-list"></div></details><details><summary>检查点</summary><div id="checkpointsList" class="context-list"></div></details><details><summary>历史 Sessions</summary><div id="sessionsList" class="context-list"></div></details></section>
-  </main><dialog id="attachmentEditor" class="attachment-editor" aria-labelledby="attachmentEditorTitle"><form method="dialog"><header><div><strong id="attachmentEditorTitle">文本附件</strong><small id="attachmentEditorMeta"></small></div><button id="attachmentEditorClose" value="cancel" title="关闭" aria-label="关闭">×</button></header><textarea id="attachmentEditorContent" spellcheck="false" aria-label="附件内容"></textarea><footer><span id="attachmentEditorNotice">修改只会更新本次尚未发送的上下文。</span><button id="attachmentEditorCancel" value="cancel">取消</button><button id="attachmentEditorSave" value="default" class="primary">保存</button></footer></form></dialog><div id="toast" class="toast" role="status"></div><script src="${media}/chat.js?v=36"></script></body></html>`;
+  </main><dialog id="attachmentEditor" class="attachment-editor" aria-labelledby="attachmentEditorTitle"><form method="dialog"><header><div><strong id="attachmentEditorTitle">文本附件</strong><small id="attachmentEditorMeta"></small></div><button id="attachmentEditorClose" value="cancel" title="关闭" aria-label="关闭">×</button></header><textarea id="attachmentEditorContent" spellcheck="false" aria-label="附件内容"></textarea><footer><span id="attachmentEditorNotice">修改只会更新本次尚未发送的上下文。</span><button id="attachmentEditorCancel" value="cancel">取消</button><button id="attachmentEditorSave" value="default" class="primary">保存</button></footer></form></dialog><div id="toast" class="toast" role="status"></div><script src="${media}/chat.js?v=51"></script></body></html>`;
   }
 }
 
@@ -2246,7 +2130,7 @@ function workbenchWorkspaceKey() {
 function pendingWorkbenchChanges() {
   if (!workbenchReviewManager) return 0;
   const local = workbenchReviewManager.proposals.reduce((count, proposal) => count + proposal.hunks.filter((hunk) => hunk.status === 'pending').length, 0);
-  const backend = workbenchReviewManager.backendChanges.reduce((count, change) => count + (change.hunks || []).filter((hunk) => hunk.status === 'pending').length, 0);
+  const backend = workbenchReviewManager.activeBackendChanges().reduce((count, change) => count + (change.hunks || []).filter((hunk) => hunk.status === 'pending').length, 0);
   return local + backend;
 }
 
@@ -2280,60 +2164,59 @@ function updateWorkbenchStatusSurface() {
 }
 
 async function refreshWorkbenchRuntimeStatus() {
-  const backendUrl = vscode.workspace.getConfiguration('egoagent').get('backendUrl', 'http://127.0.0.1:8765').replace(/\/$/, '');
+  const backendUrl = remoteWorkspaces.backendUrl();
   const workspace = fsPathForBackend(vscode.workspace.workspaceFolders?.[0]?.uri);
   try {
-    const [executionResponse, proposalsResponse] = await Promise.all([
-      fetch(`${backendUrl}/api/execution/state`),
+    const [healthResponse, proposalsResponse] = await Promise.all([
+      fetch(`${backendUrl}/api/workspace${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ''}`),
       fetch(`${backendUrl}/api/evolution/proposals`),
     ]);
-    const execution = executionResponse.ok ? await executionResponse.json() : {};
     const proposals = proposalsResponse.ok ? await proposalsResponse.json() : [];
     const proposalList = Array.isArray(proposals) ? proposals : (proposals.proposals || []);
     const pendingProposals = proposalList.filter((proposal) => !['accepted', 'applied', 'rejected', 'rolled_back', 'failed'].includes(String(proposal.status || '').toLowerCase())).length;
-    const matchesWorkspace = !execution.workspace || normalizedFsPath(execution.workspace) === normalizedFsPath(workspace);
-    const childStatusIsFresh = workbenchRuntimeStatus.reportedAt && Date.now() - workbenchRuntimeStatus.reportedAt < 15000 && workbenchRuntimeStatus.running;
+    const childStatusIsFresh = workbenchRuntimeStatus.reportedAt && Date.now() - workbenchRuntimeStatus.reportedAt < 15000;
     if (!childStatusIsFresh) {
       workbenchRuntimeStatus = {
         ...workbenchRuntimeStatus,
         scope: 'builder',
-        running: Boolean(execution.running && matchesWorkspace),
-        waitingForInput: Boolean(execution.waiting_for_input && matchesWorkspace),
-        paused: Boolean(execution.paused && matchesWorkspace),
-        currentNode: matchesWorkspace ? execution.pending_node || execution.current_node : undefined,
-        harness: matchesWorkspace ? execution.harness || '' : '',
-        runId: matchesWorkspace ? execution.run_id : undefined,
-        status: execution.running && matchesWorkspace ? (execution.waiting_for_input ? 'waiting' : execution.paused ? 'paused' : 'running') : 'idle',
+        running: false,
+        observing: false,
+        waitingForInput: false,
+        paused: false,
+        currentNode: undefined,
+        runId: undefined,
+        status: 'idle',
       };
     }
-    workbenchRuntimeStatus = { ...workbenchRuntimeStatus, evolutionProposals: pendingProposals, online: executionResponse.ok };
+    workbenchRuntimeStatus = { ...workbenchRuntimeStatus, evolutionProposals: pendingProposals, online: healthResponse.ok };
   } catch {
     workbenchRuntimeStatus = { ...workbenchRuntimeStatus, online: false };
   }
   updateWorkbenchStatusSurface();
 }
 
-function getWorkbenchUrl(backendUrl, tab) {
+function getWorkbenchUrl(backendUrl, tab, options = {}) {
   const url = new URL(backendUrl);
   url.searchParams.set('embed', '1');
   url.searchParams.set('tab', tab);
   url.searchParams.set('apiBase', backendUrl.replace(/\/$/, ''));
-  url.searchParams.set('wsBase', backendUrl.replace(/^http/, 'ws').replace(/:8765\/?$/, ':8766'));
+  url.searchParams.set('wsBase', remoteWorkspaces.webSocketUrl(backendUrl));
   const workspace = fsPathForBackend(vscode.workspace.workspaceFolders?.[0]?.uri);
   if (workspace) url.searchParams.set('workspace', workspace);
+  if (options.linkRunId) url.searchParams.set('link_run', String(options.linkRunId));
   return url.toString();
 }
 
-function renderRemoteWorkbench(panel, tab) {
-  const backendUrl = vscode.workspace.getConfiguration('egoagent').get('backendUrl', 'http://127.0.0.1:8765');
-  const frameUrl = getWorkbenchUrl(backendUrl, tab);
+function renderRemoteWorkbench(panel, tab, options = {}) {
+  const backendUrl = remoteWorkspaces.backendUrl();
+  const frameUrl = getWorkbenchUrl(backendUrl, tab, options);
   panel.title = `EgoAgent · ${WORKBENCH_ROUTE_LABELS[tab] || 'Workbench'}`;
   panel.webview.html = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${backendUrl}; style-src 'unsafe-inline'; script-src 'unsafe-inline';"><style>html,body,iframe{width:100%;height:100%;margin:0;border:0;background:var(--vscode-editor-background,#1e1e1e)}body{overflow:hidden}iframe{display:block}</style></head><body><iframe id="egoagent-workbench-frame" src="${escapeHtml(frameUrl)}" title="EgoAgent Agent Workbench"></iframe><script>const vscode=acquireVsCodeApi();const frame=document.getElementById('egoagent-workbench-frame');window.addEventListener('message',(event)=>{const message=event.data||{};if(event.source===frame.contentWindow&&message.source==='egoagent-workbench'){vscode.postMessage(message);return;}if(message.source==='egoagent-shell'){frame.contentWindow.postMessage(message,'*');}});</script></body></html>`;
 }
 
-async function renderWorkbench(panel, tab) {
-  const backendUrl = vscode.workspace.getConfiguration('egoagent').get('backendUrl', 'http://127.0.0.1:8765').replace(/\/$/, '');
-  const wsUrl = backendUrl.replace(/^http/, 'ws').replace(/:8765\/?$/, ':8766');
+async function renderWorkbench(panel, tab, options = {}) {
+  const backendUrl = remoteWorkspaces.backendUrl();
+  const wsUrl = remoteWorkspaces.webSocketUrl(backendUrl);
   panel.title = `EgoAgent · ${WORKBENCH_ROUTE_LABELS[tab] || 'Workbench'}`;
   try {
     const root = vscode.Uri.joinPath(workbenchContext.extensionUri, 'workbench');
@@ -2346,8 +2229,11 @@ async function renderWorkbench(panel, tab) {
     const bootstrap = JSON.stringify({
       workspace: fsPathForBackend(vscode.workspace.workspaceFolders?.[0]?.uri),
       apiBase: backendUrl,
+      accessToken: remoteWorkspaces.accessToken,
+      runtimeLabel: remoteWorkspaces.runtimeLabel,
       wsBase: wsUrl,
       tab,
+      linkRunId: options.linkRunId ? String(options.linkRunId) : '',
     }).replaceAll('<', '\\u003c');
     const csp = [
       "default-src 'none'",
@@ -2358,11 +2244,12 @@ async function renderWorkbench(panel, tab) {
       `connect-src ${backendUrl} ${wsUrl}`,
       'worker-src blob:',
     ].join('; ');
-    html = html.replace('<head>', `<head><meta http-equiv="Content-Security-Policy" content="${escapeHtml(csp)}"><script>window.__EGOAGENT_WORKBENCH__=${bootstrap};</script>`);
+    const networkScript = panel.webview.asWebviewUri(vscode.Uri.joinPath(workbenchContext.extensionUri, 'media', 'remote-network.js'));
+    html = html.replace('<head>', `<head><meta http-equiv="Content-Security-Policy" content="${escapeHtml(csp)}"><script>window.__EGOAGENT_WORKBENCH__=${bootstrap};</script><script src="${networkScript}"></script>`);
     panel.webview.html = html;
   } catch (error) {
     console.warn('Packaged Agent Workbench unavailable, using local backend frontend:', error);
-    renderRemoteWorkbench(panel, tab);
+    renderRemoteWorkbench(panel, tab, options);
   }
 }
 
@@ -2402,7 +2289,7 @@ async function pickWorkbenchProjectFolder(message) {
   return selected?.[0] ? fsPathForBackend(selected[0]) : '';
 }
 
-function openWorkbench(requestedTab) {
+function openWorkbench(requestedTab, options = {}) {
   const restoredTab = workbenchContext?.workspaceState.get(workbenchWorkspaceKey(), 'home');
   const tab = WORKBENCH_TABS.has(requestedTab) ? requestedTab : WORKBENCH_TABS.has(restoredTab) ? restoredTab : 'home';
   if (workbenchPanel) {
@@ -2410,6 +2297,9 @@ function openWorkbench(requestedTab) {
     workbenchTab = tab;
     workbenchPanel.title = `EgoAgent · ${WORKBENCH_ROUTE_LABELS[tab] || 'Workbench'}`;
     workbenchPanel.webview.postMessage({ source: 'egoagent-shell', type: 'navigate', tab });
+    if (options.linkRunId) {
+      postWorkbenchShellMessage({ type: 'link-session', runId: String(options.linkRunId) });
+    }
     if (pendingWorkbenchHandoff) {
       postWorkbenchShellMessage({ type: 'context-handoff', items: pendingWorkbenchHandoff });
       pendingWorkbenchHandoff = undefined;
@@ -2423,7 +2313,10 @@ function openWorkbench(requestedTab) {
     // session store, so the heavy graph view does not need to consume CPU and
     // memory while the user is editing code in another tab.
     retainContextWhenHidden: false,
-    localResourceRoots: [vscode.Uri.joinPath(workbenchContext.extensionUri, 'workbench')],
+    localResourceRoots: [
+      vscode.Uri.joinPath(workbenchContext.extensionUri, 'workbench'),
+      vscode.Uri.joinPath(workbenchContext.extensionUri, 'media'),
+    ],
   });
   workbenchPanel.webview.onDidReceiveMessage(async (message) => {
     if (message?.source !== 'egoagent-workbench') return;
@@ -2440,6 +2333,25 @@ function openWorkbench(requestedTab) {
     if (message.type === 'runtime-status') {
       workbenchRuntimeStatus = { ...workbenchRuntimeStatus, ...message, reportedAt: Date.now() };
       updateWorkbenchStatusSurface();
+      return;
+    }
+    if (message.type === 'harness-version-created') {
+      workbenchProvider?.view?.webview.postMessage({
+        type: 'harnessVersionCreated',
+        harness: message.harness,
+        version: message.version,
+      });
+      return;
+    }
+    if (message.type === 'open-change') {
+      try {
+        await workbenchProvider.refreshBackendReviewState();
+        const opened = await workbenchProvider.reviewManager.openBackendDiff(message.id, message.hunkId);
+        if (!opened) throw new Error('找不到可审阅的文本改动，请刷新后重试');
+        postWorkbenchShellMessage({ type: 'request-result', requestId: message.requestId, ok: true, value: true });
+      } catch (error) {
+        postWorkbenchShellMessage({ type: 'request-result', requestId: message.requestId, ok: false, error: error?.message || String(error) });
+      }
       return;
     }
     if (message.type === 'open-file') void openWorkbenchFile(message);
@@ -2463,7 +2375,7 @@ function openWorkbench(requestedTab) {
     }
   });
   workbenchPanel.onDidDispose(() => { workbenchPanel = undefined; workbenchTab = 'home'; });
-  void renderWorkbench(workbenchPanel, tab);
+  void renderWorkbench(workbenchPanel, tab, options);
   void workbenchContext?.workspaceState.update(workbenchWorkspaceKey(), tab);
   return workbenchPanel;
 }
@@ -2498,7 +2410,12 @@ async function openCodeMap() {
 
 async function previewApplication() {
   const configured = vscode.workspace.getConfiguration('egoagent').get('previewUrl', 'http://127.0.0.1:8765');
-  const url = await vscode.window.showInputBox({ prompt: '输入本地应用地址', value: configured, validateInput: (value) => /^https?:\/\//i.test(value) ? undefined : '请输入 http:// 或 https:// 地址' });
+  const remote = Boolean(remoteWorkspaces.accessToken);
+  const url = await vscode.window.showInputBox({
+    prompt: remote ? '输入浏览器能访问的应用地址；SSH 应用请先转发对应端口，localhost 指 Windows 浏览器所在机器' : '输入本地应用地址',
+    value: remote && configured === 'http://127.0.0.1:8765' ? '' : configured,
+    validateInput: (value) => /^https?:\/\//i.test(value) ? undefined : '请输入 http:// 或 https:// 地址',
+  });
   if (!url) return;
   await vscode.commands.executeCommand('simpleBrowser.show', url);
 }
@@ -2541,6 +2458,7 @@ async function generateCommitMessage(aiClient) {
 }
 
 function activate(context) {
+  remoteWorkspaces.registerRemoteWorkspaces(context);
   const metrics = new LocalMetrics(context);
   const aiClient = new AIClient();
   let provider;
@@ -2769,6 +2687,7 @@ function activate(context) {
         await vscode.workspace.applyEdit(edit);
         await document.save();
       }
+      reviewManager.selectBackendTransaction(transactionId);
       await provider.refreshBackendReviewState();
       provider.revealChanges();
       vscode.window.showInformationMessage('Inline Edit 已写入；可在编辑器红绿代码块逐段 Accept / Refuse，Ctrl+Z 撤销最近决定');
@@ -2836,25 +2755,54 @@ function activate(context) {
     });
   };
 
-  const copyTerminalContext = async () => {
+  const captureTerminalContext = async () => {
+    const terminalName = vscode.window.activeTerminal?.name || 'Terminal';
+    let previousClipboard = '';
+    try { previousClipboard = await vscode.env.clipboard.readText(); } catch {}
     await vscode.commands.executeCommand('workbench.action.terminal.copySelection');
-    let clipboardText = '';
-    try { clipboardText = await vscode.env.clipboard.readText(); } catch {}
-    if (!clipboardText) return;
-    const lines = clipboardText.replaceAll('\r\n', '\n').split('\n').length;
-    provider.rememberCopiedContext({
+    const clipboardText = await readClipboardAfterCopy(previousClipboard);
+    if (!clipboardText) {
+      vscode.window.showWarningMessage('EgoAgent 没有读取到终端选区。请重新选中文本，再点击终端右上角的“加入对话”按钮。');
+      return null;
+    }
+    const lines = clipboardLineCount(clipboardText);
+    const terminalContext = {
       kind: 'terminal',
-      title: `Terminal · ${vscode.window.activeTerminal?.name || 'output'} · ${lines} ${lines === 1 ? 'line' : 'lines'}`,
-      terminalName: vscode.window.activeTerminal?.name || 'Terminal',
+      title: `Terminal · ${terminalName} · ${lines} ${lines === 1 ? 'line' : 'lines'}`,
+      terminalName,
       language: 'shell',
       content: clipboardText.slice(0, 50000),
       truncated: clipboardText.length > 50000,
-    });
+    };
+    provider.rememberCopiedContext(terminalContext);
+    return terminalContext;
+  };
+
+  const copyTerminalContext = async () => {
+    const terminalContext = await captureTerminalContext();
+    if (!terminalContext) return;
+    const lines = clipboardLineCount(terminalContext.content);
+    vscode.window.setStatusBarMessage(`$(copy) 已复制终端上下文 · 回到 Chat 按 Ctrl+V 插入 · ${lines} ${lines === 1 ? 'line' : 'lines'}`, 3500);
+  };
+
+  const attachTerminalSelectionToChat = async () => {
+    const terminalContext = await captureTerminalContext();
+    if (!terminalContext) return;
+    const lines = clipboardLineCount(terminalContext.content);
+    provider.view?.show?.(true);
+    try { await vscode.commands.executeCommand('egoagent.dagChat.focus'); } catch {}
+    provider.view?.webview.postMessage({ type: 'externalContextsAttached', contexts: [terminalContext] });
+    vscode.window.setStatusBarMessage(`$(check) 已将终端选区加入 EgoAgent 对话 · ${lines} ${lines === 1 ? 'line' : 'lines'}`, 2500);
   };
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 80);
-  status.text = '$(sparkle) EgoAgent AI';
-  status.tooltip = 'AI Tab 补全已开启；服务不可用时自动本地降级';
+  completionProvider.onStateChanged = (state) => {
+    const enabled = completionProvider.enabled && vscode.workspace.getConfiguration('egoagent').get('localCompletion.enabled', true);
+    const labels = { ready: 'Tab', loading: '补全中', suggested: 'Tab 接受', local: '本地词补全', timeout: '补全超时', unavailable: '模型不可用', excluded: '已跳过敏感内容' };
+    status.text = `${!enabled ? '$(circle-slash)' : state === 'loading' ? '$(loading~spin)' : '$(sparkle)'} EgoAgent ${enabled ? labels[state] || 'Tab' : '补全暂停'}`;
+    status.tooltip = `点击${enabled ? '暂停' : '开启'}补全。Tab 接受 · Esc 取消 · Alt+\\ 手动触发 · Ctrl+Right 接受下一词。${state === 'timeout' ? '可在 EgoAgent 设置调整 Completion Timeout。' : ''}`;
+  };
+  completionProvider.setState('ready');
   status.command = 'egoagent.toggleLocalCompletion';
   status.show();
   const reviewStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 79);
@@ -2912,6 +2860,7 @@ function activate(context) {
     vscode.commands.registerCommand('egoagent.runTerminalCommand', runTerminalCommand),
     vscode.commands.registerCommand('egoagent.copyEditorContext', copyEditorContext),
     vscode.commands.registerCommand('egoagent.copyTerminalContext', copyTerminalContext),
+    vscode.commands.registerCommand('egoagent.attachTerminalSelectionToChat', attachTerminalSelectionToChat),
     vscode.commands.registerCommand('egoagent.reviewChanges', () => provider.revealChanges()),
     vscode.commands.registerCommand('egoagent.acceptHunk', (proposalId, hunkId) => reviewManager.updateHunk(proposalId, hunkId, 'accepted')),
     vscode.commands.registerCommand('egoagent.rejectHunk', (proposalId, hunkId) => reviewManager.updateHunk(proposalId, hunkId, 'rejected')),
@@ -2929,6 +2878,7 @@ function activate(context) {
     vscode.commands.registerCommand('egoagent.rejectAllChanges', () => provider.applyAllChanges('reject')),
     vscode.commands.registerCommand('egoagent.openProposalDiff', (proposalId) => reviewManager.openDiff(proposalId)),
     vscode.commands.registerCommand('egoagent.completionAccepted', (key) => completionProvider.accept(key)),
+    vscode.commands.registerCommand('egoagent.triggerCompletion', () => vscode.commands.executeCommand('editor.action.inlineSuggest.trigger')),
     vscode.commands.registerCommand('egoagent.dismissCompletion', async () => {
       completionProvider.reject();
       await vscode.commands.executeCommand('editor.action.inlineSuggest.hide');
@@ -2937,9 +2887,7 @@ function activate(context) {
     vscode.commands.registerCommand('egoagent.previewNextEdit', () => nextEditPredictor.preview()),
     vscode.commands.registerCommand('egoagent.dismissNextEdit', () => nextEditPredictor.dismiss()),
     vscode.commands.registerCommand('egoagent.toggleLocalCompletion', async () => {
-      const enabled = await completionProvider.toggle();
-      status.text = enabled ? '$(sparkle) EgoAgent AI' : '$(circle-slash) EgoAgent AI';
-      status.tooltip = `AI Tab 补全已${enabled ? '开启' : '暂停'}；服务不可用时自动本地降级`;
+      await completionProvider.toggle();
       provider.postSnapshot();
     }),
   );

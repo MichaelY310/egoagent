@@ -4,13 +4,17 @@ from pathlib import Path
 
 from config import CONFIG
 from process_sessions import start_process_session
-from secure_command import sanitized_subprocess_environment
+from secure_command import (
+    command_blacklist_match,
+    sanitized_subprocess_environment,
+    windows_python_c_invocation,
+)
 
 
 def _blacklist_error(command: str):
-    for pattern in CONFIG.get("command_blacklist", []):
-        if isinstance(pattern, str) and pattern in command.strip():
-            return f"Command blocked by blacklist: contains '{pattern}'"
+    pattern = command_blacklist_match(command, CONFIG.get("command_blacklist", []))
+    if pattern:
+        return f"Command blocked by blacklist: matches '{pattern}'"
     return None
 
 
@@ -46,12 +50,14 @@ def exec_command(
     registry = context.get("running_commands")
     if not isinstance(registry, dict):
         return json.dumps({"ok": False, "error": "process session registry is unavailable"})
+    argv = windows_python_c_invocation(str(cmd))
     result = start_process_session(
         registry,
         command=str(cmd),
         cwd=str(cwd),
         env=sanitized_subprocess_environment(),
         yield_time_ms=max(0, min(30000, int(yield_time_ms))),
+        argv=argv,
     )
     # Respect a smaller caller-provided output contract after the shared read.
     output = str(result.get("output") or "")

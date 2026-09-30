@@ -35,6 +35,7 @@ class FakeAgent:
         self.replies = list(replies or ["done"])
         self.calls = 0
         self.llm = FakeLLM(model_responses)
+        self.activated_capabilities = []
 
     def init_environment(self):
         return None
@@ -44,6 +45,10 @@ class FakeAgent:
 
     def get_tools_desc(self):
         return []
+
+    def activate_capability(self, capability_id, registry=None):
+        self.activated_capabilities.append(capability_id)
+        return {"ok": True, "id": capability_id, "kind": "skill", "name": "fixture_skill"}
 
     def step(self, messages, tools_desc=None, on_token=None):
         text = self.replies[min(self.calls, len(self.replies) - 1)]
@@ -126,6 +131,83 @@ class DagComponentTests(unittest.TestCase):
         self.assertEqual(len(result.result["review_batch"]), 2)
         self.assertIsInstance(json.loads(result.result["model_payload"]), dict)
 
+    def test_conversation_snapshot_can_include_durable_usage_without_payloads(self):
+        graph = {
+            "start": "snapshot",
+            "nodes": {
+                "snapshot": {
+                    "op": "上下文", "action": "snapshot", "include_usage": True,
+                    "output_var": "snapshot", "edges": [{"condition": "conversation_ready", "to": "done"}],
+                },
+                "done": {"op": "结束", "value": "$ctx.snapshot", "edges": []},
+            },
+        }
+        harness = FakeHarness(self.root, graph)
+        harness.session.set_save_dir(self.root / "usage-session")
+        harness.session.trace(
+            "model.response",
+            {
+                "content": "secret response must not enter usage summary",
+                "reasoning": "hidden reasoning",
+                "tool_calls": [],
+                "finish_reason": "stop",
+                "usage": {
+                    "prompt_tokens": 120,
+                    "completion_tokens": 30,
+                    "prompt_tokens_details": {"cached_tokens": 80},
+                },
+                "provider_metadata": {},
+            },
+            agent="agent",
+            model_call_id="call_fixture",
+        )
+        harness.session.trace(
+            "tool.result",
+            {"name": "read_file", "status": "completed", "result": "large private output"},
+            agent="agent",
+            tool_call_id="tool_fixture",
+        )
+        result = PipelineRunner(harness, get_input=lambda: None, is_running=lambda: True).run()
+
+        usage = result.result["usage"]
+        self.assertEqual(usage["source"], "session_trajectory")
+        self.assertEqual(usage["model_calls"], 1)
+        self.assertEqual(usage["tool_calls"], 1)
+        self.assertEqual(usage["tokens_actual"], 150)
+        self.assertEqual(usage["cached_input_tokens_actual"], 80)
+        self.assertNotIn("secret response", json.dumps(usage))
+        self.assertEqual(json.loads(result.result["model_payload"])["usage"]["tokens_actual"], 150)
+
+    def test_failed_authored_identity_capability_can_be_quarantined_from_evidence(self):
+        identity_root = self.root / "identity"
+        capability = identity_root / "fixture" / "ego" / "skills" / "bad_skill"
+        capability.mkdir(parents=True)
+        (capability / "meta.json").write_text('{"type":"tool","name":"bad_skill"}', encoding="utf-8")
+        evidence = [{
+            "name": "create_skill",
+            "result": {"ok": True, "path": str(capability)},
+        }]
+        graph = {
+            "start": "quarantine",
+            "nodes": {
+                "quarantine": {
+                    "op": "能力", "action": "quarantine_from_evidence",
+                    "inputs": {"source": "$ctx.evidence", "reason": "verification failed"},
+                    "output_var": "quarantine_result",
+                    "edges": [{"condition": "quarantined", "to": "done"}],
+                },
+                "done": {"op": "结束", "value": "$ctx.quarantine_result", "edges": []},
+            },
+        }
+        with patch.dict(CONFIG, {"identity_repository": identity_root}):
+            _, result = self.run_graph(graph, initial_data={"evidence": evidence})
+
+        self.assertTrue(result.result["ok"])
+        self.assertFalse(capability.exists())
+        quarantined = Path(result.result["quarantine_path"])
+        self.assertTrue(quarantined.is_dir())
+        self.assertTrue((quarantined / "meta.json").is_file())
+
     def test_conversation_output_applies_model_plan_but_preserves_full_audit(self):
         messages = [
             {"role": "user", "content": "unrelated weather chat"},
@@ -206,6 +288,78 @@ class DagComponentTests(unittest.TestCase):
         self.assertEqual(result.stats.model_calls, 1)
         self.assertEqual(agent.llm.calls, 0)
         self.assertNotIn("context_pressure", [name for name, _payload in events])
+
+    def test_capability_activation_evidence_parser_rejects_prose_and_extracts_tool_result(self):
+        evidence = [{
+            "name": "activate_capability",
+            "result": json.dumps({"ok": True, "id": "skill:identity/demo/tool", "kind": "skill"}),
+        }]
+
+        self.assertEqual(
+            PipelineRunner._capability_id_from_evidence(evidence),
+            "skill:identity/demo/tool",
+        )
+        self.assertIsNone(PipelineRunner._capability_id_from_evidence(
+            "Activated skill:identity/demo/untrusted in prose"
+        ))
+
+    @patch("capability_registry.CapabilityRegistry")
+    def test_capability_node_deterministically_activates_only_unambiguous_match(self, registry_type):
+        registry = registry_type.return_value
+        registry.search.return_value = {
+            "results": [
+                {"id": "skill:exact", "score": 4.2, "lexical_score": 10.0, "semantic_score": 0.72, "query_coverage": 0.2},
+                {"id": "skill:adjacent", "score": 1.9, "lexical_score": 2.0, "semantic_score": 0.2, "query_coverage": 0.2},
+            ]
+        }
+        agent = FakeAgent()
+        graph = {
+            "start": "capability",
+            "nodes": {
+                "capability": {
+                    "op": "能力", "action": "search_and_activate", "agent": "agent",
+                    "query": "exact fixture transformation",
+                    "edges": [{"condition": "activated", "to": "done"}],
+                },
+                "done": {"op": "结束", "value": "$last.activation", "edges": []},
+            },
+        }
+
+        _harness, result = self.run_graph(graph, agent=agent)
+
+        self.assertEqual(agent.activated_capabilities, ["skill:exact"])
+        self.assertTrue(result.result["ok"])
+        self.assertEqual(result.result["selection"]["method"], "deterministic_high_confidence")
+        registry.record_event.assert_called_once_with("skill:exact", "activate")
+
+    @patch("capability_registry.CapabilityRegistry")
+    def test_capability_node_does_not_auto_activate_lexical_but_semantically_adjacent_skill(self, registry_type):
+        registry = registry_type.return_value
+        registry.search.return_value = {
+            "results": [
+                {"id": "skill:wrong-contract", "score": 8.0, "lexical_score": 12.0, "semantic_score": 0.53, "query_coverage": 0.95},
+                {"id": "skill:other", "score": 1.0, "lexical_score": 1.0, "semantic_score": 0.1, "query_coverage": 0.1},
+            ]
+        }
+        agent = FakeAgent()
+        graph = {
+            "start": "capability",
+            "nodes": {
+                "capability": {
+                    "op": "能力", "action": "search_and_activate", "agent": "agent",
+                    "query": "normalize a different release contract",
+                    "edges": [{"condition": "not_found", "to": "done"}],
+                },
+                "done": {"op": "结束", "value": "$last.activation", "edges": []},
+            },
+        }
+
+        _harness, result = self.run_graph(graph, agent=agent)
+
+        self.assertEqual(agent.activated_capabilities, [])
+        self.assertFalse(result.result["ok"])
+        self.assertEqual(result.result["status"], "not_found")
+        registry.record_event.assert_not_called()
 
     def test_component_parse_failure_keeps_context_and_does_not_mark_reviewed(self):
         messages = []
@@ -291,6 +445,62 @@ class DagComponentTests(unittest.TestCase):
         with patch.dict(CONFIG, {"harness_template_repository": str(repository)}):
             with self.assertRaisesRegex(PipelineError, "SubDAG output 'score' is invalid"):
                 self.run_graph(graph)
+
+    def test_successful_mutation_evidence_exposes_only_its_persisted_path(self):
+        evidence = [{
+            "name": "create_skill",
+            "result": json.dumps({
+                "ok": True,
+                "kind": "skill",
+                "name": "normalize_bundle_json",
+                "path": str(self.root / "identity" / "skills" / "normalize_bundle_json"),
+            }),
+        }]
+
+        self.assertEqual(
+            PipelineRunner._capability_path_from_mutation_evidence(evidence),
+            str(self.root / "identity" / "skills" / "normalize_bundle_json"),
+        )
+        self.assertIsNone(PipelineRunner._capability_path_from_mutation_evidence({
+            "name": "create_skill",
+            "result": {"ok": False, "path": "must-not-load"},
+        }))
+
+    def test_capability_node_hot_loads_a_persisted_mutation_on_parent_agent(self):
+        capability_path = ROOT / "identity" / "coder" / "ego" / "skills" / "create_skill"
+        evidence = [{
+            "name": "create_skill",
+            "result": json.dumps({"ok": True, "kind": "skill", "path": str(capability_path)}),
+        }]
+        agent = FakeAgent()
+        graph = {
+            "start": "activate",
+            "nodes": {
+                "activate": {
+                    "op": "能力",
+                    "action": "activate_from_evidence",
+                    "agent": "agent",
+                    "inputs": {"source": evidence},
+                    "edges": [{"condition": "activated", "to": "done"}],
+                },
+                "done": {"op": "结束", "value": "ok", "edges": []},
+            },
+        }
+
+        _harness, result = self.run_graph(graph, agent=agent)
+
+        self.assertEqual(result.result, "ok")
+        self.assertEqual(len(agent.activated_capabilities), 1)
+
+    def test_structured_capability_search_evidence_can_be_ranked_without_model_prose(self):
+        search = {
+            "query": "bundle normalization",
+            "results": [{"id": "skill:bundle", "kind": "skill", "score": 4.0}],
+        }
+        envelope = [{"name": "search_capabilities", "result": search}]
+
+        self.assertEqual(PipelineRunner._capability_search_from_evidence(envelope), search)
+        self.assertIsNone(PipelineRunner._capability_search_from_evidence("the model says it found a skill"))
 
 
 if __name__ == "__main__":

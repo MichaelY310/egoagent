@@ -15,14 +15,18 @@
     "outputs": {
       "decision": {"path": "evolution_decision", "default": {}},
       "result": {"path": "evolution_result", "default": ""},
-      "evolved": {"path": "evolved", "default": false}
+      "evolved": {"path": "evolved", "default": false},
+      "mutation": {"path": "mutation_evidence", "default": []},
+      "repair": {"path": "repair_evidence", "default": []},
+      "verification_decision": {"path": "verification_decision", "default": {"verified": false}},
+      "quarantine": {"path": "quarantine_evidence", "default": {}}
     }
   },
   "slots": {"evolver": {"description": "Identity that evaluates and implements reusable capabilities", "required": true, "identity": "dante"}},
   "prompts": {
     "judge_reuse": {
       "description": "Editable, non-keyword evolution policy",
-      "default": "Review this conversation metadata for repeated work, repeated search failures, expensive recurring tool traces, durable domain knowledge, or a workflow that would be cheaper and more reliable as a reusable capability. Do not evolve for a one-off task. Prefer knowledge for stable facts, a skill/tool for a repeatable operation, and a Harness/SubDAG for an isolated multi-step workflow. The new capability must have a clear trigger, bounded interface and evidence of expected reuse.\n\nMetadata:\n{conversation_payload}\n\nReturn ONLY JSON: {{\"should_evolve\":true|false,\"reason\":\"...\",\"search_query\":\"...\",\"artifact_type\":\"knowledge|skill|tool|harness\",\"name\":\"snake_case_name\",\"spec\":{{\"purpose\":\"...\",\"inputs\":{{}},\"outputs\":{{}},\"acceptance_test\":\"...\"}}}}"
+      "default": "Review this conversation metadata for repeated work, repeated search failures, expensive recurring tool traces, durable domain knowledge, or a workflow that would be cheaper and more reliable as a reusable capability. Do not evolve for a one-off task. Treat at least three independently observed repetitions and an explicit project statement that the work will recur as real reuse evidence, especially when a deterministic capability would keep bulky raw input or noisy tool output out of the parent context. Use the trajectory-derived usage totals as the authoritative cost evidence; do not infer whole-run token cost from the length of an individual read/write tool result. Still choose no change when direct work is already cheaper, equally reliable, and equally compact. Prefer knowledge for stable facts, a skill/tool for a repeatable operation, and a Harness/SubDAG for an isolated multi-step workflow. The new capability must have a clear trigger, bounded interface and evidence of expected reuse.\n\nMetadata (including exact accumulated trajectory usage when available):\n{conversation_payload}\n\nReturn ONLY JSON: {{\"should_evolve\":true|false,\"reason\":\"...\",\"search_query\":\"...\",\"artifact_type\":\"knowledge|skill|tool|harness\",\"name\":\"snake_case_name\",\"spec\":{{\"purpose\":\"...\",\"inputs\":{{}},\"outputs\":{{}},\"acceptance_test\":\"...\"}}}}"
     },
     "judge_verification": {
       "description": "Require evidence before an evolution is marked successful",
@@ -32,10 +36,10 @@
   "return_mode": "last",
   "pipeline": {
     "start": "conversation_in", "max_steps": 26,
-    "budget": {"max_model_calls": 8, "max_tool_calls": 6, "max_tokens": 60000},
-    "context": {"evolved": false, "evolution_result": "", "mutation_evidence": [], "mutation_evidence_ok": false, "repair_evidence": [], "repair_evidence_ok": false, "verification_report": "", "verification_evidence": [], "verification_evidence_ok": false, "verification_repair_evidence": [], "verification_repair_evidence_ok": false, "verification_decision": {"verified": false, "reason": "verification not run"}, "require_approval": true, "protect_recent_turns": 2},
+    "budget": {"max_model_calls": 8, "max_tool_calls": 6, "max_tokens": 160000},
+    "context": {"evolved": false, "evolution_result": "", "mutation_evidence": [], "mutation_evidence_ok": false, "repair_evidence": [], "repair_evidence_ok": false, "verification_report": "", "verification_evidence": [], "verification_evidence_ok": false, "verification_repair_evidence": [], "verification_repair_evidence_ok": false, "verification_decision": {"verified": false, "reason": "verification not run"}, "quarantine_evidence": {}, "require_approval": true, "protect_recent_turns": 2},
     "nodes": {
-      "conversation_in": {"id": "conversation_in", "op": "上下文", "action": "snapshot", "protect_recent_turns": "$ctx.protect_recent_turns", "output_var": "conversation_snapshot", "outputs": {"model_payload": "conversation_payload"}, "edges": [{"condition": "conversation_ready", "to": "judge"}]},
+      "conversation_in": {"id": "conversation_in", "op": "上下文", "action": "snapshot", "protect_recent_turns": "$ctx.protect_recent_turns", "include_usage": true, "output_var": "conversation_snapshot", "outputs": {"model_payload": "conversation_payload"}, "edges": [{"condition": "conversation_ready", "to": "judge"}]},
       "judge": {"id": "judge", "op": "模型", "agent": "evolver", "prompt": "judge_reuse", "parse_as": "json_object", "json_fallback": {"should_evolve": false, "reason": "invalid proposal"}, "temperature": 0.2, "max_tokens": 1800, "outputs": {"structured": "evolution_decision"}, "edges": [{"condition": "has_text", "to": "needed"}, {"condition": "json_fallback", "to": "needed"}]},
       "needed": {"id": "needed", "op": "条件", "condition": "ctx.evolution_decision.should_evolve == true", "edges": [{"condition": "true", "to": "approval_policy"}, {"condition": "false", "to": "done"}]},
       "approval_policy": {"id": "approval_policy", "op": "条件", "condition": "ctx.require_approval == true", "edges": [{"condition": "true", "to": "approve"}, {"condition": "false", "to": "evolve"}]},
@@ -49,12 +53,12 @@
       "implement": {
         "id": "implement", "op": "Agent", "agent": "evolver", "tools": "all", "max_tool_calls_per_turn": 1,
         "visible_tools": ["activate_capability", "create_knowledge", "create_skill", "create_agent_system", "manage_harness"],
-        "instructions": "Review the immediately preceding search result and this approved proposal: ${ctx.evolution_decision}\nPerform exactly one action. If an adequate capability exists, activate it. Otherwise create the smallest proposed artifact. For create_skill, pass parameters_schema as an actual JSON object (not a JSON-encoded string); its public properties must exactly match the Python function signature and must omit runtime-only _context. A workspace-aware function itself should accept optional _context=None and resolve the workspace from (_context or {}).get('workspace') or os.getcwd(). Code must use the exact filenames, units, note grammar and every example in the task evidence; do not hardcode an evidence mapping as a fallback when the task requires reading notes. For a Harness, publish typed component inputs/outputs. Do not search again. A write is not yet success; the following nodes verify it.",
+        "instructions": "Review the immediately preceding search result and this approved proposal: ${ctx.evolution_decision}\nPerform exactly one action. If an adequate capability exists, activate it. Otherwise create the smallest proposed artifact. Implement the proposal's typed interface and acceptance_test without embedding hidden answers or task-specific constants. For create_skill, pass parameters_schema as an actual JSON object (not a JSON-encoded string); its public properties must exactly match the Python function signature and must omit runtime-only _context. A workspace-aware function itself should accept optional _context=None and resolve the workspace from (_context or {}).get('workspace') or os.getcwd(). For Knowledge, preserve source and scope. For a Harness, publish typed component inputs/outputs and a bounded runnable control flow. Do not search again. A write is not yet success; the following nodes verify the persisted artifact.",
         "outputs": {"text": "evolution_result"},
         "edges": [{"condition": "has_tool_calls", "to": "mutation_tools"}, {"condition": "has_text", "to": "done"}]
       },
       "mutation_tools": {"id": "mutation_tools", "op": "工具", "agent": "evolver", "outputs": {"results": "mutation_evidence", "succeeded": "mutation_evidence_ok"}, "edges": [{"condition": "default", "to": "mutation_gate"}]},
-      "mutation_gate": {"id": "mutation_gate", "op": "条件", "condition": "ctx.mutation_evidence_ok == true", "edges": [{"condition": "true", "to": "verify"}, {"condition": "false", "to": "repair"}]},
+      "mutation_gate": {"id": "mutation_gate", "op": "条件", "condition": "ctx.mutation_evidence_ok == true", "edges": [{"condition": "true", "to": "verification_route"}, {"condition": "false", "to": "repair"}]},
       "repair": {
         "id": "repair", "op": "Agent", "agent": "evolver", "tools": "all", "max_tool_calls_per_turn": 1,
         "visible_tools": ["activate_capability", "create_knowledge", "create_skill", "create_agent_system", "manage_harness"],
@@ -62,31 +66,47 @@
         "edges": [{"condition": "has_tool_calls", "to": "repair_tools"}, {"condition": "has_text", "to": "done"}]
       },
       "repair_tools": {"id": "repair_tools", "op": "工具", "agent": "evolver", "outputs": {"results": "repair_evidence", "succeeded": "repair_evidence_ok"}, "edges": [{"condition": "default", "to": "repair_gate"}]},
-      "repair_gate": {"id": "repair_gate", "op": "条件", "condition": "ctx.repair_evidence_ok == true", "edges": [{"condition": "true", "to": "verify"}, {"condition": "false", "to": "done"}]},
+      "repair_gate": {"id": "repair_gate", "op": "条件", "condition": "ctx.repair_evidence_ok == true", "edges": [{"condition": "true", "to": "verification_route"}, {"condition": "false", "to": "done"}]},
+      "verification_route": {"id": "verification_route", "op": "条件", "condition": "ctx.evolution_decision.artifact_type == 'skill'", "edges": [{"condition": "true", "to": "verify_skill"}, {"condition": "false", "to": "verify"}]},
+      "verify_skill": {
+        "id": "verify_skill", "op": "Agent", "agent": "evolver", "tools": "all", "max_tool_calls_per_turn": 1,
+        "visible_tools": ["verify_identity_skill"],
+        "instructions": "Verify the newly persisted executable Skill from this successful mutation evidence: ${ctx.mutation_evidence}\nRepair evidence, if any: ${ctx.repair_evidence}\nProposal: ${ctx.evolution_decision}\nCall verify_identity_skill exactly once with the created skill_name and 1-4 representative cases derived from the public contract. Exercise the installed artifact through the current Agent; do not read raw task files, run copied code, inspect implementation files, or merely predict the result.",
+        "edges": [{"condition": "has_tool_calls", "to": "verification_tools"}, {"condition": "has_text", "to": "verification_failed"}]
+      },
       "verify": {
         "id": "verify", "op": "Agent", "agent": "evolver", "tools": "all", "max_tool_calls_per_turn": 1,
-        "visible_tools": ["run_command", "read_file", "search_capabilities"],
-        "instructions": "Verify the successful persisted activation or mutation against the proposal acceptance_test. Perform exactly one highest-value check: for a Skill, import the function from the absolute scripts/<skill_name>.py path returned by create_skill and run every acceptance assertion including the error case; never test copied/equivalent inline code. The process already runs in the Task workspace: do not use cd and do not pass cwd. If the Skill reads workspace files, call it with _context={'workspace': os.getcwd()}. For Knowledge/Harness inspect or run the persisted artifact; for activation query the catalog. Ensure the command prints an explicit PASS marker. Do not mutate and do not perform multiple searches.",
+        "visible_tools": ["verify_identity_skill", "run_command", "read_file", "search_capabilities"],
+        "instructions": "Verify the successful persisted activation or mutation against the proposal acceptance_test with exactly one highest-value persisted-artifact check. For an executable Skill created for the current Identity, call verify_identity_skill with its exact name and 1-4 representative normal/error cases; that tool activates and executes the installed artifact through the normal workspace policy without granting arbitrary Identity-directory reads. Never import an Identity file with read_file or run_command from outside the Task workspace, and never test copied inline code. For Knowledge, inspect it through search/activation evidence; for a Harness or Agent, validate its saved graph/interface and run a bounded smoke task when possible. For activation, query the catalog and confirm the activated reference. Ensure the evidence contains an explicit PASS marker. Do not mutate and do not perform multiple searches.",
         "edges": [{"condition": "has_tool_calls", "to": "verification_tools"}, {"condition": "has_text", "to": "verification_judge"}]
       },
       "verification_tools": {"id": "verification_tools", "op": "工具", "agent": "evolver", "outputs": {"results": "verification_evidence", "succeeded": "verification_evidence_ok"}, "edges": [{"condition": "default", "to": "verification_evidence_gate"}]},
-      "verification_evidence_gate": {"id": "verification_evidence_gate", "op": "条件", "condition": "ctx.verification_evidence_ok == true", "edges": [{"condition": "true", "to": "verification_report"}, {"condition": "false", "to": "verification_repair"}]},
+      "verification_evidence_gate": {"id": "verification_evidence_gate", "op": "条件", "condition": "ctx.verification_evidence_ok == true", "edges": [{"condition": "true", "to": "verification_report"}, {"condition": "false", "to": "verification_retry_route"}]},
+      "verification_retry_route": {"id": "verification_retry_route", "op": "条件", "condition": "ctx.evolution_decision.artifact_type == 'skill'", "edges": [{"condition": "true", "to": "verification_skill_repair"}, {"condition": "false", "to": "verification_repair"}]},
+      "verification_skill_repair": {
+        "id": "verification_skill_repair", "op": "Agent", "agent": "evolver", "tools": "all", "max_tool_calls_per_turn": 1,
+        "visible_tools": ["verify_identity_skill"],
+        "instructions": "The first installed-Skill verification call failed: ${ctx.verification_evidence}\nRetry verify_identity_skill exactly once for the same persisted skill, correcting only the reported case arguments or expected subset. Do not read task files, invoke another tool, mutate the Skill, or test copied inline code.",
+        "edges": [{"condition": "has_tool_calls", "to": "verification_repair_tools"}, {"condition": "has_text", "to": "verification_failed"}]
+      },
       "verification_repair": {
         "id": "verification_repair", "op": "Agent", "agent": "evolver", "tools": "all", "max_tool_calls_per_turn": 1,
-        "visible_tools": ["run_command", "read_file", "search_capabilities"],
-        "instructions": "The first verification call failed or was blocked: ${ctx.verification_evidence}\nRetry the same persisted-artifact acceptance check exactly once. For run_command, do not use cd and omit cwd; the process already starts in the Task workspace. Import the persisted Skill by its absolute scripts path, pass _context={'workspace': os.getcwd()}, execute every assertion, and print PASS. Do not mutate or test copied inline code.",
+        "visible_tools": ["verify_identity_skill", "run_command", "read_file", "search_capabilities"],
+        "instructions": "The first verification call failed or was blocked: ${ctx.verification_evidence}\nRetry the same persisted-artifact acceptance check exactly once, correcting only the reported invocation error. For a current-Identity executable Skill, use verify_identity_skill rather than reading or importing files outside the Task workspace. For run_command, do not use cd and omit cwd; the process already starts in the Task workspace. Test the installed artifact itself, not copied inline code, and print PASS on success. Do not mutate or broaden the proposal.",
         "edges": [{"condition": "has_tool_calls", "to": "verification_repair_tools"}, {"condition": "has_text", "to": "verification_failed"}]
       },
       "verification_repair_tools": {"id": "verification_repair_tools", "op": "工具", "agent": "evolver", "outputs": {"results": "verification_repair_evidence", "succeeded": "verification_repair_evidence_ok"}, "edges": [{"condition": "default", "to": "verification_repair_gate"}]},
       "verification_repair_gate": {"id": "verification_repair_gate", "op": "条件", "condition": "ctx.verification_repair_evidence_ok == true", "edges": [{"condition": "true", "to": "verification_report"}, {"condition": "false", "to": "verification_failed"}]},
-      "verification_failed": {"id": "verification_failed", "op": "数据", "action": "set", "key": "verification_decision", "value": {"verified": false, "reason": "The deterministic verification tool failed; model self-report was not accepted."}, "edges": [{"condition": "default", "to": "done"}]},
+      "verification_failed": {"id": "verification_failed", "op": "数据", "action": "set", "key": "verification_decision", "value": {"verified": false, "reason": "The deterministic verification tool failed; model self-report was not accepted."}, "edges": [{"condition": "default", "to": "quarantine_mutation"}]},
       "verification_report": {
         "id": "verification_report", "op": "Agent", "agent": "evolver", "tools": "all", "visible_tools": [],
         "instructions": "Report the evolution action and its concrete verification result. Include capability name/path, the exact check, exit status or catalog evidence, and any failure. Do not call tools.",
         "outputs": {"text": "verification_report"}, "edges": [{"condition": "has_text", "to": "verification_judge"}]
       },
       "verification_judge": {"id": "verification_judge", "op": "模型", "agent": "evolver", "prompt": "judge_verification", "parse_as": "json_object", "json_fallback": {"verified": false, "reason": "invalid verification"}, "temperature": 0.1, "max_tokens": 600, "outputs": {"structured": "verification_decision"}, "edges": [{"condition": "has_text", "to": "verification_gate"}, {"condition": "json_fallback", "to": "verification_gate"}]},
-      "verification_gate": {"id": "verification_gate", "op": "条件", "condition": "ctx.verification_decision.verified == true", "edges": [{"condition": "true", "to": "mark_evolved"}, {"condition": "false", "to": "done"}]},
+      "verification_gate": {"id": "verification_gate", "op": "条件", "condition": "ctx.verification_decision.verified == true", "edges": [{"condition": "true", "to": "mark_evolved"}, {"condition": "false", "to": "quarantine_mutation"}]},
+      "quarantine_mutation": {"id": "quarantine_mutation", "op": "能力", "action": "quarantine_from_evidence", "inputs": {"source": "$ctx.mutation_evidence", "reason": "$ctx.verification_decision.reason"}, "output_var": "quarantine_evidence", "edges": [{"condition": "quarantined", "to": "quarantine_repair"}, {"condition": "not_found", "to": "quarantine_repair"}, {"condition": "error", "to": "quarantine_repair"}]},
+      "quarantine_repair": {"id": "quarantine_repair", "op": "能力", "action": "quarantine_from_evidence", "inputs": {"source": "$ctx.repair_evidence", "reason": "$ctx.verification_decision.reason"}, "output_var": "quarantine_evidence", "edges": [{"condition": "quarantined", "to": "done"}, {"condition": "not_found", "to": "done"}, {"condition": "error", "to": "done"}]},
       "mark_evolved": {"id": "mark_evolved", "op": "数据", "action": "set", "key": "evolved", "value": true, "edges": [{"condition": "default", "to": "done"}]},
       "done": {"id": "done", "op": "结束", "value": {"evolved": "$ctx.evolved", "decision": "$ctx.evolution_decision", "result": "$ctx.evolution_result", "verification": "$ctx.verification_report", "verification_decision": "$ctx.verification_decision"}, "edges": []}
     }

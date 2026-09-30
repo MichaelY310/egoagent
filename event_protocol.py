@@ -129,6 +129,12 @@ CORE_EVENT_DEFINITIONS = {
         _definition("evolution.promoted", EventCategory.EVOLUTION),
         _definition("evolution.rolled_back", EventCategory.EVOLUTION),
         _definition("runtime.event", EventCategory.RUNTIME, required=("event", "payload")),
+        _definition(
+            "runtime.configuration.changed",
+            EventCategory.RUNTIME,
+            required=("previous", "current"),
+            typed=(("previous", dict), ("current", dict)),
+        ),
     )
 }
 

@@ -1,0 +1,46 @@
+{
+  "name": "experiment_structural_tool_loop_base",
+  "description": "Deliberately incomplete experimental Flow used to test whether structural evolution can recover a missing Agent-tool feedback loop from measured evidence.",
+  "tags": ["experiment", "structural-evolution", "ablation", "do-not-recommend"],
+  "catalog": {"category": "experiment", "visibility": "internal", "display_name": "Structural Tool Loop Base (experiment)"},
+  "slots": {
+    "agent": {"description": "Primary software engineer", "required": true, "identity": "adaptive_deepseek_coder"}
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 80,
+    "timeout_seconds": 1800,
+    "workspace_preview": true,
+    "budget": {"max_model_calls": 24, "max_tool_calls": 80, "max_tokens": 180000},
+    "context": {"request": "", "agent_answer": ""},
+    "nodes": {
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "outputs": {"text": "request"},
+        "edges": [{"condition": "input", "to": "infer"}]
+      },
+      "infer": {
+        "id": "infer",
+        "op": "Agent",
+        "agent": "agent",
+        "tools": "all",
+        "hidden_tools": ["terminate", "end_session", "submit_result", "finish", "done"],
+        "max_tool_rounds": 16,
+        "instructions": "Complete the request in the current workspace: ${ctx.request}\nInspect exact source, make the smallest safe edit, run the requested test, then report evidence. Your first action on a coding task must inspect the workspace.",
+        "outputs": {"text": "agent_answer"},
+        "edges": [
+          {"condition": "has_tool_calls", "to": "done"},
+          {"condition": "has_text", "to": "done"}
+        ]
+      },
+      "done": {
+        "id": "done",
+        "op": "结束",
+        "value": {"answer": "$ctx.agent_answer"},
+        "edges": []
+      }
+    }
+  }
+}

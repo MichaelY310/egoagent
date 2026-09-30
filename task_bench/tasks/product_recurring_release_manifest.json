@@ -1,0 +1,78 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_recurring_release_manifest",
+  "title": "Recurring synthetic release manifest normalization",
+  "description": "Seven fictional release-manifest conversions test evidence-based Skill evolution, persisted-artifact verification, and later reuse without external or personal data.",
+  "category": "code-product-acceptance",
+  "difficulty": "medium",
+  "tags": ["multi-step", "synthetic", "recurring-work", "skill-search", "evolution", "json"],
+  "prompt": "Normalize each requested fictional legacy release manifest according to FORMAT.md. The same maintenance operation recurs in this project; begin with the cheapest correct approach and let accumulated session evidence determine whether a reusable capability is justified.",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Synthetic release workspace rules\n\n- Everything in this fixture is fictional and offline.\n- Read only the requested legacy file plus FORMAT.md.\n- Never change legacy inputs, FORMAT.md, or test_release_manifest.py.\n- Write only the requested canonical JSON artifact.\n- After every artifact, run `python -m unittest -v`; this independent repository test is the completion authority.\n- Do not add an ad-hoc project script merely to pass one item; durable automation belongs in the governed capability system only after repeated evidence.\n",
+      "FORMAT.md": "# Canonical release manifest v1\n\nFor each legacy object, write exactly:\n\n- `schema_version`: integer `1`\n- `release.name`: trimmed lowercase legacy `component`\n- `release.version`: trimmed legacy `version` with one leading lowercase or uppercase `v` removed\n- `enabled`: true only when trimmed case-insensitive legacy `enabled` is one of `yes`, `true`, or `1`\n- `owners`: split the legacy pipe-delimited string, trim and lowercase non-empty entries, remove duplicates, sort alphabetically\n- `labels`: split the legacy comma-delimited string, trim and lowercase non-empty entries, remove duplicates, sort alphabetically\n\nPreserve no other fields.\n",
+      "test_release_manifest.py": "import json\nimport unittest\nfrom pathlib import Path\n\n\ndef expected_manifest(source):\n    version = str(source['version']).strip()\n    if version[:1].lower() == 'v':\n        version = version[1:]\n    clean = lambda raw, delimiter: sorted({item.strip().lower() for item in str(raw).split(delimiter) if item.strip()})\n    return {\n        'schema_version': 1,\n        'release': {'name': str(source['component']).strip().lower(), 'version': version},\n        'enabled': str(source['enabled']).strip().lower() in {'yes', 'true', '1'},\n        'owners': clean(source['owners'], '|'),\n        'labels': clean(source['labels'], ','),\n    }\n\n\nclass ReleaseManifestTests(unittest.TestCase):\n    def test_every_arrived_manifest_has_an_exact_canonical_pair(self):\n        for source_path in sorted(Path('legacy').glob('release_*.json')):\n            with self.subTest(source=source_path.name):\n                target = Path('canonical') / source_path.name\n                self.assertTrue(target.is_file(), f'missing {target}')\n                source = json.loads(source_path.read_text(encoding='utf-8'))\n                actual = json.loads(target.read_text(encoding='utf-8'))\n                self.assertEqual(actual, expected_manifest(source))\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "product_adaptive_code_agent",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["product_adaptive_code_agent", "product_adaptive_no_evolution"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 5400},
+  "evolution": {"allowed": true, "targets": ["skill", "knowledge", "agent", "harness"]},
+  "evaluation": {"pass_score": 1.0, "checks": []},
+  "steps": [
+    {
+      "id": "release_01",
+      "prompt": "Normalize legacy/release_01.json into canonical/release_01.json and verify the exact result against FORMAT.md.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/release_01.json": "{\"component\":\" API-Gateway \",\"version\":\"v1.2.0\",\"enabled\":\"YES\",\"owners\":\"Platform| Runtime |platform\",\"labels\":\"Edge, HTTP,edge\",\"ignored\":9}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/release_01.json", "pointer": "", "expected": {"schema_version": 1, "release": {"name": "api-gateway", "version": "1.2.0"}, "enabled": true, "owners": ["platform", "runtime"], "labels": ["edge", "http"]}, "weight": 1}]}
+    },
+    {
+      "id": "release_02",
+      "prompt": "Process the next fictional manifest: legacy/release_02.json to canonical/release_02.json under the same contract.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/release_02.json": "{\"component\":\" Worker \",\"version\":\" V2.0.1 \",\"enabled\":\" no \",\"owners\":\"Jobs|Queue|jobs\",\"labels\":\"Async, Batch, async\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/release_02.json", "pointer": "", "expected": {"schema_version": 1, "release": {"name": "worker", "version": "2.0.1"}, "enabled": false, "owners": ["jobs", "queue"], "labels": ["async", "batch"]}, "weight": 1}]}
+    },
+    {
+      "id": "release_03",
+      "prompt": "Normalize legacy/release_03.json into its matching canonical path and validate it.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/release_03.json": "{\"component\":\" Search-Index \",\"version\":\"3.4.5\",\"enabled\":\"1\",\"owners\":\"Index|Storage|INDEX\",\"labels\":\"Search, Disk,search\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/release_03.json", "pointer": "", "expected": {"schema_version": 1, "release": {"name": "search-index", "version": "3.4.5"}, "enabled": true, "owners": ["index", "storage"], "labels": ["disk", "search"]}, "weight": 1}]}
+    },
+    {
+      "id": "release_04",
+      "prompt": "A fourth manifest arrived. Normalize legacy/release_04.json to canonical/release_04.json using the established format.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/release_04.json": "{\"component\":\" Billing-Core \",\"version\":\"v0.9.8\",\"enabled\":\"TRUE\",\"owners\":\"Ledger|Payments|ledger\",\"labels\":\"Money, Core,money\",\"legacy_rank\":1}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/release_04.json", "pointer": "", "expected": {"schema_version": 1, "release": {"name": "billing-core", "version": "0.9.8"}, "enabled": true, "owners": ["ledger", "payments"], "labels": ["core", "money"]}, "weight": 1}]}
+    },
+    {
+      "id": "release_05",
+      "prompt": "Normalize legacy/release_05.json to canonical/release_05.json exactly as before.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/release_05.json": "{\"component\":\" Mailer \",\"version\":\" V5.1 \",\"enabled\":\"off\",\"owners\":\"Notify|Delivery|notify\",\"labels\":\"SMTP, Queue,smtp\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/release_05.json", "pointer": "", "expected": {"schema_version": 1, "release": {"name": "mailer", "version": "5.1"}, "enabled": false, "owners": ["delivery", "notify"], "labels": ["queue", "smtp"]}, "weight": 1}]}
+    },
+    {
+      "id": "release_06",
+      "prompt": "Process recurring manifest legacy/release_06.json into canonical/release_06.json. Preserve the same observable contract.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/release_06.json": "{\"component\":\" Metrics \",\"version\":\"v7.0.0\",\"enabled\":\" yes \",\"owners\":\"Telemetry|SRE|telemetry\",\"labels\":\"Time-Series, Ops,time-series\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/release_06.json", "pointer": "", "expected": {"schema_version": 1, "release": {"name": "metrics", "version": "7.0.0"}, "enabled": true, "owners": ["sre", "telemetry"], "labels": ["ops", "time-series"]}, "weight": 1}]}
+    },
+    {
+      "id": "release_07",
+      "prompt": "Normalize legacy/release_07.json to canonical/release_07.json. If this Session has produced a verified exact reusable capability, use it; otherwise continue with the cheapest correct method.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/release_07.json": "{\"component\":\" Feature-Flags \",\"version\":\"V4.2.3\",\"enabled\":\"True\",\"owners\":\"Control|Runtime|control\",\"labels\":\"Config, Safety,config\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/release_07.json", "pointer": "", "expected": {"schema_version": 1, "release": {"name": "feature-flags", "version": "4.2.3"}, "enabled": true, "owners": ["control", "runtime"], "labels": ["config", "safety"]}, "weight": 1}]}
+    }
+  ]
+}

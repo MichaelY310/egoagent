@@ -3,9 +3,26 @@
 This local extension integrates EgoAgent into Void's native Chat container. It
 does not create a floating overlay and never covers the editor.
 
-## No-key IDE features
+## Code completion
 
-- Multi-line inline Tab suggestions and symbol completion
+The configured `autocomplete` model role powers native inline ghost text.
+Pause typing (280 ms debounce), then **Tab** to accept, **Esc** to dismiss,
+**Ctrl+Right** to accept the next word, or **Ctrl+Alt+Right** for the next line.
+**Alt+Backslash** manually requests a suggestion. **Ctrl+Z** uses the editor's
+normal undo stack. Click the EgoAgent Tab status item to pause/resume.
+
+Requests are cancellable and bounded (8 seconds by default). Stale responses
+are discarded. Content-based caching supports backspace and partial typing.
+With no model, only identifiers already in the document can be suggested;
+there are no fake TODO implementations. Optional open-file context is off by
+default, scoped to the same workspace, and excludes sensitive files.
+
+See [completion usage and settings](../../docs/AUTOCOMPLETE_ZH.md).
+The retired interactive recording tutorial no longer intercepts user input.
+
+## Other IDE features
+
+- Model-backed multi-line Tab suggestions; offline same-file word completion
 - `Ctrl+I` local inline edits
 - Deterministic multi-hunk mock Agent (`Ctrl+Alt+M`)
 - Per-hunk Accept/Reject in the Chat view and as editor CodeLens actions

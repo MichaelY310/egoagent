@@ -654,11 +654,13 @@ def apply_pressure_compaction(
     target_tokens: int,
     protect_recent_turns: int = 2,
     full_messages: Iterable[dict[str, Any]] | None = None,
+    minimum_savings_tokens: int = 0,
 ) -> dict[str, Any]:
     """Apply a model-authored plan while preserving an exact audit transcript."""
 
     working_source = ensure_message_ids(working_messages)
     audit = ensure_message_ids(full_messages if full_messages is not None else working_source)
+    original_audit = copy.deepcopy(audit)
     audit_by_id = {str(message["_message_id"]): message for message in audit}
     blocks = context_blocks(working_source, protect_recent_turns=protect_recent_turns)
     raw_decisions = plan.get("blocks", []) if isinstance(plan, dict) else []
@@ -780,6 +782,21 @@ def apply_pressure_compaction(
 
     before_tokens = estimate_tokens(working_source)
     after_tokens = estimate_tokens(output)
+    candidate_after_tokens = after_tokens
+    candidate_saved_tokens = before_tokens - candidate_after_tokens
+    # A model-authored summary can occasionally be longer than the material it
+    # replaces, especially when the protected recent turn is already large.
+    # Never commit that candidate: the full transcript and current working view
+    # must remain byte-for-byte recoverable and the next pressure check should
+    # observe the real context rather than an inflated failed summary.
+    required_savings = max(1, int(minimum_savings_tokens or 0))
+    rejected = candidate_saved_tokens < required_savings
+    if rejected:
+        output = copy.deepcopy(working_source)
+        audit = original_audit
+        ledger = []
+        after_tokens = before_tokens
+        summarized = elided = simplified_reasoning = 0
     return {
         "messages": output,
         "full_messages": audit,
@@ -794,6 +811,10 @@ def apply_pressure_compaction(
             "simplified_reasoning_blocks": simplified_reasoning,
             "target_tokens": int(target_tokens),
             "target_fallback_used": fallback_used,
+            "minimum_savings_tokens": int(minimum_savings_tokens or 0),
+            "compaction_rejected": rejected,
+            "candidate_after_tokens_estimated": candidate_after_tokens,
+            "candidate_saved_tokens_estimated": candidate_saved_tokens,
         },
     }
 

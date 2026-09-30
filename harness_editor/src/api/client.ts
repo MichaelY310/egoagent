@@ -4,14 +4,50 @@ async function request(method: string, path: string, body?: unknown) {
   const opts: RequestInit = { method, headers: { "Content-Type": "application/json" } };
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch(`${BASE}${path}`, opts);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
+  const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+  const raw = await res.text();
+  let data: any = null;
+  if (raw.trim()) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      const received = contentType.includes('text/html') || /^\s*<!doctype\s+html/i.test(raw)
+        ? 'HTML 页面'
+        : `${contentType || '未知类型'} 响应`;
+      throw new ApiResponseFormatError(
+        `API ${path} 返回了${received}而不是 JSON。后端可能仍是旧版本或请求路由错误，请重启 EgoAgent 服务后重试。`,
+        path,
+        res.status,
+        contentType,
+      );
+    }
   }
-  return res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || res.statusText || `HTTP ${res.status}`);
+  }
+  return data;
+}
+
+export class ApiResponseFormatError extends Error {
+  constructor(
+    message: string,
+    public readonly path: string,
+    public readonly status: number,
+    public readonly contentType: string,
+  ) {
+    super(message);
+    this.name = 'ApiResponseFormatError';
+  }
 }
 
 // ============ Harness ============
+
+export const listFlowObservations = () => request('GET', '/api/observations/runs');
+export const listFlowRecordings = () => request('GET', '/api/observations/album');
+export const readFlowObservation = (root_id: string, after = 0, recording_id = '') =>
+  request('POST', '/api/observations/read', { root_id, after, recording_id, limit: 500 });
+export const recordFlowObservation = (body: { root_id?: string; action: string; title?: string; recording_id?: string }) =>
+  request('POST', '/api/observations/record', body);
 
 export async function listHarnesses(): Promise<string[]> {
   return request("GET", "/api/harnesses");
@@ -59,9 +95,14 @@ export async function saveSecuritySettings(settings: WorkspaceSecuritySettings, 
 
 export type HarnessCatalogItem = {
   name: string;
+  display_name?: string;
   description: string;
   slot_count: number;
   slots: string[];
+  catalog_category?: 'system' | 'example' | 'experiment' | 'custom';
+  catalog_label?: string;
+  catalog_visibility?: 'public' | 'internal' | string;
+  runnable?: boolean;
   component?: {
     name?: string;
     display_name?: string;
@@ -90,6 +131,26 @@ export async function listHarnessDetails(): Promise<HarnessCatalogItem[]> {
 
 export async function loadHarness(name: string) {
   return request("GET", `/api/harness/${encodeURIComponent(name)}`);
+}
+
+export type HarnessVersion = { id: string; number: number; created_at: number; digest: string; parent?: string | null; label: string };
+
+export async function listHarnessVersions(name: string): Promise<{ latest: string; versions: HarnessVersion[]; supported?: boolean }> {
+  try {
+    return await request("GET", `/api/harness-versions/${encodeURIComponent(name)}`);
+  } catch (error) {
+    // Servers from before immutable Flow versions route unknown /api/* paths
+    // to the SPA index with HTTP 200.  Legacy Sessions did not record a Flow
+    // version, so they remain safe to observe using their current Harness.
+    if (error instanceof ApiResponseFormatError && error.contentType.includes('text/html')) {
+      return { latest: '', versions: [], supported: false };
+    }
+    throw error;
+  }
+}
+
+export async function loadHarnessVersion(name: string, version: string) {
+  return request("GET", `/api/harness-version/${encodeURIComponent(name)}/${encodeURIComponent(version)}`);
 }
 
 export async function saveHarness(name: string, config: unknown) {
@@ -229,11 +290,18 @@ export async function getExecutionState(runId?: string) {
   return request("GET", `/api/execution/state${query ? `?${query}` : ''}`);
 }
 
-export async function startExecution(harness: string, agents: Record<string, string>, debugMode: 'auto' | 'paused' = 'auto') {
+export async function listExecutionRuns(): Promise<{ runs: import('../types').ExecutionState[] }> {
+  const query = WORKSPACE ? `?workspace=${encodeURIComponent(WORKSPACE)}` : '';
+  return request('GET', `/api/execution/runs${query}`);
+}
+
+export async function startExecution(harness: string, agents: Record<string, string>, debugMode: 'auto' | 'paused' = 'auto', harnessVersion = 'latest') {
   return request("POST", "/api/execution/start", {
     harness,
+    harness_version: harnessVersion,
     agents,
     debug_mode: debugMode,
+    surface: 'builder',
     workspace: WORKSPACE || undefined,
   });
 }
@@ -652,6 +720,14 @@ export type PortfolioSession = {
   working_message_count?: number;
   summary?: string;
   harness?: string;
+  identity?: string;
+  agent_config?: {
+    harness?: string;
+    mode?: string;
+    debug_mode?: string;
+    agents?: Record<string, string>;
+    mutation_targets?: string[];
+  };
   session_id?: string;
   trace_id?: string;
   has_trajectory?: boolean;
@@ -700,6 +776,24 @@ export async function updateProject(project_id: string, changes: Partial<Pick<Pr
 
 export async function updatePortfolioSession(session: string, changes: { title?: string; pinned?: boolean; archived?: boolean; last_opened_at?: number }) {
   return request('POST', '/api/projects/session/update', { session, changes });
+}
+
+export async function createPortfolioSession(input: {
+  name?: string;
+  title?: string;
+  workspace?: string;
+  agent_config?: {
+    harness: string;
+    mode: string;
+    agents: Record<string, string>;
+    debug_mode?: string;
+  };
+}) {
+  return request('POST', '/api/sessions/create', input);
+}
+
+export async function trashPortfolioSession(session: string) {
+  return request('POST', `/api/session/${encodeURIComponent(session)}/trash`, {});
 }
 
 // ============ Optional Heart Flow / Flow Relay experiment ============
@@ -806,6 +900,17 @@ export async function mergeSessions(options: {
   return request("POST", "/api/sessions/merge", options);
 }
 
+export async function mergeManySessions(options: {
+  sessions: string[];
+  mode: 'auto' | 'direct' | 'summary' | 'dialogue';
+  name?: string;
+  threshold_tokens?: number;
+  dialogue_rounds?: number;
+  target_workspace?: string;
+}) {
+  return request("POST", "/api/sessions/merge-many", options);
+}
+
 export async function getSessionLineage(session: string): Promise<{ session: string; lineage: SessionLineage }> {
   return request("GET", `/api/session/${encodeURIComponent(session)}/lineage`);
 }
@@ -816,8 +921,28 @@ export async function listTaskBenchTasks() {
   return request("GET", "/api/task-bench/tasks");
 }
 
+export async function listTaskDatasets() {
+  return request("GET", "/api/task-bench/datasets");
+}
+
+export async function getTaskDataset(datasetId: string) {
+  return request("GET", `/api/task-bench/datasets/${encodeURIComponent(datasetId)}`);
+}
+
+export async function previewTaskDataset(payload: Record<string, unknown>) {
+  return request("POST", "/api/task-bench/datasets/preview", payload);
+}
+
+export async function createTaskDataset(payload: Record<string, unknown>) {
+  return request("POST", "/api/task-bench/datasets", payload);
+}
+
 export async function getTaskBenchOptions() {
   return request("GET", "/api/task-bench/options");
+}
+
+export async function inspectGovernance(payload: { harness: string; identity: string; mode: string }) {
+  return request("POST", "/api/governance/inspect", payload);
 }
 
 export async function listTaskBenchRuns() {
@@ -828,9 +953,15 @@ export async function getTaskBenchRun(runId: string) {
   return request("GET", `/api/task-bench/runs/${encodeURIComponent(runId)}`);
 }
 
+export async function compareTaskBenchRuns(runIds: string[]) {
+  return request("POST", "/api/task-bench/compare", { run_ids: runIds });
+}
+
 export async function startTaskBenchRun(payload: {
   task_id: string;
+  runner?: 'ego_flow' | 'codex_cli';
   harness: string;
+  harness_version?: string;
   identity: string;
   environments: string[];
   slot_bindings: Record<string, string>;
@@ -842,6 +973,10 @@ export async function startTaskBenchRun(payload: {
 
 export async function controlTaskBenchRun(runId: string, action: 'pause' | 'step' | 'auto' | 'stop') {
   return request("POST", `/api/task-bench/runs/${encodeURIComponent(runId)}/control`, { action });
+}
+
+export async function recoverTaskBenchRun(runId: string, debugMode: 'auto' | 'paused' = 'auto') {
+  return request("POST", `/api/task-bench/runs/${encodeURIComponent(runId)}/recover`, { debug_mode: debugMode });
 }
 
 export async function sendTaskBenchInput(runId: string, text: string) {

@@ -104,6 +104,19 @@ class CodexRuntimeCapabilityTests(unittest.TestCase):
             self.assertEqual(finished["exit_code"], 0)
             self.assertIn("got:ping", finished["output"])
 
+    def test_exec_command_preserves_multiline_python_c_program(self):
+        (ROOT / "tmp").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as temporary:
+            context = {"workspace": temporary, "running_commands": {}, "sandbox": {"mode": "workspace"}}
+            code = "print('line-one')\nprint('line-two')"
+            command = f'"{sys.executable}" -c "{code}"'
+
+            result = call_tool("exec_command", {"cmd": command, "yield_time_ms": 2000}, context)
+
+            self.assertEqual(result["status"], "done", result)
+            self.assertEqual(result["exit_code"], 0, result)
+            self.assertEqual(result["output"].splitlines(), ["line-one", "line-two"])
+
     def test_update_plan_rejects_two_active_items_and_persists_valid_state(self):
         state = {}
         context = {"plan_state": state}

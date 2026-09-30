@@ -13,7 +13,8 @@
       "high_watermark": {"default": 0.82, "schema": {"type": "number", "minimum": 0.2, "maximum": 0.98}},
       "target_ratio": {"default": 0.62, "schema": {"type": "number", "minimum": 0.1, "maximum": 0.9}},
       "reserved_output_tokens": {"default": 4096, "schema": {"type": "integer", "minimum": 0}},
-      "protect_recent_turns": {"default": 2, "schema": {"type": "integer", "minimum": 1}}
+      "protect_recent_turns": {"default": 2, "schema": {"type": "integer", "minimum": 1}},
+      "minimum_savings_tokens": {"description": "Reject model-authored plans that do not reclaim at least this many estimated tokens", "default": 256, "schema": {"type": "integer", "minimum": 0}}
     },
     "outputs": {
       "compacted": {"path": "context_compacted", "default": false},
@@ -51,6 +52,7 @@
       "conversation_out": {
         "id": "conversation_out", "op": "上下文", "action": "apply", "apply_mode": "block_plan",
         "protect_recent_turns": "$ctx.protect_recent_turns",
+        "minimum_savings_tokens": "$ctx.minimum_savings_tokens",
         "inputs": {
           "plan": "$ctx.context_plan",
           "messages": "$ctx.conversation_snapshot.working_messages",

@@ -1,12 +1,37 @@
 {
   "name": "tutorial_full_stack_code_agent",
   "description": "Recording-ready full-stack Code Agent: semantic capability/DAG discovery, auditable curation, passive compaction, periodic evolution, persistent memory, planning approval, checkpointing, transactional edits, bounded implementation, parallel review and per-hunk change resolution.",
-  "tags": ["tutorial", "code", "subdag", "context", "evolution", "memory", "checkpoint", "parallel-review"],
+  "tags": [
+    "tutorial",
+    "code",
+    "subdag",
+    "context",
+    "evolution",
+    "memory",
+    "checkpoint",
+    "parallel-review"
+  ],
   "slots": {
-    "agent": {"description": "Primary coding Identity", "required": true, "identity": "coder"},
-    "governor": {"description": "Planning, context and evolution governor", "required": true, "identity": "dante"},
-    "quality_reviewer": {"description": "Independent correctness reviewer", "required": true, "identity": "sharp_critic"},
-    "safety_reviewer": {"description": "Independent scope and safety reviewer", "required": true, "identity": "privacy_guard"}
+    "agent": {
+      "description": "Primary coding Identity",
+      "required": true,
+      "identity": "coder"
+    },
+    "governor": {
+      "description": "Planning, context and evolution governor",
+      "required": true,
+      "identity": "dante"
+    },
+    "quality_reviewer": {
+      "description": "Independent correctness reviewer",
+      "required": true,
+      "identity": "sharp_critic"
+    },
+    "safety_reviewer": {
+      "description": "Independent scope and safety reviewer",
+      "required": true,
+      "identity": "privacy_guard"
+    }
   },
   "prompts": {
     "plan": {
@@ -31,13 +56,21 @@
     "max_node_steps": 2400,
     "workspace_preview": true,
     "interactive_max_tokens": null,
-    "budget": {"max_model_calls": 320, "max_tool_calls": 800, "max_tokens": 1800000},
+    "budget": {
+      "max_model_calls": 320,
+      "max_tool_calls": 800,
+      "max_tokens": 1800000
+    },
     "context": {
       "request": "",
       "turn_count": 0,
       "curation_interval": 3,
       "evolution_interval": 5,
-      "attempts": [1, 2, 3],
+      "attempts": [
+        1,
+        2,
+        3
+      ],
       "goal_complete": false,
       "agent_answer": "",
       "feedback": "",
@@ -47,58 +80,485 @@
       "change_review": {}
     },
     "nodes": {
-      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "reset_goal"}]},
-      "reset_goal": {"id": "reset_goal", "op": "数据", "action": "set", "key": "goal_complete", "value": false, "edges": [{"condition": "default", "to": "reset_answer"}]},
-      "reset_answer": {"id": "reset_answer", "op": "数据", "action": "set", "key": "agent_answer", "value": "", "edges": [{"condition": "default", "to": "reset_feedback"}]},
-      "reset_feedback": {"id": "reset_feedback", "op": "数据", "action": "set", "key": "feedback", "value": "", "edges": [{"condition": "default", "to": "count_turn"}]},
-      "count_turn": {"id": "count_turn", "op": "数据", "action": "increment", "scope": "session", "key": "tutorial.turn_count", "default": 0, "delta": 1, "output_var": "turn_count", "edges": [{"condition": "default", "to": "discover"}]},
-      "discover": {
-        "id": "discover", "op": "子流程", "harness": "component_capability_discovery", "share_session": true,
-        "agent_map": {"searcher": "governor"}, "component_inputs": {"query": "${ctx.request}", "max_tool_rounds": 3},
-        "component_outputs": {"result": "capability_discovery", "searched": "capability_searched"}, "result_mode": "data", "output_var": "discovery_component",
-        "edges": [{"condition": "subflow_done", "to": "curation_due"}]
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "outputs": {
+          "text": "request"
+        },
+        "edges": [
+          {
+            "condition": "input",
+            "to": "reset_goal"
+          }
+        ]
       },
-      "curation_due": {"id": "curation_due", "op": "条件", "condition": "ctx.turn_count % ctx.curation_interval == 0", "edges": [{"condition": "true", "to": "curate"}, {"condition": "false", "to": "compact"}]},
+      "reset_goal": {
+        "id": "reset_goal",
+        "op": "数据",
+        "action": "set",
+        "key": "goal_complete",
+        "value": false,
+        "edges": [
+          {
+            "condition": "default",
+            "to": "reset_answer"
+          }
+        ]
+      },
+      "reset_answer": {
+        "id": "reset_answer",
+        "op": "数据",
+        "action": "set",
+        "key": "agent_answer",
+        "value": "",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "reset_feedback"
+          }
+        ]
+      },
+      "reset_feedback": {
+        "id": "reset_feedback",
+        "op": "数据",
+        "action": "set",
+        "key": "feedback",
+        "value": "",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "count_turn"
+          }
+        ]
+      },
+      "count_turn": {
+        "id": "count_turn",
+        "op": "数据",
+        "action": "increment",
+        "scope": "session",
+        "key": "tutorial.turn_count",
+        "default": 0,
+        "delta": 1,
+        "output_var": "turn_count",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "discover"
+          }
+        ]
+      },
+      "discover": {
+        "id": "discover",
+        "op": "子流程",
+        "harness": "component_capability_discovery",
+        "share_session": true,
+        "agent_map": {
+          "searcher": "governor"
+        },
+        "component_inputs": {
+          "query": "${ctx.request}",
+          "max_tool_rounds": 3
+        },
+        "component_outputs": {
+          "result": "capability_discovery",
+          "searched": "capability_searched"
+        },
+        "result_mode": "data",
+        "output_var": "discovery_component",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "curation_due"
+          }
+        ]
+      },
+      "curation_due": {
+        "id": "curation_due",
+        "op": "条件",
+        "condition": "ctx.turn_count % ctx.curation_interval == 0",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "curate"
+          },
+          {
+            "condition": "false",
+            "to": "compact"
+          }
+        ]
+      },
       "curate": {
-        "id": "curate", "op": "子流程", "harness": "component_context_curator", "share_session": true,
-        "agent_map": {"curator": "governor"}, "component_inputs": {"review_interval": 3, "protect_recent_turns": 1, "max_tool_chars": 1200},
-        "component_outputs": {"applied": "context_curated", "stats": "context_stats"}, "result_mode": "data", "output_var": "curation_component",
-        "edges": [{"condition": "subflow_done", "to": "compact"}]
+        "id": "curate",
+        "op": "子流程",
+        "harness": "component_context_curator",
+        "share_session": true,
+        "agent_map": {
+          "curator": "governor"
+        },
+        "component_inputs": {
+          "review_interval": 3,
+          "protect_recent_turns": 1,
+          "max_tool_chars": 1200
+        },
+        "component_outputs": {
+          "applied": "context_curated",
+          "stats": "context_stats"
+        },
+        "result_mode": "data",
+        "output_var": "curation_component",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "compact"
+          }
+        ]
       },
       "compact": {
-        "id": "compact", "op": "子流程", "harness": "component_context_compactor", "share_session": true,
-        "agent_map": {"compactor": "governor"},
-        "component_inputs": {"context_limit_tokens": 8192, "high_watermark": 0.55, "target_ratio": 0.35, "reserved_output_tokens": 1024, "protect_recent_turns": 1},
-        "component_outputs": {"compacted": "context_compacted", "stats": "pressure_stats", "pressure": "context_pressure"}, "result_mode": "data", "output_var": "compaction_component",
-        "edges": [{"condition": "subflow_done", "to": "evolution_due"}]
+        "id": "compact",
+        "op": "子流程",
+        "harness": "component_context_compactor",
+        "share_session": true,
+        "agent_map": {
+          "compactor": "governor"
+        },
+        "component_inputs": {
+          "context_limit_tokens": 8192,
+          "high_watermark": 0.55,
+          "target_ratio": 0.35,
+          "reserved_output_tokens": 1024,
+          "protect_recent_turns": 1
+        },
+        "component_outputs": {
+          "compacted": "context_compacted",
+          "stats": "pressure_stats",
+          "pressure": "context_pressure"
+        },
+        "result_mode": "data",
+        "output_var": "compaction_component",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "evolution_due"
+          }
+        ]
       },
-      "evolution_due": {"id": "evolution_due", "op": "条件", "condition": "ctx.turn_count % ctx.evolution_interval == 0", "edges": [{"condition": "true", "to": "evolve"}, {"condition": "false", "to": "recall"}]},
+      "evolution_due": {
+        "id": "evolution_due",
+        "op": "条件",
+        "condition": "ctx.turn_count % ctx.evolution_interval == 0",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "evolve"
+          },
+          {
+            "condition": "false",
+            "to": "recall"
+          }
+        ]
+      },
       "evolve": {
-        "id": "evolve", "op": "子流程", "harness": "component_capability_evolver", "share_session": true,
-        "agent_map": {"evolver": "governor"}, "component_inputs": {"require_approval": true, "protect_recent_turns": 1},
-        "component_outputs": {"decision": "evolution_review", "result": "evolution_result", "evolved": "evolved"}, "result_mode": "data", "output_var": "evolution_component",
-        "edges": [{"condition": "subflow_done", "to": "recall"}]
+        "id": "evolve",
+        "op": "子流程",
+        "harness": "component_capability_evolver",
+        "share_session": true,
+        "agent_map": {
+          "evolver": "governor"
+        },
+        "component_inputs": {
+          "require_approval": true,
+          "protect_recent_turns": 1
+        },
+        "component_outputs": {
+          "decision": "evolution_review",
+          "result": "evolution_result",
+          "evolved": "evolved"
+        },
+        "result_mode": "data",
+        "output_var": "evolution_component",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "recall"
+          }
+        ]
       },
-      "recall": {"id": "recall", "op": "记忆", "action": "search", "namespace": "tutorial_code_agent", "query": "$ctx.request", "top_k": 4, "weights": {"recency": 1, "relevance": 3, "importance": 1}, "output_var": "retrieved_memory", "edges": [{"condition": "memory_found", "to": "plan"}, {"condition": "memory_empty", "to": "plan"}]},
-      "plan": {"id": "plan", "op": "模型", "agent": "governor", "prompt": "plan", "parse_as": "json_object", "json_fallback": {"summary": "Inspect, implement minimally, and test.", "files_to_inspect": [], "verification": [], "risks": []}, "temperature": 0.1, "max_tokens": 1400, "outputs": {"structured": "implementation_plan"}, "edges": [{"condition": "has_text", "to": "approve_plan"}, {"condition": "json_fallback", "to": "approve_plan"}]},
-      "approve_plan": {"id": "approve_plan", "op": "人工审批", "prompt_text": "批准这个可检查的实现计划后才允许修改工作区：\n${ctx.implementation_plan}", "data": "$ctx.implementation_plan", "editable": true, "default": "rejected", "edges": [{"condition": "approved", "to": "checkpoint_before"}, {"condition": "rejected", "to": "input"}]},
-      "checkpoint_before": {"id": "checkpoint_before", "op": "检查点", "action": "save", "label": "tutorial-before-code-change", "edges": [{"condition": "checkpoint_saved", "to": "begin_transaction"}]},
-      "begin_transaction": {"id": "begin_transaction", "op": "工作区", "action": "begin_transaction", "output_var": "edit_transaction", "edges": [{"condition": "transaction_started", "to": "work_loop"}]},
-      "work_loop": {"id": "work_loop", "op": "循环", "list_var": "attempts", "item_var": "attempt", "counter_var": "attempt_index", "body_start": "infer", "break_when": "ctx.goal_complete", "result_var": "attempt_reports", "max_count": 3, "edges": [{"condition": "loop_break", "to": "review_parallel"}, {"condition": "loop_done", "to": "review_parallel"}]},
+      "recall": {
+        "id": "recall",
+        "op": "记忆",
+        "action": "search",
+        "namespace": "tutorial_code_agent",
+        "query": "$ctx.request",
+        "top_k": 4,
+        "weights": {
+          "recency": 1,
+          "relevance": 3,
+          "importance": 1
+        },
+        "output_var": "retrieved_memory",
+        "edges": [
+          {
+            "condition": "memory_found",
+            "to": "plan"
+          }
+        ]
+      },
+      "plan": {
+        "id": "plan",
+        "op": "模型",
+        "agent": "governor",
+        "prompt": "plan",
+        "parse_as": "json_object",
+        "json_fallback": {
+          "summary": "Inspect, implement minimally, and test.",
+          "files_to_inspect": [],
+          "verification": [],
+          "risks": []
+        },
+        "temperature": 0.1,
+        "max_tokens": 1400,
+        "outputs": {
+          "structured": "implementation_plan"
+        },
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "approve_plan"
+          }
+        ]
+      },
+      "approve_plan": {
+        "id": "approve_plan",
+        "op": "人工审批",
+        "prompt_text": "批准这个可检查的实现计划后才允许修改工作区：\n${ctx.implementation_plan}",
+        "data": "$ctx.implementation_plan",
+        "editable": true,
+        "default": "rejected",
+        "edges": [
+          {
+            "condition": "approved",
+            "to": "checkpoint_before"
+          },
+          {
+            "condition": "rejected",
+            "to": "input"
+          }
+        ]
+      },
+      "checkpoint_before": {
+        "id": "checkpoint_before",
+        "op": "检查点",
+        "action": "save",
+        "label": "tutorial-before-code-change",
+        "edges": [
+          {
+            "condition": "checkpoint_saved",
+            "to": "begin_transaction"
+          }
+        ]
+      },
+      "begin_transaction": {
+        "id": "begin_transaction",
+        "op": "工作区",
+        "action": "begin_transaction",
+        "output_var": "edit_transaction",
+        "edges": [
+          {
+            "condition": "transaction_started",
+            "to": "work_loop"
+          }
+        ]
+      },
+      "work_loop": {
+        "id": "work_loop",
+        "op": "循环",
+        "list_var": "attempts",
+        "item_var": "attempt",
+        "counter_var": "attempt_index",
+        "body_start": "infer",
+        "break_when": "ctx.goal_complete",
+        "result_var": "attempt_reports",
+        "max_count": 3,
+        "edges": [
+          {
+            "condition": "loop_break",
+            "to": "review_parallel"
+          },
+          {
+            "condition": "loop_done",
+            "to": "review_parallel"
+          }
+        ]
+      },
       "infer": {
-        "id": "infer", "op": "Agent", "agent": "agent", "tools": "all", "max_tool_rounds": 16,
+        "id": "infer",
+        "op": "Agent",
+        "agent": "agent",
+        "tools": "all",
+        "max_tool_rounds": 16,
         "instructions": "Complete this request in the current workspace: ${ctx.request}\nApproved plan: ${ctx.implementation_plan}\nReusable capability discovery: ${ctx.capability_discovery}\nPrevious judge feedback: ${ctx.feedback}\nRead exact source, make minimal transactional edits, run focused verification, and report concrete evidence. Search for a reusable DAG before creating a child Agent.",
-        "outputs": {"text": "agent_answer"}, "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "judge"}]
+        "outputs": {
+          "text": "agent_answer"
+        },
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "tools"
+          },
+          {
+            "condition": "has_text",
+            "to": "judge"
+          }
+        ]
       },
-      "tools": {"id": "tools", "op": "工具", "agent": "agent", "parallel": false, "checkpoint": true, "checkpoint_label": "tutorial-tool-round", "edges": [{"condition": "default", "to": "infer"}]},
-      "judge": {"id": "judge", "op": "模型", "agent": "governor", "prompt": "judge", "parse_as": "json_object", "json_fallback": {"complete": false, "missing": "No parseable completion evidence."}, "temperature": 0.1, "max_tokens": 600, "outputs": {"structured": "judge_result", "structured.complete": "goal_complete", "structured.missing": "feedback"}, "edges": [{"condition": "has_text", "to": "work_loop"}, {"condition": "json_fallback", "to": "work_loop"}]},
-      "review_parallel": {"id": "review_parallel", "op": "并行", "branches": [{"name": "quality", "start": "quality_review"}, {"name": "safety", "start": "safety_review"}], "join": "review_join", "max_workers": 2, "fail_fast": false, "output_var": "review_branches", "edges": []},
-      "quality_review": {"id": "quality_review", "op": "模型", "agent": "quality_reviewer", "prompt": "quality_review", "temperature": 0.1, "max_tokens": 700, "edges": [{"condition": "has_text", "to": "review_join"}]},
-      "safety_review": {"id": "safety_review", "op": "模型", "agent": "safety_reviewer", "prompt": "safety_review", "temperature": 0.1, "max_tokens": 700, "edges": [{"condition": "has_text", "to": "review_join"}]},
-      "review_join": {"id": "review_join", "op": "合并", "source": "$ctx.review_branches", "strategy": "values", "output_var": "reviews", "edges": [{"condition": "joined", "to": "remember"}]},
-      "remember": {"id": "remember", "op": "记忆", "action": "add", "namespace": "tutorial_code_agent", "inputs": {"memory": {"text": "Request: ${ctx.request}\nAnswer: ${ctx.agent_answer}\nReviews: ${ctx.reviews}", "type": "event", "importance": 5, "keywords": ["code", "verification", "review"]}}, "edges": [{"condition": "memory_added", "to": "checkpoint_after"}]},
-      "checkpoint_after": {"id": "checkpoint_after", "op": "检查点", "action": "save", "label": "tutorial-after-code-change", "edges": [{"condition": "checkpoint_saved", "to": "review_changes"}]},
-      "review_changes": {"id": "review_changes", "op": "工作区", "action": "review_transaction", "pending_policy": "accept", "output_var": "change_review", "edges": [{"condition": "changes_accepted", "to": "input"}, {"condition": "changes_partial", "to": "input"}, {"condition": "changes_rejected", "to": "input"}, {"condition": "changes_resolved", "to": "input"}]}
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "agent",
+        "parallel": false,
+        "checkpoint": true,
+        "checkpoint_label": "tutorial-tool-round",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "infer"
+          }
+        ]
+      },
+      "judge": {
+        "id": "judge",
+        "op": "模型",
+        "agent": "governor",
+        "prompt": "judge",
+        "parse_as": "json_object",
+        "json_fallback": {
+          "complete": false,
+          "missing": "No parseable completion evidence."
+        },
+        "temperature": 0.1,
+        "max_tokens": 600,
+        "outputs": {
+          "structured": "judge_result",
+          "structured.complete": "goal_complete",
+          "structured.missing": "feedback"
+        },
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "work_loop"
+          }
+        ]
+      },
+      "review_parallel": {
+        "id": "review_parallel",
+        "op": "并行",
+        "branches": [
+          {
+            "name": "quality",
+            "start": "quality_review"
+          },
+          {
+            "name": "safety",
+            "start": "safety_review"
+          }
+        ],
+        "join": "review_join",
+        "max_workers": 2,
+        "fail_fast": false,
+        "output_var": "review_branches",
+        "edges": []
+      },
+      "quality_review": {
+        "id": "quality_review",
+        "op": "模型",
+        "agent": "quality_reviewer",
+        "prompt": "quality_review",
+        "temperature": 0.1,
+        "max_tokens": 700,
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "review_join"
+          }
+        ]
+      },
+      "safety_review": {
+        "id": "safety_review",
+        "op": "模型",
+        "agent": "safety_reviewer",
+        "prompt": "safety_review",
+        "temperature": 0.1,
+        "max_tokens": 700,
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "review_join"
+          }
+        ]
+      },
+      "review_join": {
+        "id": "review_join",
+        "op": "合并",
+        "source": "$ctx.review_branches",
+        "strategy": "values",
+        "output_var": "reviews",
+        "edges": [
+          {
+            "condition": "joined",
+            "to": "remember"
+          }
+        ]
+      },
+      "remember": {
+        "id": "remember",
+        "op": "记忆",
+        "action": "add",
+        "namespace": "tutorial_code_agent",
+        "inputs": {
+          "memory": {
+            "text": "Request: ${ctx.request}\nAnswer: ${ctx.agent_answer}\nReviews: ${ctx.reviews}",
+            "type": "event",
+            "importance": 5,
+            "keywords": [
+              "code",
+              "verification",
+              "review"
+            ]
+          }
+        },
+        "edges": [
+          {
+            "condition": "memory_added",
+            "to": "checkpoint_after"
+          }
+        ]
+      },
+      "checkpoint_after": {
+        "id": "checkpoint_after",
+        "op": "检查点",
+        "action": "save",
+        "label": "tutorial-after-code-change",
+        "edges": [
+          {
+            "condition": "checkpoint_saved",
+            "to": "review_changes"
+          }
+        ]
+      },
+      "review_changes": {
+        "id": "review_changes",
+        "op": "工作区",
+        "action": "review_transaction",
+        "pending_policy": "accept",
+        "output_var": "change_review",
+        "edges": [
+          {
+            "condition": "changes_accepted",
+            "to": "input"
+          }
+        ]
+      }
     }
   }
 }

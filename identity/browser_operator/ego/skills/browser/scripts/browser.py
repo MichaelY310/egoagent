@@ -55,7 +55,10 @@ class CDPBrowser:
         self.profile = Path(tempfile.mkdtemp(prefix="egoagent-browser-profile-"))
         self.download_root = self.root / "downloads"
         self.download_root.mkdir(parents=True, exist_ok=True)
-        self.port = self._free_port()
+        # Let Chromium reserve its own free port and publish it atomically in
+        # DevToolsActivePort.  Binding and releasing a port in Python first is
+        # a TOCTOU race with other local services and browser subprocesses.
+        self.port = 0
         self.headless = bool(headless)
         executables = [path for path in _CHROME_CANDIDATES if path.is_file()]
         if not executables:
@@ -81,7 +84,7 @@ class CDPBrowser:
                 "about:blank",
             ]
             if self.headless:
-                command.insert(1, "--headless=new")
+                command.insert(1, "--headless")
             return command
 
         popen_options = {}
@@ -111,6 +114,7 @@ class CDPBrowser:
         self.downloads_state: dict[str, dict] = {}
         self._download_file_observations: dict[str, tuple[int, int, float]] = {}
         self.target_id = ""
+        self.session_id = ""
         self.ws = None
         try:
             self._wait_ready()
@@ -128,7 +132,7 @@ class CDPBrowser:
                     self.process.kill()
             shutil.rmtree(self.profile, ignore_errors=True)
             self.profile = Path(tempfile.mkdtemp(prefix="egoagent-browser-profile-"))
-            self.port = self._free_port()
+            self.port = 0
             executable = executables[-1]
             self.process = subprocess.Popen(
                 launch_command(executable),
@@ -162,7 +166,7 @@ class CDPBrowser:
                     self.process.kill()
             shutil.rmtree(self.profile, ignore_errors=True)
             self.profile = Path(tempfile.mkdtemp(prefix="egoagent-browser-profile-"))
-            self.port = self._free_port()
+            self.port = 0
             executable = fallback
             self.process = subprocess.Popen(
                 launch_command(executable),
@@ -191,6 +195,15 @@ class CDPBrowser:
         last_error = None
         while time.time() < deadline:
             try:
+                if self.port <= 0:
+                    active_port = self.profile / "DevToolsActivePort"
+                    if not active_port.is_file():
+                        time.sleep(0.1)
+                        continue
+                    raw_port = active_port.read_text(encoding="utf-8").splitlines()[0].strip()
+                    self.port = int(raw_port)
+                    if not 0 < self.port <= 65535:
+                        raise RuntimeError(f"invalid DevToolsActivePort value: {raw_port!r}")
                 self._http_json("/json/version")
                 return
             except Exception as error:
@@ -228,15 +241,23 @@ class CDPBrowser:
                     pass
             self._pending.clear()
         self.ws = None
+        self.session_id = ""
         self._reader = None
         self._reader_stop = None
 
     def _connect_initial_target(self) -> None:
         """Attach to a stable page target, tolerating Chrome startup races."""
 
-        last_error = None
-        for attempt in range(4):
+        errors = []
+        deadline = time.time() + 10
+        attempt = 0
+        while time.time() < deadline:
             try:
+                version = self._http_json("/json/version")
+                endpoint = str(version.get("webSocketDebuggerUrl") or "")
+                if not endpoint:
+                    raise RuntimeError("browser discovery response omitted webSocketDebuggerUrl")
+                self._open_browser_transport(endpoint)
                 targets = self._http_json("/json/list")
                 page = next((target for target in targets if target.get("type") == "page"), None)
                 if page is None or attempt > 0:
@@ -244,25 +265,56 @@ class CDPBrowser:
                 self._connect(page)
                 return
             except Exception as error:
-                last_error = error
+                errors.append(
+                    f"{type(error).__name__}: {error} "
+                    f"(launcher_exit={self.process.poll()!r})"
+                )
                 self._disconnect()
-                time.sleep(0.15 * (attempt + 1))
-        raise RuntimeError(f"Could not attach to a stable browser page target: {last_error}")
+                attempt += 1
+                time.sleep(min(0.15 * attempt, 0.75))
+        recent = "; ".join(errors[:2] + (["..."] if len(errors) > 4 else []) + errors[-2:])
+        raise RuntimeError(f"Could not attach to a stable browser page target after {attempt} attempts: {recent}")
 
-    def _connect(self, target: dict) -> None:
+    def _open_browser_transport(self, endpoint: str) -> None:
+        """Open the browser-level CDP transport used by current Chromium.
+
+        Page-level WebSocket endpoints were historically convenient, but the
+        supported automation shape is a browser connection plus a flattened
+        Target session.  Keeping one browser transport also makes tab switches
+        cheap and preserves browser-domain events such as downloads.
+        """
+
         self._disconnect()
-        self.target_id = str(target["id"])
-        ws = websocket.create_connection(target["webSocketDebuggerUrl"], timeout=2, suppress_origin=True)
+        ws = websocket.create_connection(endpoint, timeout=2, suppress_origin=True)
         stop = threading.Event()
         self.ws = ws
         self._reader_stop = stop
         self._reader = threading.Thread(
             target=self._reader_loop,
             args=(ws, stop),
-            name=f"egoagent-cdp-{self.target_id[:8]}",
+            name="egoagent-cdp-browser",
             daemon=True,
         )
         self._reader.start()
+
+    def _connect(self, target: dict) -> None:
+        if self.ws is None:
+            raise RuntimeError("browser CDP transport is disconnected")
+        target_id = str(target.get("id") or target.get("targetId") or "")
+        if not target_id:
+            raise RuntimeError("browser target omitted its id")
+        previous_session = self.session_id
+        self.session_id = ""
+        if previous_session:
+            try:
+                self.call("Target.detachFromTarget", {"sessionId": previous_session})
+            except RuntimeError:
+                pass
+        attached = self.call("Target.attachToTarget", {"targetId": target_id, "flatten": True})
+        self.session_id = str(attached.get("sessionId") or "")
+        if not self.session_id:
+            raise RuntimeError("Target.attachToTarget omitted sessionId")
+        self.target_id = target_id
         self.call("Page.enable")
         self.call("Runtime.enable")
         self.call("DOM.enable")
@@ -378,7 +430,10 @@ class CDPBrowser:
             ws = self.ws
         try:
             with self._send_lock:
-                ws.send(json.dumps({"id": request_id, "method": method, "params": params or {}}))
+                request = {"id": request_id, "method": method, "params": params or {}}
+                if self.session_id and not method.startswith(("Browser.", "Target.")):
+                    request["sessionId"] = self.session_id
+                ws.send(json.dumps(request))
             try:
                 message = waiter.get(timeout=max(0.1, float(timeout)))
             except queue.Empty as error:

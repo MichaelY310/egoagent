@@ -1,0 +1,55 @@
+{
+  "name": "product_core_code_agent",
+  "description": "Matched core Code Agent baseline: planning, bounded edit-test loop, checkpoints, transactional changes and evidence judging, without discovery, memory, context curation/compaction, evolution or sub-Agent delegation.",
+  "tags": ["product", "code", "baseline", "ablation"],
+  "catalog": {"category": "experiment", "visibility": "internal", "display_name": "Code Agent Core (internal)"},
+  "component": {
+    "name": "product_core_code_agent",
+    "display_name": "Code Agent Core",
+    "category": "Agent",
+    "icon": "</>",
+    "description": "Reusable bounded coding loop for small, well-scoped tasks.",
+    "share_session": true,
+    "inputs": {},
+    "outputs": {
+      "answer": {"path": "agent_answer", "default": ""},
+      "change_review": {"path": "change_review", "default": {}}
+    }
+  },
+  "slots": {
+    "agent": {"description": "Primary software engineer", "required": true, "identity": "adaptive_deepseek_coder"},
+    "governor": {"description": "Planner and evidence judge", "required": true, "identity": "adaptive_deepseek_coder"}
+  },
+  "prompts": {
+    "plan": {"default": "Plan the smallest safe implementation for this request.\nRequest: {request}\nReturn ONLY JSON: {\"summary\":\"...\",\"files_to_inspect\":[\"...\"],\"verification\":[\"...\"],\"risks\":[\"...\"]}"},
+    "judge": {"default": "Judge from concrete evidence whether the current coding request is complete. Do not assume unreported tests passed.\nRequest: {request}\nPlan: {implementation_plan}\nAnswer: {agent_answer}\nReturn ONLY JSON: {\"complete\":true,\"missing\":\"short actionable gap or empty\"}"}
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 420,
+    "max_node_steps": 2400,
+    "timeout_seconds": 7200,
+    "workspace_preview": true,
+    "interactive_max_tokens": null,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "budget": {"max_model_calls": 220, "max_tool_calls": 760, "max_tokens": 1600000},
+    "context": {"request": "", "attempts": [1, 2, 3], "goal_complete": false, "agent_answer": "", "feedback": "", "implementation_plan": {}, "change_review": {}},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "reset_goal"}]},
+      "reset_goal": {"id": "reset_goal", "op": "数据", "action": "set", "key": "goal_complete", "value": false, "edges": [{"condition": "default", "to": "reset_answer"}]},
+      "reset_answer": {"id": "reset_answer", "op": "数据", "action": "set", "key": "agent_answer", "value": "", "edges": [{"condition": "default", "to": "reset_feedback"}]},
+      "reset_feedback": {"id": "reset_feedback", "op": "数据", "action": "set", "key": "feedback", "value": "", "edges": [{"condition": "default", "to": "plan"}]},
+      "plan": {"id": "plan", "op": "模型", "agent": "governor", "prompt": "plan", "parse_as": "json_object", "json_fallback": {"summary": "Inspect, implement minimally, and test.", "files_to_inspect": [], "verification": [], "risks": []}, "temperature": 0.1, "max_tokens": 1600, "outputs": {"structured": "implementation_plan"}, "edges": [{"condition": "has_text", "to": "checkpoint_before"}, {"condition": "json_fallback", "to": "checkpoint_before"}]},
+      "checkpoint_before": {"id": "checkpoint_before", "op": "检查点", "action": "save", "label": "core-before-change", "edges": [{"condition": "checkpoint_saved", "to": "begin_transaction"}]},
+      "begin_transaction": {"id": "begin_transaction", "op": "工作区", "action": "begin_transaction", "output_var": "edit_transaction", "edges": [{"condition": "transaction_started", "to": "work_loop"}]},
+      "work_loop": {"id": "work_loop", "op": "循环", "list_var": "attempts", "item_var": "attempt", "counter_var": "attempt_index", "body_start": "infer", "break_when": "ctx.goal_complete", "result_var": "attempt_reports", "max_count": 3, "edges": [{"condition": "loop_break", "to": "checkpoint_after"}, {"condition": "loop_done", "to": "checkpoint_after"}]},
+      "infer": {"id": "infer", "op": "Agent", "agent": "agent", "tools": "all", "hidden_tools": ["search_capabilities", "activate_capability", "create_harness", "create_agent_system", "manage_harness", "modify_harness", "create_identity", "modify_identity", "create_skill", "create_knowledge", "evolve_capabilities", "select_evolution_artifact", "terminate", "end_session", "submit_result", "finish", "done"], "max_tool_rounds": 48, "compact_tool_preamble_chars": 320, "instructions": "Complete this request in the current workspace: ${ctx.request}\nPlan: ${ctx.implementation_plan}\nPrevious judge feedback: ${ctx.feedback}\nInspect exact source, make minimal transactional edits, run focused verification and report concrete evidence. Work directly; this matched baseline intentionally has no capability catalog, durable memory, context governance, evolution or sub-Agent delegation. Return a normal text answer when finished; completion tools are intentionally hidden so downstream evidence nodes cannot be bypassed. Do not repeat earlier prose after tool calls.", "outputs": {"text": "agent_answer"}, "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "judge"}, {"condition": "output_truncated", "to": "judge"}]},
+      "tools": {"id": "tools", "op": "工具", "agent": "agent", "parallel": true, "max_workers": 6, "timeout_seconds": 300, "checkpoint": true, "checkpoint_label": "core-tool-round", "edges": [{"condition": "default", "to": "infer"}]},
+      "judge": {"id": "judge", "op": "模型", "agent": "governor", "prompt": "judge", "parse_as": "json_object", "json_fallback": {"complete": false, "missing": "No parseable completion evidence."}, "temperature": 0.1, "max_tokens": 700, "outputs": {"structured": "judge_result", "structured.complete": "goal_complete", "structured.missing": "feedback"}, "edges": [{"condition": "has_text", "to": "work_loop"}, {"condition": "json_fallback", "to": "work_loop"}]},
+      "checkpoint_after": {"id": "checkpoint_after", "op": "检查点", "action": "save", "label": "core-after-change", "edges": [{"condition": "checkpoint_saved", "to": "review_changes"}]},
+      "review_changes": {"id": "review_changes", "op": "工作区", "action": "review_transaction", "pending_policy": "accept", "output_var": "change_review", "edges": [{"condition": "changes_accepted", "to": "done"}, {"condition": "changes_resolved", "to": "done"}, {"condition": "changes_partial", "to": "done"}]},
+      "done": {"id": "done", "op": "结束", "value": {"answer": "$ctx.agent_answer", "change_review": "$ctx.change_review"}, "edges": []}
+    }
+  }
+}

@@ -65,6 +65,24 @@ class ProjectPortfolioTests(unittest.TestCase):
         self.assertEqual(project["active_session"], "alpha_run")
         self.assertEqual((session_dir / "messages.json").read_bytes(), before)
 
+    def test_each_session_persists_and_projects_its_own_agent_config(self):
+        session = Session(workspace=self.alpha, save_dir=self.sessions / "configured")
+        session.agent_config = {
+            "harness": "adaptive_code_agent",
+            "agents": {"coder": "identity/dante", "searcher": "identity/researcher"},
+            "mode": "debug",
+        }
+        session.save()
+
+        restored = Session(workspace=self.alpha)
+        restored.load(self.sessions / "configured")
+        self.assertEqual(restored.agent_config["harness"], "adaptive_code_agent")
+        self.assertEqual(restored.agent_config["mode"], "debug")
+        listed = self.portfolio.list_sessions(workspace=self.alpha)
+        self.assertEqual(listed[0]["agent_config"], session.agent_config)
+        self.assertEqual(listed[0]["harness"], "adaptive_code_agent")
+        self.assertEqual(listed[0]["identity"], "dante")
+
     def test_direct_cross_project_merge_is_rejected(self):
         save_session(self.sessions, "alpha_run", self.alpha, "alpha paths")
         save_session(self.sessions, "beta_run", self.beta, "beta paths")

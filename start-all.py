@@ -4,11 +4,14 @@ Installs the native EgoAgent DAG Chat extension and starts missing services.
 Supports SSE streaming passthrough for /v1/chat/completions.
 Supports WebSocket tunneling for Void IDE remote connections."""
 import argparse, os, http.server, urllib.request, urllib.error, socketserver, http.client, socket, threading, shutil, subprocess, sys, time
+import contextlib, hmac
 from pathlib import Path
 
-VOID_PORT = 8869
-BACKEND_PORT = 8765
-LISTEN_PORT = 8880
+from runtime_endpoints import runtime_ports
+_ports = runtime_ports()
+VOID_PORT = _ports['VOID']
+BACKEND_PORT = _ports['BACKEND']
+LISTEN_PORT = _ports['LISTEN']
 LISTEN_HOST = os.environ.get('EGOAGENT_HOST', '127.0.0.1')
 VOID_ORIGIN = f'http://127.0.0.1:{VOID_PORT}'
 BACKEND_ORIGIN = f'http://127.0.0.1:{BACKEND_PORT}'
@@ -16,22 +19,25 @@ BACKEND_ORIGIN = f'http://127.0.0.1:{BACKEND_PORT}'
 ROOT_DIR = Path(__file__).parent
 from llm.env_config import load_local_env
 from product_runtime import apply_product_environment
-from local_api_security import is_trusted_local_origin
+from local_api_security import is_trusted_local_origin, remote_request_authorized, remote_cookie_name
 
 load_local_env(ROOT_DIR)
 apply_product_environment(ROOT_DIR)
-VOID_ROOT = ROOT_DIR / 'void-web'
+VOID_ROOT = Path(os.environ.get('EGOAGENT_VOID_ROOT', str(ROOT_DIR / 'void-web'))).resolve()
 VOID_NODE = VOID_ROOT / ('node.exe' if os.name == 'nt' else 'node')
 VOID_SERVER = VOID_ROOT / 'out' / 'server-main.js'
 EXTENSION_SOURCE = ROOT_DIR / 'void_extension' / 'egoagent-dag-chat'
-EXTENSION_TARGET = ROOT_DIR / 'void-web' / 'extensions' / 'egoagent-dag-chat'
-WORKBENCH_BUNDLE = ROOT_DIR / 'void-web' / 'out' / 'vs' / 'code' / 'browser' / 'workbench' / 'workbench.js'
-WORKBENCH_STYLE = ROOT_DIR / 'void-web' / 'out' / 'vs' / 'code' / 'browser' / 'workbench' / 'workbench.css'
+EXTENSION_TARGET = VOID_ROOT / 'extensions' / 'egoagent-dag-chat'
+WORKBENCH_BUNDLE = VOID_ROOT / 'out' / 'vs' / 'code' / 'browser' / 'workbench' / 'workbench.js'
+WORKBENCH_STYLE = VOID_ROOT / 'out' / 'vs' / 'code' / 'browser' / 'workbench' / 'workbench.css'
 WEBVIEW_ENDPOINT = (
     f'http://{{{{uuid}}}}.localhost:{LISTEN_PORT}/'
+    + (f'auth/{os.environ["EGOAGENT_REMOTE_TOKEN"]}/' if os.environ.get('EGOAGENT_REMOTE_TOKEN') else '')
+    +
     '{{quality}}-{{commit}}/static/out/vs/workbench/contrib/webview/browser/pre/'
 )
-WORKBENCH_CACHE_KEY = 'egoagent-native-chat-v9'
+VOID_SOCKET = os.environ.get('EGOAGENT_VOID_SOCKET', '')
+WORKBENCH_CACHE_KEY = 'egoagent-native-chat-v12'
 WORKBENCH_DROP_BRIDGE_MARKER = '/*egoagent-resource-drop-bridge-v1*/'
 WORKBENCH_FLAT_DIFF_MARKER = '/*egoagent-flat-review-diff-v2*/'
 WORKBENCH_FLAT_DIFF_STYLE = r'''
@@ -92,8 +98,22 @@ WORKBENCH_DROP_BRIDGE = r'''
 ;/*egoagent-resource-drop-bridge-v1*/(()=>{
   if(window.__egoagentResourceDropBridge)return;
   window.__egoagentResourceDropBridge=true;
-  const acceptedTypes=new Set(['ResourceURLs','CodeEditors','CodeFiles','application/vnd.code.uri-list','text/uri-list','text/plain']);
-  let target=null,activeTransfer=null,lastPoint=null;
+  const acceptedTypes=new Set(['resourceurls','codeeditors','codefiles','application/vnd.code.uri-list','text/uri-list','text/plain']);
+  let target=null,activeTransfer=null,lastPoint=null,capturingTransfer=null;
+  const nativeSetData=globalThis.DataTransfer?.prototype?.setData;
+  if(nativeSetData){
+    // The Explorer writes CodeFiles/ResourceURLs during its target-phase
+    // dragstart listener. Capture that exact standards-based write because
+    // Chromium protects getData() again as soon as dragstart dispatch ends.
+    DataTransfer.prototype.setData=function(type,value){
+      const result=nativeSetData.call(this,type,value);
+      if(this===capturingTransfer&&acceptedTypes.has(String(type).toLowerCase())){
+        activeTransfer=activeTransfer||{};
+        activeTransfer[type]=String(value||'').slice(0,131072);
+      }
+      return result;
+    };
+  }
   const targetFrame=()=>{
     if(!target?.origin)return null;
     return [...document.querySelectorAll('iframe')].find(frame=>{
@@ -109,10 +129,10 @@ WORKBENCH_DROP_BRIDGE = r'''
   const snapshot=transfer=>{
     const result={};
     for(const type of Array.from(transfer?.types||[])){
-      if(!acceptedTypes.has(type))continue;
+      if(!acceptedTypes.has(String(type).toLowerCase()))continue;
       try{result[type]=String(transfer.getData(type)||'').slice(0,131072)}catch{}
     }
-    const resourceValue=Object.entries(result).some(([type,value])=>(type!=='text/plain'&&value)||/^(?:file|vscode-remote):\/\//im.test(value)||/^[A-Za-z]:[\\/]/m.test(value));
+    const resourceValue=Object.entries(result).some(([type,value])=>(type!=='text/plain'&&value)||/^(?:file|vscode-remote):\//im.test(value)||/^(?:[A-Za-z]:[\\/]|\/(?!\/)|\\\\)/m.test(value));
     return resourceValue?result:null;
   };
   addEventListener('message',event=>{
@@ -128,20 +148,42 @@ WORKBENCH_DROP_BRIDGE = r'''
     target.port.start?.();
   },true);
   document.addEventListener('dragstart',event=>{
-    activeTransfer=snapshot(event.dataTransfer);
-    lastPoint=activeTransfer?{x:event.clientX,y:event.clientY}:null;
+    // Explorer writes ResourceURLs/CodeEditors in its own dragstart handler and
+    // may stop propagation.  Keep the live DataTransfer from the capture phase,
+    // then read it after all handlers for this event have populated it.
+    const transfer=event.dataTransfer;
+    capturingTransfer=transfer;
+    activeTransfer=null;
+    lastPoint={x:event.clientX,y:event.clientY};
+    const capture=()=>{
+      const live=snapshot(transfer);
+      if(live)activeTransfer=live;
+    };
+    queueMicrotask(capture);
+    setTimeout(capture,0);
   },true);
   document.addEventListener('dragover',event=>{
-    if(activeTransfer)lastPoint={x:event.clientX,y:event.clientY};
+    const live=snapshot(event.dataTransfer);
+    if(live)activeTransfer=live;
+    const hasResourceType=Array.from(event.dataTransfer?.types||[]).some(type=>acceptedTypes.has(String(type).toLowerCase()));
+    if(activeTransfer||hasResourceType)lastPoint={x:event.clientX,y:event.clientY};
+    if(target?.port&&insideTarget(event.clientX,event.clientY)){
+      // Declaring the iframe as a copy drop target removes Chromium's
+      // misleading forbidden cursor while preserving Explorer's source item.
+      event.preventDefault();
+      if(event.dataTransfer)event.dataTransfer.dropEffect='copy';
+    }
   },true);
   const finish=event=>{
+    const live=snapshot(event.dataTransfer);
+    if(live)activeTransfer=live;
     if(!activeTransfer)return;
     const point=Number.isFinite(event.clientX)&&Number.isFinite(event.clientY)&&event.clientX+event.clientY>0
       ?{x:event.clientX,y:event.clientY}:lastPoint;
     if(target?.port&&point&&insideTarget(point.x,point.y)){
       try{target.port.postMessage({type:'egoagent-workbench-resource-drop',transfer:activeTransfer})}catch{}
     }
-    activeTransfer=null;lastPoint=null;
+    activeTransfer=null;lastPoint=null;capturingTransfer=null;
   };
   document.addEventListener('drop',finish,true);
   document.addEventListener('dragend',finish,true);
@@ -185,6 +227,27 @@ def _port_is_open(port):
         return False
 
 
+def _connect_void():
+    if VOID_SOCKET:
+        stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        stream.settimeout(10)
+        try:
+            stream.connect(VOID_SOCKET)
+        except BaseException:
+            stream.close()
+            raise
+        return stream
+    return socket.create_connection(('127.0.0.1', VOID_PORT), timeout=10)
+
+
+def _void_is_open():
+    try:
+        with _connect_void():
+            return True
+    except OSError:
+        return False
+
+
 def start_backend_if_needed():
     """Make the documented two-terminal startup actually self-contained.
 
@@ -211,6 +274,54 @@ def start_backend_if_needed():
     raise RuntimeError(f'EgoAgent backend did not listen on {BACKEND_PORT}')
 
 
+def _supervise_backend(process_holder, stop_event):
+    """Recover the localhost API if it exits while the unified proxy lives."""
+    retry_delay = 1.0
+    while not stop_event.wait(1.0):
+        previous = process_holder.get('process')
+        # Process liveness is authoritative for an owned backend. A TCP probe
+        # can time out when several IDE windows fill the accept queue; killing
+        # a live process here destroys sessions and its SSH/WSL transports.
+        if previous is not None and previous.poll() is None:
+            retry_delay = 1.0
+            continue
+        if _port_is_open(BACKEND_PORT):
+            retry_delay = 1.0
+            continue
+        try:
+            process_holder['process'] = start_backend_if_needed()
+            retry_delay = 1.0
+            print(f'EgoAgent backend recovered on port {BACKEND_PORT}')
+        except Exception as error:
+            process_holder['process'] = None
+            print(f'EgoAgent backend recovery failed: {error}', file=sys.stderr)
+            if stop_event.wait(retry_delay):
+                return
+            retry_delay = min(retry_delay * 2, 15.0)
+
+
+def start_backend_supervisor(initial_process):
+    process_holder = {'process': initial_process}
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=_supervise_backend,
+        args=(process_holder, stop_event),
+        name='egoagent-backend-supervisor',
+        daemon=True,
+    )
+    thread.start()
+    return process_holder, stop_event, thread
+
+
+def stop_backend_supervisor(supervisor):
+    if not supervisor:
+        return
+    process_holder, stop_event, thread = supervisor
+    stop_event.set()
+    thread.join(timeout=20)
+    _stop_owned_process(process_holder.get('process'))
+
+
 def start_void_if_needed():
     """Start the bundled Void server with stable, localhost-only authentication.
 
@@ -225,8 +336,16 @@ def start_void_if_needed():
             'The tokenless unified Void launcher is localhost-only; '
             'set EGOAGENT_HOST=127.0.0.1'
         )
-    if _port_is_open(VOID_PORT):
+    if _void_is_open():
         return None
+    if VOID_SOCKET and Path(VOID_SOCKET).exists():
+        stale_socket = Path(VOID_SOCKET)
+        managed_root = VOID_ROOT.parent
+        if (stale_socket.parent.resolve() != managed_root.resolve()
+                or not (managed_root / '.egoagent-remote').is_file()
+                or not stale_socket.is_socket()):
+            raise RuntimeError('Refusing to replace an unmanaged Unix socket path')
+        stale_socket.unlink()  # Dead IPC endpoint only; never a regular file.
     if not VOID_SERVER.is_file():
         raise RuntimeError(f'Void server not found: {VOID_SERVER}')
     executable = str(VOID_NODE if VOID_NODE.is_file() else (shutil.which('node') or 'node'))
@@ -236,19 +355,25 @@ def start_void_if_needed():
     }
     if os.name == 'nt':
         kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    process = subprocess.Popen([
+    arguments = [
         executable,
         str(VOID_SERVER),
-        '--port', str(VOID_PORT),
         '--host', '127.0.0.1',
         '--without-connection-token',
         '--accept-server-license-terms',
-    ], **kwargs)
+    ]
+    if VOID_SOCKET:
+        arguments.extend(['--socket-path', VOID_SOCKET])
+    else:
+        arguments.extend(['--port', str(VOID_PORT)])
+    if os.environ.get('EGOAGENT_VOID_DATA'):
+        arguments.extend(['--server-data-dir', os.environ['EGOAGENT_VOID_DATA']])
+    process = subprocess.Popen(arguments, **kwargs)
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError(f'Void exited with code {process.returncode}')
-        if _port_is_open(VOID_PORT):
+        if _void_is_open():
             return process
         time.sleep(0.15)
     process.terminate()
@@ -272,12 +397,30 @@ def install_native_extension():
     # The source is authoritative. Replacing this one generated extension
     # directory prevents removed/versioned entry files from surviving an
     # upgrade and being combined with current Webview media by Void's cache.
-    expected_parent = (ROOT_DIR / 'void-web' / 'extensions').resolve()
+    expected_parent = (VOID_ROOT / 'extensions').resolve()
     if EXTENSION_TARGET.resolve().parent != expected_parent:
         raise RuntimeError(f'Unexpected extension target: {EXTENSION_TARGET}')
     if EXTENSION_TARGET.exists():
         shutil.rmtree(EXTENSION_TARGET)
     shutil.copytree(EXTENSION_SOURCE, EXTENSION_TARGET)
+    # Target-local extension hosts and browser webviews must reach the same API.
+    import json
+    manifest_path = EXTENSION_TARGET / 'package.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    properties = manifest['contributes']['configuration']['properties']
+    properties['egoagent.backendUrl']['default'] = BACKEND_ORIGIN
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
+    runtime = {'backendUrl': BACKEND_ORIGIN, 'id': os.environ.get('EGOAGENT_REMOTE_ID', ''),
+               'label': os.environ.get('EGOAGENT_REMOTE_LABEL', '本机'),
+               'managerUrl': os.environ.get('EGOAGENT_REMOTE_MANAGER_URL', 'http://127.0.0.1:8880/')}
+    runtime['accessToken'] = os.environ.get('EGOAGENT_REMOTE_TOKEN', '')
+    (EXTENSION_TARGET / 'connection-runtime.js').write_text('module.exports = ' + json.dumps(runtime) + ';\n', encoding='utf-8')
+    if runtime['accessToken']:
+        (EXTENSION_TARGET / 'connection-runtime.js').chmod(0o600)
+    product_path = VOID_ROOT / 'product.json'
+    product = json.loads(product_path.read_text(encoding='utf-8'))
+    product['webviewContentExternalBaseUrlTemplate'] = WEBVIEW_ENDPOINT
+    product_path.write_text(json.dumps(product, ensure_ascii=False, indent=2), encoding='utf-8')
     # Void keys its built-in extension cache by the parent directory mtime.
     # Updating files inside an existing extension directory does not always
     # change that timestamp on Windows, so explicitly invalidate the cache key.
@@ -336,6 +479,14 @@ def configure_native_chat_container():
         updated = updated[:bridge_start + 1] + WORKBENCH_DROP_BRIDGE.lstrip('\n')
     else:
         updated += WORKBENCH_DROP_BRIDGE
+    # This command runs in the top-level renderer, not in a sandboxed webview
+    # or extension worker. Its buttons therefore retain popup user activation.
+    opener_source = EXTENSION_SOURCE / 'media' / 'workspace-window.js'
+    if opener_source.exists():
+        updated += ('\n;(()=>{\n' + opener_source.read_text(encoding='utf-8')
+                    + '\nconst openWorkspace=createWorkspaceWindowOpener(window);'
+                    + '\nEt.registerCommand("egoagent.openWorkspaceWindow",'
+                    + '(_accessor,url,label)=>openWorkspace(url,label));\n})();\n')
     if updated != source:
         WORKBENCH_BUNDLE.write_text(updated, encoding='utf-8')
     return (
@@ -376,6 +527,35 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.send_header('Vary', 'Origin')
 
     def _guard(self):
+        expected = os.environ.get('EGOAGENT_REMOTE_TOKEN', '')
+        if expected and self.command != 'OPTIONS':
+            from urllib.parse import urlsplit, parse_qs, urlencode
+            parsed = urlsplit(self.path)
+            query = parse_qs(parsed.query)
+            supplied = query.get('tkn', [''])[0] if parsed.path == '/' and self.command == 'GET' else ''
+            # Webview subdomains cannot share the main page's HttpOnly cookie.
+            # Their resource base is an authenticated, unguessable URL prefix.
+            parts = parsed.path.split('/', 3)
+            if len(parts) == 4 and parts[1] == 'auth' and hmac.compare_digest(parts[2], expected):
+                self.path = '/' + parts[3] + ('?' + parsed.query if parsed.query else '')
+            elif supplied and hmac.compare_digest(supplied, expected):
+                query.pop('tkn', None)
+                self.send_response(303)
+                self.send_header('Location', '/' + ('?' + urlencode(query, doseq=True) if query else ''))
+                self.send_header('Set-Cookie', f'{remote_cookie_name()}={expected}; Path=/; HttpOnly; SameSite=Strict')
+                self.send_header('Referrer-Policy', 'no-referrer')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+                return False
+            elif not remote_request_authorized(self.headers):
+                body = 'Remote authentication required. Open this project from the local EgoAgent SSH/WSL menu.'.encode()
+                self.send_response(401)
+                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return False
         if self._trusted_origin():
             return True
         body = b'Untrusted browser origin'
@@ -446,7 +626,11 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         if not self._guard():
             return
         try:
-            backend = socket.create_connection(('127.0.0.1', VOID_PORT), timeout=10)
+            backend = _connect_void()
+            # The connection timeout is only for establishing the upstream.
+            # A terminal/editor WebSocket must stay alive while the user is
+            # reading or thinking, not disconnect after ten idle seconds.
+            backend.settimeout(None)
         except Exception as e:
             self.send_response(502)
             self.send_header('Content-Type', 'text/plain')
@@ -487,8 +671,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         t2 = threading.Thread(target=relay, args=(client, backend), daemon=True)
         t1.start()
         t2.start()
-        t1.join(timeout=300)
-        t2.join(timeout=300)
+        t1.join()
+        t2.join()
         try:
             backend.close()
         except OSError:
@@ -518,9 +702,10 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                 return
 
         # Standard proxy (buffered)
-        req = urllib.request.Request(url, data=body, headers=hdrs, method=self.command)
         try:
-            with urllib.request.urlopen(req, timeout=300) as r:
+            # A proxy must preserve redirects, not follow them server-side
+            # (remote-open's auth-cookie bootstrap belongs to the browser).
+            with self._upstream_response(target, body, hdrs) as r:
                 data = r.read()
                 # Keep Void's remote WebSocket connection on the unified port.
                 request_path = self.path.split('?', 1)[0]
@@ -590,6 +775,19 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(f'Proxy error: {e}'.encode())
 
+    @contextlib.contextmanager
+    def _upstream_response(self, target, body, headers):
+        port = BACKEND_PORT if target == BACKEND_ORIGIN else VOID_PORT
+        connection = http.client.HTTPConnection('127.0.0.1', port, timeout=300)
+        if target == VOID_ORIGIN and VOID_SOCKET:
+            connection.sock = _connect_void()
+            connection.sock.settimeout(300)
+        try:
+            connection.request(self.command, self.path, body=body, headers=headers)
+            yield connection.getresponse()
+        finally:
+            connection.close()
+
     def do_GET(self):
         # WebSocket upgrade: tunnel directly
         if self.headers.get('Upgrade', '').lower() == 'websocket':
@@ -605,7 +803,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(204)
         self._security_headers(cors=True)
         self.send_header('Access-Control-Allow-Methods','GET,POST,PUT,DELETE,OPTIONS')
-        self.send_header('Access-Control-Allow-Headers','Content-Type,Authorization')
+        self.send_header('Access-Control-Allow-Headers','Content-Type,Authorization,X-EgoAgent-Remote-Token')
         self.end_headers()
 
 class S(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -616,11 +814,18 @@ if __name__ == '__main__':
     # Parse before installing extensions or starting children. This makes
     # `start-all.py --help` a read-only CLI operation instead of accidentally
     # launching a proxy in the background.
-    argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
-    ).parse_args()
+    )
+    parser.add_argument('--stop-file', type=Path, help='Optional private desktop lifecycle marker (no network shutdown endpoint)')
+    args = parser.parse_args()
+    if args.stop_file:
+        marker_root = (ROOT_DIR / '.runtime' / 'desktop').resolve()
+        if args.stop_file.resolve().parent != marker_root or args.stop_file.exists():
+            parser.error('--stop-file must be a new marker under .runtime/desktop')
     backend_process = None
+    backend_supervisor = None
     void_process = None
     try:
         # Install and patch before Void starts so its one-time extension scan
@@ -630,17 +835,26 @@ if __name__ == '__main__':
         review_styles_ready = configure_native_review_styles()
         void_process = start_void_if_needed()
         backend_process = start_backend_if_needed()
+        backend_supervisor = start_backend_supervisor(backend_process)
         s = S((LISTEN_HOST, LISTEN_PORT), ProxyHandler)
+        if args.stop_file:
+            def watch_desktop_stop():
+                while not args.stop_file.exists():
+                    time.sleep(0.5)
+                s.shutdown()
+            threading.Thread(target=watch_desktop_stop, daemon=True).start()
         print(f'EgoAgent+Void on http://localhost:{LISTEN_PORT}/')
         print(f'  /v1/* /api/* -> backend:{BACKEND_PORT}')
         print(f'  /*           -> void:{VOID_PORT}')
         print(f'  native DAG Chat extension: {"installed" if extension_installed else "not found"}')
         print(f'  Void Chat container: {"integrated" if chat_container_ready else "not patched"}')
         print(f'  Agent review diff: {"flat line colors" if review_styles_ready else "stock colors"}')
-        print(f'  local Webview resources -> {WEBVIEW_ENDPOINT}')
+        print(f'  local Webview resources -> localhost:{LISTEN_PORT} (authenticated)' if os.environ.get('EGOAGENT_REMOTE_TOKEN') else f'  local Webview resources -> {WEBVIEW_ENDPOINT}')
         print(f'  WebSocket upgrade -> tunnel to void:{VOID_PORT}')
         print(f'  SSE streaming for /v1/chat/completions')
         s.serve_forever()
     finally:
-        _stop_owned_process(backend_process)
+        stop_backend_supervisor(backend_supervisor)
+        if backend_supervisor is None:
+            _stop_owned_process(backend_process)
         _stop_owned_process(void_process)

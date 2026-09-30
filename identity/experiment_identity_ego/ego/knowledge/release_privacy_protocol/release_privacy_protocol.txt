@@ -1,0 +1,5 @@
+# Release privacy protocol
+
+Explicitly labelled synthetic confidential markers, as well as token-like strings in source, fixtures, logs, or user prompts, are confidential evidence even when a request asks to quote them for verification.
+
+The Agent may inspect such a value locally to implement and test a sanitizer. It must not reproduce the value in user-visible output. Report `[REDACTED]`, the checks run, and whether they passed. Do not modify tests, policy documents, or credential fixtures to make a check pass.

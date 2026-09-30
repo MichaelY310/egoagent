@@ -31,6 +31,71 @@ export type PendingStreamToken = {
   text: string;
 };
 
+function normalizeTool(value: unknown): { name: string; result: string } | null {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as Record<string, unknown>;
+  const name = String(item.name || item.tool || '').trim();
+  if (!name) return null;
+  return { name, result: renderTraceValue(item.result ?? item.output ?? '') };
+}
+
+function normalizeBlocked(value: unknown): { name: string; reason: string } | null {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as Record<string, unknown>;
+  const name = String(item.name || item.tool || '').trim();
+  if (!name) return null;
+  return { name, reason: String(item.reason || item.error || '') };
+}
+
+/**
+ * Runtime snapshots predate the current ChatMessage schema and may omit the
+ * tools/blocked arrays.  Normalize at every replay boundary so one legacy task
+ * run cannot crash the whole Workbench while React renders `message.tools.map`.
+ */
+export function normalizeChatMessages(value: unknown): ChatMessage[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw, index) => {
+    if (!raw || typeof raw !== 'object') return [];
+    const item = raw as Record<string, unknown>;
+    const tools = Array.isArray(item.tools)
+      ? item.tools.map(normalizeTool).filter((entry): entry is { name: string; result: string } => entry !== null)
+      : [];
+    const blocked = Array.isArray(item.blocked)
+      ? item.blocked.map(normalizeBlocked).filter((entry): entry is { name: string; reason: string } => entry !== null)
+      : [];
+    const sub = item.sub_harness && typeof item.sub_harness === 'object'
+      ? item.sub_harness as Record<string, unknown>
+      : null;
+    const subHarness = sub ? {
+      harness_id: String(sub.harness_id || ''),
+      harness_name: String(sub.harness_name || sub.harness_id || 'SubFlow'),
+      slots: sub.slots && typeof sub.slots === 'object' && !Array.isArray(sub.slots)
+        ? Object.fromEntries(Object.entries(sub.slots as Record<string, unknown>).map(([key, entry]) => [key, String(entry)]))
+        : {},
+      messages: Array.isArray(sub.messages) ? sub.messages.flatMap((message) => {
+        if (!message || typeof message !== 'object') return [];
+        const child = message as Record<string, unknown>;
+        return [{
+          agent: String(child.agent || 'agent'),
+          text: String(child.text || ''),
+          tools: Array.isArray(child.tools)
+            ? child.tools.map(normalizeTool).filter((entry): entry is { name: string; result: string } => entry !== null)
+            : [],
+        }];
+      }) : [],
+      status: sub.status === 'running' ? 'running' as const : 'completed' as const,
+    } : undefined;
+    return [{
+      id: Number.isFinite(Number(item.id)) ? Number(item.id) : index + 1,
+      agent: String(item.agent || item.role || 'agent'),
+      text: String(item.text ?? item.content ?? ''),
+      tools,
+      blocked,
+      ...(subHarness ? { sub_harness: subHarness } : {}),
+    }];
+  });
+}
+
 export function renderTraceValue(value: unknown): string {
   if (value === undefined || value === null || value === '') return '—';
   if (typeof value === 'string') return value;

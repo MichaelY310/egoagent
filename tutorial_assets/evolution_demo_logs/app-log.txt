@@ -1,0 +1,4 @@
+INFO boot complete
+WARN cache miss ratio 0.42
+ERROR database connection refused
+INFO retry scheduled in 5s

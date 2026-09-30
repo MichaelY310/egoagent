@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import requests
+
 from llm.app_dns_proxy import (
     AppDNSConnectProxy,
     AppDNSProxyError,
@@ -116,6 +118,39 @@ class AppDNSProxyTests(unittest.TestCase):
 
         self.assertEqual(result["choices"][0]["message"]["content"], "ok")
         self.assertEqual(request.call_args.kwargs["proxies"], {"https": "http://127.0.0.1:54321"})
+
+    def test_custom_llm_recovers_from_windows_socket_10013_with_scoped_proxy(self):
+        response = Mock()
+        response.status_code = 200
+        response.headers = {}
+        response.json.return_value = {
+            "model": "test-model",
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {},
+        }
+        response.raise_for_status.return_value = None
+        blocked = requests.ConnectionError(
+            "[WinError 10013] An attempt was made to access a socket in a way "
+            "forbidden by its access permissions"
+        )
+        with patch("llm.custom_llm.app_dns_proxy_for_url", return_value=None), patch(
+            "llm.custom_llm.ensure_app_dns_proxy", return_value="http://127.0.0.1:55443"
+        ) as ensure_proxy, patch(
+            "llm.custom_llm.requests.post", side_effect=[blocked, response]
+        ) as request:
+            model = CustomLLM({
+                "selection": {}, "base_url": "https://api.deepseek.com", "model": "test-model",
+                "api_key": "test-only", "max_retries": 0,
+            })
+            result = model.chat([{"role": "user", "content": "ping"}], max_tokens=4)
+
+        self.assertEqual(result["choices"][0]["message"]["content"], "ok")
+        ensure_proxy.assert_called_once_with("api.deepseek.com")
+        self.assertIsNone(request.call_args_list[0].kwargs["proxies"])
+        self.assertEqual(
+            request.call_args_list[1].kwargs["proxies"],
+            {"https": "http://127.0.0.1:55443"},
+        )
 
 
 if __name__ == "__main__":

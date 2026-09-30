@@ -12,6 +12,13 @@ export interface ChangeEntry {
   nodes?: string[];
   pipelineStart?: string;
   diff?: unknown;
+  revision?: string;
+  transactionId?: string;
+  addedNodes?: string[];
+  removedNodes?: string[];
+  changedNodes?: string[];
+  addedEdges?: string[];
+  removedEdges?: string[];
 }
 
 type ChildRun = {

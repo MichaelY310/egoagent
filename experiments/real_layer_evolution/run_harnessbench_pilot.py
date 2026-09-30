@@ -459,6 +459,7 @@ def _embedded_files(task: Any) -> dict[str, Any]:
                 continue
             relative = path.relative_to(workspace).as_posix()
             data = path.read_bytes()
+            executable = bool(path.stat().st_mode & 0o111)
             total += len(data)
             if len(data) > 16 * 1024 * 1024 or total > 64 * 1024 * 1024:
                 raise RuntimeError("task fixture exceeds EgoAgent import limits")
@@ -471,11 +472,14 @@ def _embedded_files(task: Any) -> dict[str, Any]:
                 # benchmark command is executed with that cwd.
                 staged_log = repr(str((workspace / ".hb_tool_calls").resolve()))
                 text = text.replace(staged_log, repr(".hb_tool_calls"))
-                files[relative] = text
+                files[relative] = {"content": text, "executable": True} if executable else text
             except UnicodeDecodeError:
                 import base64
 
-                files[relative] = {"content_base64": base64.b64encode(data).decode("ascii")}
+                files[relative] = {
+                    "content_base64": base64.b64encode(data).decode("ascii"),
+                    "executable": executable,
+                }
         return files
 
 

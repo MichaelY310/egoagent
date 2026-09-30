@@ -6,6 +6,7 @@ from agent_factory import AgentFactory, AgentFactoryError
 from model_gateway import ModelGateway, ModelGatewayError
 from runtime_contracts import ToolExecutionRequest
 from tool_pipeline import AgentToolExecutor
+from pipeline_engine import _clone_agent_for_slot
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +35,31 @@ class FakeAgent:
 
 
 class RuntimeFactoryTests(unittest.TestCase):
+    def test_subflow_slot_clone_rebinds_tool_executor_and_runtime_context(self):
+        class CloneableAgent:
+            name = "governor"
+            llm = FakeProvider()
+
+            def __init__(self):
+                self._runtime_context = {"agent_name": self.name, "agent": self}
+                self.tool_executor = AgentToolExecutor(self)
+
+            def execute_tool_call(self, call, **_options):
+                return {"ok": True, "name": call["function"]["name"]}
+
+        parent = CloneableAgent()
+        child = _clone_agent_for_slot(parent, "searcher")
+        result = child.tool_executor.execute(ToolExecutionRequest(
+            name="read_file", arguments={}, call_id="call-1", agent="searcher"
+        ))
+
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(child.name, "searcher")
+        self.assertIs(child.tool_executor.agent, child)
+        self.assertEqual(child._runtime_context["agent_name"], "searcher")
+        self.assertIs(child._runtime_context["agent"], child)
+        self.assertEqual(parent.name, "governor")
+
     def test_model_gateway_is_the_provider_conformance_boundary(self):
         gateway = ModelGateway(provider_factory=lambda config: FakeProvider())
         provider = gateway.create({"provider": "fake", "model": "fake-model"})

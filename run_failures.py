@@ -29,6 +29,23 @@ def classify_run_failure(message: Any, error_type: str = "") -> dict[str, Any]:
         code, title, action, recoverable = (
             "timeout", "操作超时", "查看最后运行节点；可重试、提高超时，或停止卡住的子进程。", True,
         )
+    # Windows reports an outbound socket denied by an inherited process/network
+    # boundary as "forbidden by its access permissions" (WinError 10013).  That
+    # is not an EgoAgent tool permission and there is no approval card that can
+    # authorize it.  Classify provider connectivity before the deliberately
+    # broad permission fallback so the UI gives an actionable diagnosis.
+    elif "winerror 10013" in lower or "forbidden by its access permissions" in lower:
+        code, title, action, recoverable = (
+            "network_access", "模型网络连接被当前进程拦截",
+            "请从普通用户终端重新启动 EgoAgent；若仍失败，再检查 Windows 防火墙或代理设置。无需批准文件或命令操作。", True,
+        )
+    elif any(token in lower for token in (
+        "failed to establish a new connection", "connection refused", "network is unreachable",
+        "no route to host", "connection aborted", "connection reset",
+    )):
+        code, title, action, recoverable = (
+            "network_connection", "无法连接模型服务", "检查网络或代理后重试；EgoAgent 没有执行文件修改。", True,
+        )
     elif "permission" in lower or "approval" in lower:
         code, title, action, recoverable = (
             "permission", "操作被安全策略拦截", "在审批卡中明确允许一次，或到设置中调整当前工作区策略。", True,
@@ -72,4 +89,3 @@ def output_limit_notice(*, finish_reason: Any = None, node: Any = None) -> dict[
         "finish_reason": finish_reason,
         "node": node,
     }
-

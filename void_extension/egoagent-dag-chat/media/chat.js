@@ -4,17 +4,25 @@ try {
   const apiBase = document.body.dataset.api.replace(/\/$/, '');
   const wsUrl = document.body.dataset.ws.replace(/\/$/, '');
   const saved = vscode.getState() || {};
+  const DEFAULT_CODE_HARNESS = 'code_agent_auto';
+  const DEFAULT_CODE_IDENTITY = 'adaptive_deepseek_coder';
 
   const state = {
     harnesses: [],
+    harnessCatalog: [],
     identities: [],
     config: null,
-    harness: saved.harness || '',
+    harness: saved.harness || DEFAULT_CODE_HARNESS,
+    harnessVersion: saved.harnessVersion || 'latest',
+    latestHarnessVersion: '',
+    harnessVersions: [],
     harnessFilter: saved.harnessFilter || '',
     showWorkers: saved.showWorkers === true,
-    identity: saved.identity || '',
+    identity: saved.identity || DEFAULT_CODE_IDENTITY,
     bindings: saved.bindings || {},
     mode: saved.mode || 'agent',
+    approvalMode: saved.sessionConfigs?.[`session:${saved.sessionName}`]?.approvalMode === 'auto' ? 'auto' : 'manual',
+    approvalModeTarget: null,
     running: false,
     waitingForInput: false,
     currentNode: null,
@@ -26,7 +34,10 @@ try {
     entered: new Set(),
     ws: null,
     pollBusy: false,
+    lastExecutionPoll: 0,
     runId: '',
+    sessionName: saved.sessionName || '',
+    configurationDirty: false,
     changeTransactionId: '',
     outputMessages: new Map(),
     localProposals: [],
@@ -64,82 +75,22 @@ try {
     lastComposerMutation: null,
     editingAttachmentId: '',
     lastReviewTransactionId: null,
+    sessionConfigs: saved.sessionConfigs && typeof saved.sessionConfigs === 'object' ? saved.sessionConfigs : {},
+    renamingSessionId: '',
+    sessionContextRunId: '',
+    wsRetryAttempt: 0,
+    wsRetryTimer: null,
   };
 
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
-  const safeHref = (value) => /^https?:\/\//i.test(String(value || '').trim()) ? String(value).trim() : '';
-  function renderInlineMarkdown(value) {
-    const code = [];
-    let html = escapeHtml(value).replace(/`([^`\n]+)`/g, (_match, content) => {
-      const token = `@@EGO_INLINE_CODE_${code.length}@@`;
-      code.push('<code>' + content + '</code>');
-      return token;
-    });
-    html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/gi, (_match, label, href) => {
-      const safe = safeHref(href);
-      return safe ? '<a href="' + escapeHtml(safe) + '" target="_blank" rel="noreferrer">' + label + '</a>' : label;
-    });
-    html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
-    html = html.replace(/(^|[\s(])\*([^*\n]+)\*(?=$|[\s).,!?:;])/g, '$1<em>$2</em>');
-    code.forEach((item, index) => { html = html.replace(`@@EGO_INLINE_CODE_${index}@@`, item); });
-    return html;
-  }
-
   function renderMarkdown(value) {
-    const source = String(value || '').replaceAll('\r\n', '\n');
-    const blocks = [];
-    let cursor = 0;
-    const fence = /```([^\n`]*)\n([\s\S]*?)```/g;
-    let match;
-    const renderTextBlock = (text) => {
-      const lines = String(text || '').split('\n');
-      const output = [];
-      let paragraph = [];
-      let listType = '';
-      let listItems = [];
-      const flushParagraph = () => {
-        if (paragraph.length) output.push('<p>' + paragraph.map(renderInlineMarkdown).join('<br>') + '</p>');
-        paragraph = [];
-      };
-      const flushList = () => {
-        if (listItems.length) output.push(`<${listType}>` + listItems.map((item) => '<li>' + renderInlineMarkdown(item) + '</li>').join('') + `</${listType}>`);
-        listType = '';
-        listItems = [];
-      };
-      for (const line of lines) {
-        const heading = /^(#{1,4})\s+(.+)$/.exec(line);
-        const bullet = /^\s*[-*+]\s+(.+)$/.exec(line);
-        const ordered = /^\s*\d+[.)]\s+(.+)$/.exec(line);
-        const quote = /^>\s?(.*)$/.exec(line);
-        if (!line.trim()) { flushParagraph(); flushList(); continue; }
-        if (heading) { flushParagraph(); flushList(); const level = heading[1].length; output.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`); continue; }
-        if (bullet || ordered) {
-          flushParagraph();
-          const nextType = bullet ? 'ul' : 'ol';
-          if (listType && listType !== nextType) flushList();
-          listType = nextType;
-          listItems.push((bullet || ordered)[1]);
-          continue;
-        }
-        if (quote) { flushParagraph(); flushList(); output.push('<blockquote>' + renderInlineMarkdown(quote[1]) + '</blockquote>'); continue; }
-        flushList();
-        paragraph.push(line);
-      }
-      flushParagraph();
-      flushList();
-      return output.join('');
-    };
-    while ((match = fence.exec(source))) {
-      blocks.push(renderTextBlock(source.slice(cursor, match.index)));
-      blocks.push('<pre><code class="language-' + escapeHtml(match[1].trim()) + '">' + escapeHtml(match[2].replace(/\n$/, '')) + '</code></pre>');
-      cursor = match.index + match[0].length;
-    }
-    blocks.push(renderTextBlock(source.slice(cursor)));
-    return '<div class="markdown-body">' + blocks.join('') + '</div>';
+    if (globalThis.EgoMarkdown) return globalThis.EgoMarkdown.render(value);
+    // An already-open webview can have the old HTML with newly served JS.
+    // Fail safely and explain the required reload, rather than dropping text.
+    return '<div class="markdown-body"><small>Markdown 组件未加载，请重新加载窗口。</small><pre>' + escapeHtml(value) + '</pre></div>';
   }
   const pretty = (value) => {
     if (typeof value === 'string') {
@@ -172,15 +123,79 @@ try {
     }
     return '';
   }
-  const persist = () => vscode.setState({
-    harness: state.harness,
-    harnessFilter: state.harnessFilter,
-    showWorkers: state.showWorkers,
-    identity: state.identity,
-    bindings: state.bindings,
-    mode: state.mode,
-    configExpanded: state.configExpanded,
-  });
+  function agentConfigSnapshot() {
+    return {
+      harness: String(state.harness || ''),
+      harnessVersion: String(state.harnessVersion || ''),
+      identity: String(state.identity || ''),
+      bindings: { ...(state.bindings || {}) },
+      mode: String(state.mode || 'agent'),
+      approvalMode: state.approvalMode,
+      showWorkers: state.showWorkers === true,
+    };
+  }
+
+  function executionConfigSnapshot(execution = {}) {
+    const agents = sortedRecord(execution.agents || {});
+    const identities = Object.values(agents).map((value) => (
+      String(value || '').replaceAll('\\', '/').split('/').filter(Boolean).pop() || ''
+    )).filter(Boolean);
+    return {
+      harness: String(execution.harness || state.harness || ''),
+      harnessVersion: String(execution.harness_version || state.harnessVersion || ''),
+      identity: identities[0] || String(state.identity || ''),
+      bindings: Object.fromEntries(Object.entries(agents).map(([slot, value]) => [
+        slot,
+        String(value || '').replaceAll('\\', '/').split('/').filter(Boolean).pop() || '',
+      ])),
+      mode: String(execution.mode || state.mode || 'agent'),
+      approvalMode: execution.approval_mode || 'manual',
+      runId: String(execution.run_id || state.runId || ''),
+    };
+  }
+
+  function configSignature(config = {}) {
+    return JSON.stringify([
+      config.harness || '', config.harnessVersion || '', config.mode || '', config.identity || '', sortedRecord(config.bindings || {}),
+    ]);
+  }
+
+  function configLabel(config = {}) {
+    const mode = ({ chat: 'Chat', plan: 'Plan', agent: 'Agent', debug: 'Debug', evolve: 'Evolve', evaluate: 'Evaluate' })[config.mode] || config.mode || '';
+    return [config.harness, config.identity, mode].filter(Boolean).join(' · ');
+  }
+
+  function sessionConfigKey(runId = state.runId) {
+    if (state.sessionName) return `session:${state.sessionName}`;
+    if (runId) return `run:${String(runId)}`;
+    return `draft:${currentWorkspace() || 'workspace-pending'}`;
+  }
+
+  function rememberCurrentAgentConfig() {
+    const key = sessionConfigKey();
+    state.sessionConfigs[key] = agentConfigSnapshot();
+    // Webview state is intentionally small. Runtime snapshots and session.json
+    // remain the durable source of truth for older Sessions.
+    const entries = Object.entries(state.sessionConfigs);
+    if (entries.length > 80) state.sessionConfigs = Object.fromEntries(entries.slice(-80));
+  }
+
+  const persist = () => {
+    rememberCurrentAgentConfig();
+    vscode.setState({
+      harness: state.harness,
+      harnessVersion: state.harnessVersion,
+      harnessVersion: state.harnessVersion,
+      harnessFilter: state.harnessFilter,
+      showWorkers: state.showWorkers,
+      identity: state.identity,
+      bindings: state.bindings,
+      mode: state.mode,
+      sessionName: state.sessionName,
+      configExpanded: state.configExpanded,
+      sessionConfigs: state.sessionConfigs,
+    });
+  };
 
   function canonicalWorkspace(value) {
     let normalized = String(value || '').trim().replaceAll('\\', '/');
@@ -197,10 +212,16 @@ try {
   }
 
   function executionMatchesSelection(execution) {
+    if (execution?.surface === 'builder') return false;
     if (state.runId && String(execution?.run_id || '') !== String(state.runId)) return false;
     const workspace = currentWorkspace();
     if (!workspace || canonicalWorkspace(execution?.workspace) !== workspace) return false;
     if (String(execution?.harness || '') !== String(state.harness || '')) return false;
+    // Older remote runtimes did not attach a version to incremental events.
+    // Accept those only for our exact run; never accept an explicit mismatch.
+    if (execution?.harness_version == null) {
+      if (!state.runId || String(execution?.run_id || '') !== String(state.runId)) return false;
+    } else if (String(execution.harness_version) !== String(state.harnessVersion || '')) return false;
     if (String(execution?.mode || 'agent') !== String(state.mode || 'agent')) return false;
     if (state.config && JSON.stringify(sortedRecord(execution?.agents)) !== JSON.stringify(sortedRecord(buildAgents()))) return false;
     return true;
@@ -215,7 +236,10 @@ try {
   }
 
   function resetConversationForWorkspace() {
+    state.approvalMode = 'manual';
+    renderApprovalMode();
     state.running = false;
+    state.waitingForInput = false;
     state.currentNode = null;
     state.stepCount = 0;
     state.messagesCount = 0;
@@ -224,6 +248,8 @@ try {
     state.tools = [];
     state.entered = new Set();
     state.runId = '';
+    state.sessionName = '';
+    state.configurationDirty = false;
     state.changeTransactionId = '';
     state.outputMessages.clear();
     state.contextPlan = null;
@@ -243,30 +269,15 @@ try {
     renderRuntime();
   }
 
-  function detachFromExecutionSelection() {
-    // A mode/Harness/Identity change defines a different Agent instance. Keep
-    // the visible conversation, but detach runtime state so a late cancelled
-    // snapshot from the previous run cannot become the new run's first error.
-    state.running = false;
-    state.waitingForInput = false;
-    state.currentNode = null;
-    state.stepCount = 0;
-    state.messagesCount = state.messages.length;
-    state.trace = [];
-    state.tools = [];
-    state.entered = new Set();
-    state.runId = '';
-    state.changeTransactionId = '';
-    state.outputMessages.clear();
-    state.executionWorkspace = '';
-    state.foreignExecution = null;
+  function markConfigurationChange() {
+    state.configurationDirty = Boolean(state.runId || state.sessionName || state.messages.length);
     state.pendingApproval = null;
-    state.terminationKey = '';
-    state.runStatus = 'idle';
-    state.awaitingNewSession = true;
-    state.activityText = '配置已切换 · 下一条消息会启动新的 Agent 运行';
-    state.activityKind = 'idle';
-    postBackendReviewSnapshot();
+    if (state.configurationDirty) {
+      state.activityText = '配置已切换 · 下一条消息会在当前 Session 中使用新配置';
+      state.activityKind = 'idle';
+    }
+    rememberCurrentAgentConfig();
+    renderSelectors();
     renderRuntime();
   }
 
@@ -348,7 +359,7 @@ async function request(path, options = {}) {
     el.hidden = !visible;
     el.classList.toggle('running', Boolean(status.running));
     el.classList.toggle('paused', Boolean(status.paused));
-    const scopeLabel = status.scope === 'evaluate' ? '评测' : status.scope === 'evolution' ? '进化' : 'Agent';
+    const scopeLabel = status.scope === 'evaluate' ? '评测' : status.scope === 'evolution' ? '进化' : status.scope === 'session-link' ? 'Session 观察' : 'Workbench 调试';
     const label = status.running
       ? `${scopeLabel}${status.waitingForInput ? '等待输入' : status.paused ? '已暂停' : '运行中'}`
       : pending ? `${pending} 个代码块待审` : `${proposals} 个进化提案`;
@@ -363,20 +374,22 @@ async function request(path, options = {}) {
 
   async function loadCatalog() {
     try {
-      const [harnesses, identities] = await Promise.all([
+      const [harnesses, identities, harnessCatalog] = await Promise.all([
         request('/api/harnesses'),
         request('/api/identities'),
+        request('/api/harnesses/detailed').catch(() => []),
       ]);
       state.harnesses = normalizeNames(harnesses);
+      state.harnessCatalog = Array.isArray(harnessCatalog) ? harnessCatalog : [];
       state.identities = normalizeNames(identities);
       if (!state.harness || !state.harnesses.includes(state.harness)) {
-        state.harness = state.harnesses.includes('react_single') ? 'react_single' : (state.harnesses[0] || '');
+        state.harness = state.harnesses.includes(DEFAULT_CODE_HARNESS) ? DEFAULT_CODE_HARNESS : (state.harnesses[0] || '');
       }
       if (!state.identity || !state.identities.includes(state.identity)) {
-        state.identity = state.identities.includes('dante') ? 'dante' : (state.identities[0] || '');
+        state.identity = state.identities.includes(DEFAULT_CODE_IDENTITY) ? DEFAULT_CODE_IDENTITY : (state.identities[0] || '');
       }
       renderSelectors();
-      if (state.harness) await loadHarness(state.harness);
+      if (state.harness) await loadHarness(state.harness, state.harnessVersion || 'latest');
       setConnection(true, '已连接');
       persist();
     } catch (error) {
@@ -388,41 +401,82 @@ async function request(path, options = {}) {
   function renderSelectors() {
     const query = state.harnessFilter.trim().toLowerCase();
     const matches = (name) => !query || name.toLowerCase().includes(query);
-    const groups = [
-      ['开源复刻（可直接运行）', state.harnesses.filter((name) => name.endsWith('_replica') && matches(name))],
-      ['基础 Harness', state.harnesses.filter((name) => !name.endsWith('_replica') && !name.endsWith('_worker') && matches(name))],
-      ['内部 Worker', state.showWorkers ? state.harnesses.filter((name) => name.endsWith('_worker') && matches(name)) : []],
+    const detailByName = new Map(state.harnessCatalog.map((item) => [item?.name, item]));
+    const categories = [
+      ['system', '系统内置'],
+      ['example', 'Examples'],
+      ['experiment', 'Experiments'],
+      ['custom', 'Custom'],
     ];
+    const groups = categories.map(([category, label]) => [
+      label,
+      state.harnesses.filter((name) => (detailByName.get(name)?.catalog_category || 'custom') === category && matches(name)),
+    ]);
     const visible = new Set(groups.flatMap(([, names]) => names));
     if (state.harness && !visible.has(state.harness)) groups.unshift(['当前选择', [state.harness]]);
     $('harnessSelect').innerHTML = groups
       .filter(([, names]) => names.length)
       .map(([label, names]) => '<optgroup label="' + escapeHtml(label) + '">' + names
-        .map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>').join('') + '</optgroup>')
+        .map((name) => {
+          const detail = detailByName.get(name) || {};
+          const displayName = detail.display_name || name;
+          const label = displayName === name ? name : `${displayName} · ${name}`;
+          return '<option value="' + escapeHtml(name) + '" title="' + escapeHtml(detail.description || '') + '">' + escapeHtml(label) + '</option>';
+        }).join('') + '</optgroup>')
       .join('');
     $('identitySelect').innerHTML = state.identities.map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>').join('');
     $('harnessSelect').value = state.harness;
     $('identitySelect').value = state.identity;
     $('harnessFilter').value = state.harnessFilter;
-    $('showWorkers').checked = state.showWorkers;
+    if ($('showWorkers')) $('showWorkers').checked = state.showWorkers;
     const visibleCount = groups.reduce((count, [, names]) => count + names.length, 0);
-    $('harnessCount').textContent = query || state.showWorkers
+    $('harnessCount').textContent = query
       ? `${Math.min(visibleCount, state.harnesses.length)} / ${state.harnesses.length}`
-      : `${state.harnesses.filter((name) => !name.endsWith('_worker')).length} 个可运行`;
+      : `${state.harnesses.length} 个可运行`;
     const modeLabel = ({ chat: 'Chat', plan: 'Plan', agent: 'Agent', debug: 'Debug', evolve: 'Evolve', evaluate: 'Evaluate' })[state.mode] || state.mode;
-    $('agentConfigSummary').textContent = `${modeLabel} · ${state.harness || '未选 Harness'} · ${state.identity || '未选 Identity'}`;
+    const stableSessionId = state.sessionName || state.runId;
+    const sessionLabel = stableSessionId ? `Session ${String(stableSessionId).slice(-6)}` : '新 Session';
+    const versionLabel = state.harnessVersion ? ` · ${state.harnessVersion.slice(0, 9)}` : '';
+    $('agentConfigSummary').textContent = `${sessionLabel} · ${modeLabel} · ${state.harness || '未选 Harness'}${versionLabel} · ${state.identity || '未选 Identity'}`;
   }
 
-  async function loadHarness(name) {
+  async function loadHarness(name, version = 'latest') {
     state.harness = name;
-    state.config = await request('/api/harness/' + encodeURIComponent(name));
+    const index = await request('/api/harness-versions/' + encodeURIComponent(name));
+    state.harnessVersions = Array.isArray(index.versions) ? index.versions : [];
+    state.latestHarnessVersion = String(index.latest || '');
+    const resolvedVersion = version === 'latest' ? state.latestHarnessVersion : String(version || state.latestHarnessVersion);
+    state.harnessVersion = resolvedVersion;
+    state.config = version === 'latest'
+      ? await request('/api/harness/' + encodeURIComponent(name))
+      : await request('/api/harness-version/' + encodeURIComponent(name) + '/' + encodeURIComponent(resolvedVersion));
     const description = state.config.description || '无描述';
     const nodeCount = Object.keys(state.config.pipeline?.nodes || {}).length;
     $('harnessMeta').textContent = description + ' · ' + nodeCount + ' 个节点';
     renderBindings();
     renderDag();
     renderSelectors();
+    renderHarnessVersions();
     persist();
+  }
+
+  function renderHarnessVersions() {
+    const select = $('harnessVersionSelect');
+    if (!select) return;
+    select.innerHTML = state.harnessVersions.slice().reverse().map((version) => {
+      const latest = version.id === state.latestHarnessVersion ? '最新 · ' : '';
+      return '<option value="' + escapeHtml(version.id) + '">' + latest + escapeHtml(version.label || ('Version ' + version.number)) + ' · ' + escapeHtml(version.id.slice(0, 15)) + '</option>';
+    }).join('');
+    select.value = state.harnessVersion;
+    const stale = Boolean(state.latestHarnessVersion && state.harnessVersion !== state.latestHarnessVersion);
+    const notice = $('flowVersionNotice');
+    notice.hidden = !stale;
+    notice.innerHTML = stale ? '当前 Session 使用旧 Flow 版本。<button id="switchLatestFlow" type="button">切换到最新版本</button>' : '';
+    $('switchLatestFlow')?.addEventListener('click', async () => {
+      markConfigurationChange();
+      await loadHarness(state.harness, state.latestHarnessVersion);
+      toast('已切换 Flow；正在执行的轮次保持原快照，下一条消息使用新版本');
+    });
   }
 
   function renderBindings() {
@@ -433,13 +487,13 @@ async function request(path, options = {}) {
       return;
     }
     $('slotBindings').innerHTML = entries.map(([slot, def]) => {
-      const selected = state.bindings[slot] || def.identity || state.identity;
+      const selected = state.bindings[slot] || (entries.length === 1 ? state.identity : (def.identity || state.identity));
       const options = state.identities.map((name) => '<option value="' + escapeHtml(name) + '"' + (name === selected ? ' selected' : '') + '>' + escapeHtml(name) + '</option>').join('');
       return '<label class="slot-row"><span title="' + escapeHtml(def.description || slot) + '">' + escapeHtml(slot) + (def.required ? ' *' : '') + '</span><select data-slot="' + escapeHtml(slot) + '">' + options + '</select></label>';
     }).join('');
     document.querySelectorAll('[data-slot]').forEach((select) => {
       select.addEventListener('change', () => {
-        detachFromExecutionSelection();
+        markConfigurationChange();
         state.bindings[select.dataset.slot] = select.value;
         persist();
       });
@@ -458,9 +512,10 @@ async function request(path, options = {}) {
 
   function buildAgents() {
     const slots = state.config?.slots || {};
+    const singleSlot = Object.keys(slots).length === 1;
     const agents = {};
     for (const [slot, def] of Object.entries(slots)) {
-      const identity = state.bindings[slot] || def.identity || state.identity;
+      const identity = state.bindings[slot] || (singleSlot ? state.identity : (def.identity || state.identity));
       if (def.required && !identity) throw new Error('必须为 slot “' + slot + '” 绑定 Identity');
       agents[slot] = 'identity/' + (identity || slot);
     }
@@ -474,31 +529,176 @@ async function request(path, options = {}) {
   function renderSessionTabs() {
     const container = $('sessionTabs');
     if (!container) return;
-    const runs = Array.isArray(state.liveRuns) ? state.liveRuns : [];
-    if (!runs.length) {
-      container.innerHTML = '<span class="session-empty">新 Session</span>';
-      return;
+    const linkButton = $('linkSessionWorkbench');
+    if (linkButton) {
+      linkButton.disabled = !state.runId;
+      linkButton.title = state.runId
+        ? `在 Build 中只读观察 ${state.harness || '当前 Harness'} · Session ${String(state.runId).slice(-8)}`
+        : '先启动或选择一个 Session';
     }
-    container.innerHTML = runs.map((run) => {
+    const runs = Array.isArray(state.liveRuns) ? state.liveRuns : [];
+    const items = [];
+    if (!state.runId) {
+      const draftTitle = `尚未启动的新 Session\n${state.mode || 'agent'} · ${state.harness || '未选 Harness'} · ${state.identity || '未选 Identity'}`;
+      items.push('<span class="session-pill draft active" title="' + escapeHtml(draftTitle) + '"><i></i><span><b>新 Session</b><small>' + escapeHtml(state.harness || '未选 Harness') + '</small></span></span>');
+    }
+    runs.forEach((run) => {
       const active = String(run.run_id || '') === String(state.runId || '');
       const status = run.pending_approval || run.waiting_for_input ? 'waiting'
         : run.running ? 'running' : run.status === 'error' ? 'error' : 'done';
-      const label = run.session_name || run.harness || String(run.run_id || '').slice(-8);
-      const title = `${label}\n${run.status || (run.running ? 'running' : 'completed')} · ${run.mode || 'agent'}\n${run.run_id || ''}`;
-      return '<button class="session-pill ' + status + (active ? ' active' : '') + '" data-session-run="' + escapeHtml(run.run_id || '') + '" title="' + escapeHtml(title) + '"><i></i><span>' + escapeHtml(label) + '</span></button>';
-    }).join('');
-    container.querySelectorAll('[data-session-run]').forEach((button) => {
-      button.addEventListener('click', () => activateExecutionSession(button.dataset.sessionRun));
+      const label = run.session_title || run.session_name || run.harness || String(run.run_id || '').slice(-8);
+      const identities = Object.values(run.agents || {}).map((value) => String(value || '').replaceAll('\\', '/').split('/').filter(Boolean).pop()).filter(Boolean);
+      const title = `${label}\n${run.status || (run.running ? 'running' : 'completed')} · ${run.mode || 'agent'}\n${run.harness || ''}${identities.length ? ` · ${identities.join(', ')}` : ''}\n${run.run_id || ''}`;
+      if (state.renamingSessionId === String(run.run_id || '')) {
+        items.push('<div class="session-pill ' + status + (active ? ' active' : '') + '" data-session-editor="' + escapeHtml(run.run_id || '') + '"><i></i><span><input class="session-rename-input" data-session-rename="' + escapeHtml(run.run_id || '') + '" value="' + escapeHtml(label) + '" aria-label="Session 名称"><small>Enter 保存 · Esc 取消</small></span></div>');
+      } else {
+        items.push('<div class="session-pill ' + status + (active ? ' active' : '') + '" data-session-run="' + escapeHtml(run.run_id || '') + '" role="button" tabindex="0" title="' + escapeHtml(title) + '"><i></i><span><b>' + escapeHtml(label) + '</b><small>' + escapeHtml(run.harness) + '</small></span><button type="button" class="session-more-button" data-session-more="' + escapeHtml(run.run_id || '') + '" aria-label="' + escapeHtml(label) + ' 的更多操作" title="重命名、Fork、观察或删除">•••</button></div>');
+      }
     });
+    container.innerHTML = items.join('');
+    container.querySelectorAll('[data-session-run]').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        if (event.target.closest('[data-session-rename], [data-session-more]')) return;
+        activateExecutionSession(button.dataset.sessionRun);
+      });
+      button.addEventListener('keydown', (event) => {
+        if (event.target !== button || !['Enter', ' '].includes(event.key)) return;
+        event.preventDefault();
+        activateExecutionSession(button.dataset.sessionRun);
+      });
+      button.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        beginSessionRename(button.dataset.sessionRun);
+      });
+      button.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        openSessionContextMenu(button.dataset.sessionRun, event.clientX, event.clientY);
+      });
+    });
+    container.querySelectorAll('[data-session-more]').forEach((more) => {
+      more.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = more.getBoundingClientRect();
+        openSessionContextMenu(more.dataset.sessionMore, rect.right, rect.bottom + 2);
+      });
+    });
+    const rename = container.querySelector('[data-session-rename]');
+    if (rename) {
+      rename.addEventListener('click', (event) => event.stopPropagation());
+      rename.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); commitSessionRename(rename.dataset.sessionRename, rename.value); }
+        if (event.key === 'Escape') { state.renamingSessionId = ''; renderSessionTabs(); }
+      });
+      rename.addEventListener('blur', () => commitSessionRename(rename.dataset.sessionRename, rename.value));
+      requestAnimationFrame(() => { rename.focus(); rename.select(); });
+    }
+  }
+
+  function liveRun(runId) {
+    return state.liveRuns.find((run) => String(run.run_id || '') === String(runId || ''));
+  }
+
+  function beginSessionRename(runId) {
+    closeSessionContextMenu();
+    const run = liveRun(runId);
+    if (!run?.session_name) return toast('这个 Session 尚未生成持久记录，发送第一条消息后即可命名', true);
+    state.renamingSessionId = String(runId);
+    renderSessionTabs();
+  }
+
+  async function commitSessionRename(runId, value) {
+    if (state.renamingSessionId !== String(runId || '')) return;
+    state.renamingSessionId = '';
+    const run = liveRun(runId);
+    const title = String(value || '').trim();
+    if (!run?.session_name || !title) { renderSessionTabs(); return; }
+    try {
+      const result = await request('/api/projects/session/update', {
+        method: 'POST', body: JSON.stringify({ session: run.session_name, changes: { title } }),
+      });
+      run.session_title = result?.session?.title || title;
+      state.liveRunsSignature = '';
+      renderSessionTabs();
+      toast('Session 已重命名');
+    } catch (error) {
+      renderSessionTabs();
+      toast('重命名失败：' + error.message, true);
+    }
+  }
+
+  function openSessionContextMenu(runId, x, y) {
+    const menu = $('sessionContextMenu');
+    const run = liveRun(runId);
+    if (!menu || !run) return;
+    state.sessionContextRunId = String(runId);
+    menu.querySelector('[data-session-action="stop"]').hidden = !run.running;
+    menu.querySelector('[data-session-action="delete"]').hidden = Boolean(run.running);
+    menu.style.left = Math.max(4, Math.min(x, window.innerWidth - 158)) + 'px';
+    menu.style.top = Math.max(4, Math.min(y, window.innerHeight - 184)) + 'px';
+    menu.hidden = false;
+  }
+
+  function closeSessionContextMenu() {
+    const menu = $('sessionContextMenu');
+    if (menu) menu.hidden = true;
+    state.sessionContextRunId = '';
+  }
+
+  async function deleteSession(runId) {
+    const run = liveRun(runId);
+    if (!run || run.running) return toast('请先结束正在运行的 Session', true);
+    if (!window.confirm(`将“${run.session_title || run.session_name || runId.slice(-8)}”移到本地回收站？之后仍可从 session_trash 恢复。`)) return;
+    try {
+      if (run.session_name) {
+        try { await request('/api/session/' + encodeURIComponent(run.session_name) + '/trash', { method: 'POST', body: '{}' }); }
+        catch (error) { if (Number(error?.status) !== 404) throw error; }
+      }
+      await request('/api/execution/dismiss', { method: 'POST', body: JSON.stringify({ run_id: runId }) });
+      state.liveRuns = state.liveRuns.filter((item) => String(item.run_id) !== String(runId));
+      if (String(state.runId || '') === String(runId)) startFreshSession();
+      else renderSessionTabs();
+      toast('Session 已移到回收站');
+    } catch (error) {
+      toast('删除 Session 失败：' + error.message, true);
+    }
+  }
+
+  async function forkSession(runId) {
+    const run = liveRun(runId);
+    if (!run?.session_name) return toast('这个 Session 尚未生成持久记录，暂时不能 Fork', true);
+    try {
+      const result = await request('/api/session/' + encodeURIComponent(run.session_name) + '/fork', {
+        method: 'POST',
+        body: JSON.stringify({ workspace: state.editorContext?.workspacePath || '' }),
+      });
+      toast('已 Fork：' + (result.session || result.name || '新 Session'));
+      openWorkbench('sessions');
+    } catch (error) {
+      toast('Fork 失败：' + error.message, true);
+    }
   }
 
   async function refreshExecutionSessions() {
     const workspace = state.editorContext?.workspacePath || '';
     if (!workspace) return;
     try {
-      const payload = await request('/api/execution/runs?workspace=' + encodeURIComponent(workspace));
-      const runs = Array.isArray(payload?.runs) ? payload.runs : [];
-      const signature = runs.map((run) => [run.run_id, run.status, run.running ? 1 : 0, run.waiting_for_input ? 1 : 0, run.step_count, run.session_name].join(':')).join('|');
+      const payload = await request('/api/execution/runs?projection=chat&workspace=' + encodeURIComponent(workspace));
+      const rawRuns = (Array.isArray(payload?.runs) ? payload.runs : []).filter((run) => (
+        run.surface !== 'builder' && String(run.run_id || '').trim() && String(run.harness || '').trim()
+      ));
+      const bySession = new Map();
+      rawRuns.forEach((run) => {
+        const key = String(run.session_name || run.run_id || '');
+        const previous = bySession.get(key);
+        const isActive = String(run.run_id || '') === String(state.runId || '');
+        const previousIsActive = String(previous?.run_id || '') === String(state.runId || '');
+        if (!previous || isActive || (!previousIsActive && Number(run.touched_at || 0) >= Number(previous.touched_at || 0))) {
+          bySession.set(key, run);
+        }
+      });
+      const runs = [...bySession.values()];
+      const signature = runs.map((run) => [run.run_id, run.status, run.running ? 1 : 0, run.waiting_for_input ? 1 : 0, run.step_count, run.session_name, run.session_title, run.harness, run.harness_version, run.mode, JSON.stringify(sortedRecord(run.agents))].join(':')).join('|');
       if (signature === state.liveRunsSignature) return;
       state.liveRunsSignature = signature;
       state.liveRuns = runs;
@@ -511,6 +711,7 @@ async function request(path, options = {}) {
   async function activateExecutionSession(runId) {
     if (!runId || String(runId) === String(state.runId || '')) return;
     try {
+      rememberCurrentAgentConfig();
       const execution = await request('/api/execution/state?run_id=' + encodeURIComponent(runId));
       state.messages = [];
       state.outputMessages.clear();
@@ -518,15 +719,19 @@ async function request(path, options = {}) {
       state.tools = [];
       state.entered = new Set();
       state.runId = String(runId);
+      state.sessionName = String(execution.session_name || '');
+      state.configurationDirty = false;
       state.awaitingNewSession = false;
-      state.mode = execution.mode || 'agent';
+      const savedConfig = state.sessionConfigs[sessionConfigKey(runId)] || {};
+      state.mode = execution.mode || savedConfig.mode || 'agent';
       const identities = Object.fromEntries(Object.entries(execution.agents || {}).map(([slot, value]) => [
         slot,
         String(value || '').replaceAll('\\', '/').split('/').filter(Boolean).pop() || '',
       ]));
-      state.bindings = identities;
-      state.identity = Object.values(identities)[0] || state.identity;
-      await loadHarness(execution.harness || state.harness);
+      state.bindings = Object.keys(identities).length ? identities : { ...(savedConfig.bindings || {}) };
+      state.identity = Object.values(identities)[0] || savedConfig.identity || state.identity;
+      state.showWorkers = savedConfig.showWorkers === true;
+      await loadHarness(execution.harness || savedConfig.harness || state.harness, execution.harness_version || savedConfig.harnessVersion || 'latest');
       $('modeSelect').value = state.mode;
       applyExecutionState(execution);
       persist();
@@ -538,13 +743,33 @@ async function request(path, options = {}) {
     }
   }
 
-  function startFreshSession() {
+  async function startFreshSession() {
+    const nextConfig = {
+      mode: state.mode,
+      harness: state.harness,
+      harnessVersion: state.harnessVersion,
+      identity: state.identity,
+      bindings: { ...state.bindings },
+      showWorkers: state.showWorkers,
+    };
+    rememberCurrentAgentConfig();
     resetConversationForWorkspace();
+    // A new Session is a new conversation using the configuration the user is
+    // already looking at.  Never silently escalate Chat/Plan into Agent mode.
+    state.mode = nextConfig.mode;
+    state.harness = nextConfig.harness;
+    state.harnessVersion = nextConfig.harnessVersion;
+    state.identity = nextConfig.identity;
+    state.bindings = nextConfig.bindings;
+    state.showWorkers = nextConfig.showWorkers;
+    $('modeSelect').value = state.mode;
     state.awaitingNewSession = true;
     state.liveRunsSignature = '';
+    persist();
+    renderSelectors();
     renderSessionTabs();
     $('prompt').focus();
-    toast('已打开新 Session；发送消息后才会启动 Agent');
+    toast(`已新建 Session · 继承 ${state.mode} / ${state.harness} / ${state.identity}`);
   }
 
   function activeReviewTransactionId() {
@@ -559,6 +784,14 @@ async function request(path, options = {}) {
       - Number(left.updated_at || left.timestamp || left.index || 0)
     ));
     return String(pending[0]?.transaction_id || '');
+  }
+
+  function backendChangesForActiveReview() {
+    const transactionId = activeReviewTransactionId();
+    if (!transactionId) return [];
+    return (state.backendChanges || []).filter((change) => (
+      String(change?.transaction_id || '') === transactionId
+    ));
   }
 
   function postBackendReviewSnapshot(force = false) {
@@ -581,7 +814,7 @@ async function request(path, options = {}) {
     return JSON.stringify(state.runId ? { ...payload, run_id: state.runId } : payload);
   }
 
-  async function startExecution(silent = false) {
+  async function startExecution(silent = false, { initialInput = '', initialData = {} } = {}) {
     if (!state.harness) throw new Error('请先选择 Harness');
     const workspace = state.editorContext?.workspacePath || '';
     if (!canonicalWorkspace(workspace)) throw new Error('Void 尚未提供当前工作区，请打开项目文件后重试');
@@ -589,30 +822,47 @@ async function request(path, options = {}) {
     let existing = null;
     if (state.runId) {
       try {
-        existing = await request('/api/execution/state' + runQuery());
+        existing = await requestWithDeadline('/api/execution/state' + runQuery() + '&projection=chat');
       } catch (error) {
         // A restarted backend legitimately forgets its in-memory live-run
         // handle.  The persisted Session remains available in Portfolio.
         if (Number(error?.status) !== 404) throw error;
       }
     }
-    if (existing && executionMatchesSelection(existing) && existing.running) {
+    const matchesCurrentConfiguration = existing && executionMatchesSelection(existing) && !state.configurationDirty;
+    if (matchesCurrentConfiguration && existing.running) {
       applyExecutionState(existing);
-      return existing;
+      return { ...existing, reused: true, initial_input_seeded: false };
     }
-    // A different Session in this workspace may still be running.  Starting a
-    // new one must not cancel it; the session strip is the explicit switcher.
+    const previousRunId = String(existing?.run_id || state.runId || '');
+    let resumeSession = String(existing?.session_name || state.sessionName || '');
+    if (existing?.running) {
+      const stopped = await request('/api/execution/stop', {
+        method: 'POST',
+        body: JSON.stringify({ run_id: previousRunId, wait: true, timeout: 15, reason: 'reconfigure' }),
+      });
+      resumeSession = String(stopped.session_name || resumeSession || '');
+    }
     const result = await request('/api/execution/start', {
       method: 'POST',
       body: JSON.stringify({
         harness: state.harness,
+        harness_version: state.harnessVersion,
         agents: buildAgents(),
+        surface: 'chat',
         workspace,
         mode: state.mode,
+        approval_mode: state.approvalMode,
+        approval_confirmed: state.approvalMode === 'auto',
         mutation_targets: state.mode === 'evolve' ? [state.harness, ...identityTargets] : [],
+        resume_session: resumeSession,
+        initial_input: String(initialInput || ''),
+        initial_data: initialData && typeof initialData === 'object' ? initialData : {},
       }),
     });
     state.runId = String(result.run_id || result.state?.run_id || '');
+    state.sessionName = String(result.session_name || result.state?.session_name || resumeSession || '');
+    state.configurationDirty = false;
     state.awaitingNewSession = false;
     state.changeTransactionId = String(result.change_transaction_id || result.state?.change_transaction_id || '');
     postBackendReviewSnapshot();
@@ -627,10 +877,17 @@ async function request(path, options = {}) {
     state.tools = [];
     state.entered = new Set();
     state.liveRunsSignature = '';
+    if (previousRunId && previousRunId !== state.runId) {
+      void request('/api/execution/dismiss', {
+        method: 'POST', body: JSON.stringify({ run_id: previousRunId }),
+      }).catch(() => {});
+    }
+    persist();
+    renderSelectors();
     void refreshExecutionSessions();
     renderRuntime();
     if (!silent) toast('DAG 已启动');
-    return result;
+    return { ...result, reused: false };
   }
 
   async function stopExecution() {
@@ -646,39 +903,19 @@ async function request(path, options = {}) {
     return state.waitingForInput || op === '等待输入' || op === '输入';
   }
 
-  async function waitUntilReadyForInput(timeoutMs = 15000) {
-    const started = Date.now();
-    while (Date.now() - started < timeoutMs) {
-      const execution = await request('/api/execution/state' + runQuery());
-      applyExecutionState(execution);
-      if (isWaiting()) return;
-      if (!state.running) {
-        const failure = execution.termination?.failure || {};
-        const message = failure.message || execution.termination?.message;
-        const action = failure.action || execution.termination?.action;
-        throw new Error([
-          message ? `Agent 启动失败：${message}` : 'DAG 在进入等待输入节点前结束',
-          action,
-        ].filter(Boolean).join('\n'));
-      }
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    throw new Error('DAG 尚未到达等待输入节点，请在“运行”页检查执行轨迹');
-  }
-
   async function buildContextPlan(query, pastedContexts = state.pastedContexts) {
     const context = state.attachedContext;
     const workspaceContext = context?.workspacePath ? context : state.editorContext;
     if (!workspaceContext?.workspacePath) return null;
     const explicit = (pastedContexts || []).map((item, index) => ({
-      kind: item.kind === 'terminal' ? 'terminal' : item.kind === 'selection' ? 'selection' : item.kind === 'file' ? 'file' : item.kind === 'workspace' ? 'workspace' : 'clipboard',
+      kind: item.kind === 'terminal' ? 'terminal' : item.kind === 'selection' ? 'selection' : item.kind === 'file' ? 'file' : item.kind === 'folder' ? 'folder' : item.kind === 'workspace' ? 'workspace' : 'clipboard',
       title: item.title,
       path: item.path || '',
       start_line: item.startLine || undefined,
       end_line: item.endLine || undefined,
       content: item.content,
       metadata: {
-        language: item.language || 'text', source: item.kind === 'file' ? 'drag-drop' : 'clipboard', terminal: item.terminalName || undefined,
+        language: item.language || 'text', source: item.kind === 'file' || item.kind === 'folder' ? 'drag-drop' : 'clipboard', terminal: item.terminalName || undefined,
         reference: item.reference || '', attachment_order: index + 1,
       },
     }));
@@ -695,9 +932,11 @@ async function request(path, options = {}) {
         start_line: context.line, content: context.selectionText,
       });
     }
-    const pendingChanges = (state.backendChanges || []).filter((change) => ['pending', 'partial', 'conflict'].includes(change.status)).slice(0, 12);
+    const pendingChanges = backendChangesForActiveReview().filter((change) => (
+      pendingReviewHunks(change).length > 0
+    )).slice(0, 12);
     const recentTools = (state.tools || []).slice(-8);
-    return request('/api/context/plan', {
+    return requestWithDeadline('/api/context/plan', {
       method: 'POST',
       body: JSON.stringify({
         workspace: workspaceContext.workspacePath,
@@ -711,11 +950,54 @@ async function request(path, options = {}) {
         terminal: recentTools.length ? { title: 'Recent tool and terminal results', content: JSON.stringify(recentTools) } : null,
         include_repo_map: true,
         retrieval_mode: 'auto',
+        cached_only: true,
+        retrieval_budget_seconds: 2,
       }),
-    });
+    }, 4000);
+  }
+
+  async function requestWithDeadline(path, options = {}, milliseconds = 15000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), milliseconds);
+    try { return await request(path, { ...options, signal: controller.signal }); }
+    finally { clearTimeout(timer); }
+  }
+
+  function currentProgressBubble(create = false) {
+    let bubble = [...state.messages].reverse().find(item => item.kind === 'activity');
+    const lastUser = state.messages.map(item => item.agent).lastIndexOf('user');
+    if (bubble && state.messages.indexOf(bubble) < lastUser) bubble = null;
+    if (!bubble && create) {
+      bubble = {kind: 'activity', agent: 'Agent', text: '', events: [], at: Date.now(),
+        configuration: agentConfigSnapshot(), progress: {title: '已收到 · 正在准备', status: 'running', tools: [], thinking: []}};
+      state.messages.push(bubble);
+    }
+    return bubble;
+  }
+
+  function syncChatProgress(progress) {
+    if (!progress) return;
+    const bubble = currentProgressBubble(Boolean(state.runId || (state.running && !state.waitingForInput)));
+    if (!bubble) return;
+    // Repeated polls must not reopen details the user has just collapsed.
+    bubble.progress = progress;
+    renderMessages();
+  }
+
+  function renderProgressBubble(message) {
+    const progress = message.progress || {};
+    const active = ['running', 'waiting'].includes(progress.status);
+    const tools = (progress.tools || []).map(item => {
+      const status = {running:'执行中', completed:'已完成', error:'失败', interrupted:'已中断'}[item.status] || item.status;
+      return '<details class="live-tool"' + (item.status === 'running' ? ' open' : '') + '><summary>⚙ ' + escapeHtml(item.agent || 'Agent') + ' · ' + escapeHtml(item.name) + ' · ' + escapeHtml(status) + '</summary><pre>' + escapeHtml(pretty(item.arguments || {})) + '</pre></details>';
+    }).join('');
+    const thinking = (progress.thinking || []).map(item => '<details class="live-thinking"' + (active ? ' open' : '') + '><summary>' + escapeHtml(item.agent || 'Agent') + ' · Thinking（模型返回）</summary><pre>' + (item.truncated ? '…仅显示最近的思考片段，完整内容见轨迹\n' : '') + escapeHtml(item.text) + '</pre></details>').join('');
+    const content = '<div class="live-title" role="status"><span class="live-dot"></span>' + escapeHtml(progress.title || 'Agent 正在工作') + '</div>' + (progress.notice ? '<small>' + escapeHtml(progress.notice) + '</small>' : '') + thinking + tools;
+    return '<article class="message activity-message ' + (active ? 'active' : 'finished') + '"><div class="message-head"><strong>Agent · 执行过程</strong></div><div class="bubble live-bubble" aria-busy="' + active + '">' + (active ? content : '<details><summary>' + escapeHtml(progress.title || '本轮已完成') + ' · 查看过程</summary>' + content + '</details>') + '</div></article>';
   }
 
   async function sendPrompt() {
+    if (state.submitting) return toast('这条消息正在提交，请稍候；草稿会保留');
     const input = $('prompt');
     const text = composerText().trim();
     if (!text) return;
@@ -731,7 +1013,7 @@ async function request(path, options = {}) {
     const casualText = casualTurnText(text, pastedContexts);
     const requestText = casualText || text;
     clearComposer();
-    addMessage('user', text, pastedContexts);
+    addMessage('user', text, pastedContexts, agentConfigSnapshot());
     const commandMatch = /^\/(mock|review|edit|run|map|preview|commit)(?:\s+([\s\S]*))?$/i.exec(text);
     if (commandMatch) {
       const command = commandMatch[1].toLowerCase();
@@ -748,11 +1030,13 @@ async function request(path, options = {}) {
       return;
     }
     $('send').disabled = true;
+    state.submitting = true;
+    currentProgressBubble(true);
     setAgentActivity(state.running ? '正在把消息交给当前 DAG…' : '正在读取编辑器状态并启动 DAG…', 'running');
+    renderMessagesNow({ forceBottom: true });
     try {
       await requestFreshEditorContext();
-      await startExecution(true);
-      if (!isWaiting()) await waitUntilReadyForInput();
+      setAgentActivity('正在准备已选内容和项目上下文…', 'running');
       const context = state.attachedContext;
       let contextBlock = '';
       try {
@@ -768,6 +1052,7 @@ async function request(path, options = {}) {
           contextBlock = '\n\n[EgoAgent planned context]\n' + attachmentGuide + state.contextPlan.prompt;
         }
       } catch {
+        setAgentActivity('上下文检索超时 · 使用选区和附件继续，Agent 可按需读文件', 'running');
         const pastedBlock = pastedContexts.map((item) => (
           `\n\n[EgoAgent pasted context ${item.reference || ''}: ${item.title}]\n` +
           `\`\`\`${item.language || 'text'}\n${item.content}\n\`\`\``
@@ -778,26 +1063,47 @@ async function request(path, options = {}) {
             + (context.symbols?.length ? '\n@symbols ' + context.symbols.slice(0, 15).map((item) => item.name).join(', ') : '')
           : '') + pastedBlock;
       }
-      await request('/api/execution/input', { method: 'POST', body: runBody({ text: requestText + contextBlock }) });
+      const submittedText = requestText + contextBlock;
+      setAgentActivity('正在启动流程并提交消息…', 'running');
+      const execution = await startExecution(true, {
+        initialInput: submittedText,
+        initialData: { request: submittedText, task: submittedText, user_input: submittedText },
+      });
+      if (!execution.initial_input_seeded) {
+        await request('/api/execution/input', { method: 'POST', body: runBody({ text: submittedText }) });
+      }
       state.pastedContexts = [];
       renderEditorContext();
-      setAgentActivity('任务已收到 · 正在进入第一个 DAG 节点…', 'running');
+      void pollExecution();
     } catch (error) {
-      addEvent('system', 'error', '发送失败', error.message);
+      const detail = String(error?.message || error);
+      const alreadyShown = state.messages.some((message) => message.events?.some((event) => (
+        event.type === 'error'
+        && (detail.includes(String(event.result || '').split('\n\n')[0]) || String(event.result || '').includes(detail))
+      )));
+      if (!alreadyShown) addEvent('system', 'error', '发送失败', detail);
       setAgentActivity('发送失败 · 请查看错误详情', 'error');
-      toast(error.message, true);
+      toast(detail, true);
     } finally {
+      state.submitting = false;
       $('send').disabled = false;
       input.focus();
     }
   }
 
-  function addMessage(agent, text, contexts = []) {
+  function addMessage(agent, text, contexts = [], configuration = null) {
+    const resolvedConfiguration = configuration || agentConfigSnapshot();
     const last = state.messages[state.messages.length - 1];
-    if (agent !== 'user' && last && last.kind === 'message' && last.agent === agent && !last.sealed) {
+    if (
+      agent !== 'user' && last && last.kind === 'message' && last.agent === agent && !last.sealed
+      && configSignature(last.configuration) === configSignature(resolvedConfiguration)
+    ) {
       last.text += text || '';
     } else {
-      state.messages.push({ kind: 'message', agent, text: text || '', contexts: contexts || [], at: Date.now(), sealed: agent === 'user', events: [] });
+      state.messages.push({
+        kind: 'message', agent, text: text || '', contexts: contexts || [],
+        configuration: resolvedConfiguration, at: Date.now(), sealed: agent === 'user', events: [],
+      });
     }
     renderMessages({ forceBottom: agent === 'user' });
   }
@@ -805,7 +1111,7 @@ async function request(path, options = {}) {
   function addEvent(agent, type, title, result, detail = null) {
     let message = state.messages[state.messages.length - 1];
     if (!message || message.kind !== 'message' || message.agent !== agent || message.sealed) {
-      message = { kind: 'message', agent, text: '', at: Date.now(), sealed: false, events: [] };
+      message = { kind: 'message', agent, text: '', configuration: agentConfigSnapshot(), at: Date.now(), sealed: false, events: [] };
       state.messages.push(message);
     }
     message.events.push({ type, title, result, detail });
@@ -822,11 +1128,13 @@ async function request(path, options = {}) {
     return state.messages.map((message) => [
       message.backendKey || '',
       message.agent || '',
+      configSignature(message.configuration),
       String(message.text || '').length,
       String(message.text || '').slice(-24),
       message.events?.length || 0,
       message.contexts?.map((item) => `${item.id || item.title}:${String(item.content || '').length}`).join(',') || '',
       message.sealed ? 1 : 0,
+      message.kind === 'activity' ? JSON.stringify(message.progress) : '',
     ].join(':')).join('|');
   }
 
@@ -883,7 +1191,7 @@ async function request(path, options = {}) {
       if (matchIndex) parts.push(escapeHtml(remaining.slice(0, matchIndex)));
       const canOpen = Boolean(matchContext.absolutePath);
       const preview = String(matchContext.content || '').replace(/\s+/g, ' ').trim().slice(0, 180);
-      parts.push('<button class="message-attachment" data-open-context="' + escapeHtml(matchContext.id || '') + '" title="' + escapeHtml(canOpen ? '打开来源位置' : preview || matchContext.title || '查看附件') + '"><span aria-hidden="true">' + (matchContext.kind === 'terminal' ? '⌘' : matchContext.kind === 'selection' || matchContext.kind === 'file' ? '⌁' : '▤') + '</span>' + escapeHtml(matchContext.title || '附件') + '</button>');
+      parts.push('<button class="message-attachment" data-open-context="' + escapeHtml(matchContext.id || '') + '" title="' + escapeHtml(canOpen ? '打开来源位置' : preview || matchContext.title || '查看附件') + '"><span aria-hidden="true">' + (matchContext.kind === 'terminal' ? '⌘' : matchContext.kind === 'folder' ? '▣' : matchContext.kind === 'selection' || matchContext.kind === 'file' ? '⌁' : '▤') + '</span>' + escapeHtml(matchContext.title || '附件') + '</button>');
       remaining = remaining.slice(matchIndex + matchContext.reference.length);
     }
     return '<div class="user-authored-text">' + parts.join('') + '</div>';
@@ -901,13 +1209,31 @@ async function request(path, options = {}) {
     const previousScrollTop = container.scrollTop;
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     const shouldFollow = forceBottom || distanceFromBottom <= 48;
-    const html = state.messages.map((message) => {
+    const detailsState = new Map();
+    container.querySelectorAll('.message').forEach((article, index) => {
+      article.querySelectorAll('details').forEach((detail, detailIndex) => {
+        detailsState.set(index + ':' + detailIndex + ':' + detail.querySelector('summary')?.textContent, detail.open);
+      });
+    });
+    const activeProgress = [...state.messages].reverse().find(message =>
+      message.kind === 'activity' && ['running', 'waiting'].includes(message.progress?.status));
+    // Keep the live activity in view after streamed replies without moving
+    // transcript state (which would break token coalescing / replay matching).
+    const displayMessages = activeProgress
+      ? [...state.messages.filter(message => message !== activeProgress), activeProgress]
+      : state.messages;
+    const html = displayMessages.map((message) => {
+      if (message.kind === 'activity') return renderProgressBubble(message);
       const isUser = message.agent === 'user';
       const time = new Date(message.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const events = message.events.map((event) => {
         const blocked = event.type === 'blocked' || event.type === 'error';
         if (event.type === 'approval_required') {
           const detail = event.detail || {};
+          if (detail.decision || state.pendingApproval?.approval_id !== detail.approval_id) {
+            const decision = detail.decision === 'approved' ? (detail.source === 'automatic' ? '自动批准' : '已允许一次') : detail.decision === 'rejected' ? '已拒绝' : (state.running ? '等待审批队列处理' : '审批已失效 · 请重新发送任务');
+            return '<details class="event-card"><summary>' + escapeHtml(decision + ' · ' + (detail.tool || '工具调用')) + '</summary><pre>' + escapeHtml(pretty(detail.arguments || {})) + '</pre></details>';
+          }
           const risk = detail.risk || {};
           const findings = (risk.findings || []).map((item) => '<li>' + escapeHtml(item.summary || item.code) + '</li>').join('');
           return '<section class="approval-card"><div class="approval-title"><strong>需要你的允许</strong><span class="risk-' + escapeHtml(risk.level || 'high') + '">' + escapeHtml(String(risk.level || 'high').toUpperCase()) + '</span></div><p>' + escapeHtml(event.result || detail.prompt || '') + '</p><code>' + escapeHtml(detail.tool || detail.name || 'operation') + '</code><pre>' + escapeHtml(pretty(detail.arguments ?? detail.data ?? {})) + '</pre>' + (findings ? '<ul>' + findings + '</ul>' : '') + '<small>' + escapeHtml(detail.reason || '此操作超出自动执行边界。') + '</small><div class="approval-actions"><button data-approval="approved" data-approval-id="' + escapeHtml(detail.approval_id || '') + '" class="allow">允许一次</button><button data-approval="rejected" data-approval-id="' + escapeHtml(detail.approval_id || '') + '" class="reject">拒绝</button></div></section>';
@@ -919,17 +1245,24 @@ async function request(path, options = {}) {
       const bubble = isRoutineProcess(message)
         ? '<div class="bubble process-bubble"><details class="process-card"><summary><span class="process-icon">⌁</span>' + escapeHtml(processSummary(message)) + '<small>展开查看</small></summary><div class="process-detail">' + content + '</div></details></div>'
         : '<div class="bubble">' + content + '</div>';
-      return '<article class="message' + (isUser ? ' user' : '') + '"><div class="message-head"><strong>' + escapeHtml(isUser ? '你' : message.agent || 'agent') + '</strong><span>' + time + '</span></div>' + bubble + '</article>';
+      const origin = configLabel(message.configuration);
+      return '<article class="message' + (isUser ? ' user' : '') + '"><div class="message-head"><strong>' + escapeHtml(isUser ? '你' : message.agent || 'agent') + '</strong>' + (origin ? '<small class="message-origin" title="本条消息使用的配置">' + escapeHtml(origin) + '</small>' : '') + '<span>' + time + '</span></div>' + bubble + '</article>';
     }).join('');
     Array.from(container.querySelectorAll('.message')).forEach((node) => node.remove());
     container.insertAdjacentHTML('beforeend', html);
+    container.querySelectorAll('.message').forEach((article, index) => {
+      article.querySelectorAll('details').forEach((detail, detailIndex) => {
+        const key = index + ':' + detailIndex + ':' + detail.querySelector('summary')?.textContent;
+        if (detailsState.has(key)) detail.open = detailsState.get(key);
+      });
+    });
     container.scrollTop = shouldFollow
       ? container.scrollHeight
       : Math.min(previousScrollTop, Math.max(0, container.scrollHeight - container.clientHeight));
-    $('messageCount').textContent = String(state.messages.length);
   }
 
   function handleEvent(message) {
+    if (message?.surface === 'builder' || message?.scope?.surface === 'builder') return;
     if (typeof message?.running === 'boolean') {
       applyExecutionState(message);
       return;
@@ -937,6 +1270,7 @@ async function request(path, options = {}) {
     if (message?.scope && !executionMatchesSelection(message.scope)) return;
     const type = message?.type;
     const data = message?.data || {};
+    if (message?.progress) syncChatProgress(message.progress);
     if (type === 'run_started') {
       state.changeTransactionId = String(
         data.change_transaction_id
@@ -962,11 +1296,22 @@ async function request(path, options = {}) {
       setAgentActivity(labels[op] || `正在执行节点 ${state.currentNode}`, state.waitingForInput ? 'waiting' : 'running');
     } else if (type === 'model_request') {
       setAgentActivity(`正在向 ${data.agent || '模型'} 发送整理后的上下文…`, 'running');
+    } else if (type === 'reasoning') {
+      setAgentActivity(`${data.agent || 'Agent'} 正在思考…`, 'running');
+    } else if (type === 'tool_start') {
+      setAgentActivity(`${data.agent || 'Agent'} 正在执行 ${data.name || '工具'}…`, 'running');
+    } else if (type === 'checkpoint_progress') {
+      setAgentActivity(data.message || '正在保存检查点…', 'running');
     } else if (type === 'token') {
       setAgentActivity(`${data.agent || 'Agent'} 正在生成回答…`, 'running');
-      addMessage(data.agent || 'agent', data.text || '');
+      addMessage(data.agent || 'agent', data.text || '', [], executionConfigSnapshot(message.scope || {}));
     } else if (type === 'model_response') {
       const calls = Array.isArray(data.tool_calls) ? data.tool_calls.length : 0;
+      const latest = state.messages[state.messages.length - 1];
+      // Non-streaming Model nodes must appear now, not out of order on polling.
+      if (data.text && !(latest?.kind === 'message' && latest.agent === (data.agent || 'agent') && !latest.sealed && latest.text)) {
+        addMessage(data.agent || 'agent', data.text, [], executionConfigSnapshot(message.scope || {}));
+      }
       if (!calls) {
         const last = state.messages[state.messages.length - 1];
         if (last?.kind === 'message' && last.agent === (data.agent || 'agent')) last.sealed = true;
@@ -988,14 +1333,20 @@ async function request(path, options = {}) {
       const failure = data.failure || {};
       addEvent('system', 'warning', '⏹ ' + (failure.title || '运行达到上限'), [data.message || '', failure.action || ''].filter(Boolean).join('\n\n'));
     } else if (type === 'approval_required') {
+      if (!state.pendingApproval) state.pendingApproval = data;
       setAgentActivity('已暂停 · 等待你审批高风险操作', 'waiting');
-      state.pendingApproval = data;
       state.waitingForInput = true;
       addEvent('system', 'approval_required', '需要审批', data.prompt || '', data);
     } else if (type === 'approval') {
-      state.pendingApproval = null;
-      state.waitingForInput = false;
-      addEvent('system', data.decision === 'approved' ? 'approval' : 'blocked', data.decision === 'approved' ? '✓ 已允许一次' : '🚫 已拒绝', data.tool || data.name || 'operation');
+      for (const item of state.messages) for (const event of item.events || []) {
+        if (event.type === 'approval_required' && event.detail?.approval_id === data.approval_id) {
+          event.detail.decision = data.decision;
+          event.detail.source = data.source;
+        }
+      }
+      if (state.pendingApproval?.approval_id === data.approval_id) state.pendingApproval = null;
+      state.waitingForInput = Boolean(state.pendingApproval);
+      addEvent('system', data.decision === 'approved' ? 'approval' : 'blocked', data.decision === 'approved' ? (data.source === 'automatic' ? '✓ 自动批准' : '✓ 已允许一次') : '🚫 已拒绝', data.tool || data.name || 'operation');
     } else if (type === 'cancelled') {
       setAgentActivity('运行已停止', 'idle');
       addEvent('system', 'warning', '运行已停止', data.message || '本次运行已取消。');
@@ -1009,7 +1360,7 @@ async function request(path, options = {}) {
       addEvent(data.parent_agent || 'system', 'sub', '↳ 子 Harness：' + (data.harness_name || ''), data.slots || {});
     } else if (type === 'sub_token') {
       setAgentActivity(`${data.agent || '子 Agent'} 正在生成结果…`, 'running');
-      addMessage((data.harness_name ? data.harness_name + ' · ' : '') + (data.agent || 'sub-agent'), data.text || '');
+      addMessage((data.harness_name ? data.harness_name + ' · ' : '') + (data.agent || 'sub-agent'), data.text || '', [], executionConfigSnapshot(message.scope || {}));
     } else if (type === 'sub_tool') {
       addEvent(data.agent || 'sub-agent', 'tool', '↳ 🔧 ' + (data.name || 'tool'), data.result || '');
     } else if (type === 'sub_harness_end') {
@@ -1039,7 +1390,7 @@ async function request(path, options = {}) {
           message = [...state.messages].reverse().find((item) => (
             item.kind === 'message'
             && !item.backendKey
-            && item.events?.some((event) => event.type === 'error' && String(event.result || '').trim() === errorText)
+            && item.events?.some((event) => event.type === 'error' && String(event.result || '').trim().includes(errorText))
           ));
         }
         // A live WebSocket token may have created the bubble just before the
@@ -1059,6 +1410,7 @@ async function request(path, options = {}) {
         if (!message) {
           message = {
             kind: 'message', agent, text: '', at: Date.now(), sealed: false,
+            configuration: executionConfigSnapshot(output.configuration || execution),
             events: errorText ? [{ type: 'error', title: '执行错误', result: errorText }] : [],
           };
           state.messages.push(message);
@@ -1068,6 +1420,7 @@ async function request(path, options = {}) {
       }
 
       message.agent = agent;
+      message.configuration = executionConfigSnapshot(output.configuration || execution);
       message.text = errorText ? '' : snapshotText;
       message.events = errorText ? message.events : [
         ...(output.tools || []).map((tool) => ({
@@ -1097,6 +1450,8 @@ async function request(path, options = {}) {
   }
 
   function applyExecutionState(execution) {
+    if (execution?.surface === 'builder') return;
+    const wasWaitingForInput = state.waitingForInput;
     if (state.awaitingNewSession && !state.runId) return;
     if (state.runId && execution?.run_id && String(execution.run_id) !== String(state.runId)) {
       // WebSocket broadcasts carry updates for every live Session. Keep the
@@ -1122,7 +1477,9 @@ async function request(path, options = {}) {
     state.running = Boolean(execution.running);
     state.runStatus = String(execution.status || (state.running ? 'running' : 'idle'));
     state.waitingForInput = Boolean(execution.waiting_for_input);
-    state.pendingApproval = execution.pending_approval || null;
+    state.pendingApproval = execution.running ? execution.pending_approval || null : null;
+    if (execution.approval_mode) state.approvalMode = execution.approval_mode === 'auto' ? 'auto' : 'manual';
+    renderApprovalMode();
     state.security = execution.security || state.security;
     state.sandbox = execution.sandbox || state.sandbox;
     state.currentNode = execution.current_node || null;
@@ -1130,6 +1487,7 @@ async function request(path, options = {}) {
     state.messagesCount = Number(execution.messages_count || state.messages.length);
     if (execution.run_id != null) {
       state.runId = String(execution.run_id);
+      state.sessionName = String(execution.session_name || state.sessionName || '');
       const reportedTransaction = String(
         execution.change_transaction_id
         || (execution.pipeline_run_id ? `run-${execution.pipeline_run_id}` : '')
@@ -1139,6 +1497,7 @@ async function request(path, options = {}) {
       postBackendReviewSnapshot();
     }
     syncExecutionOutputs(execution);
+    syncChatProgress(execution.chat_progress);
     const termination = execution.termination;
     if (termination) {
       const failure = termination.failure || {};
@@ -1149,7 +1508,8 @@ async function request(path, options = {}) {
         const alreadyShown = state.messages.some((item) => item.events?.some((event) => (
           ['error', 'warning'].includes(event.type) && String(event.result || '').includes(String(message))
         )));
-        if (!alreadyShown) addEvent(
+        const cleanSessionClose = termination.kind === 'cancelled' && wasWaitingForInput;
+        if (!alreadyShown && !cleanSessionClose) addEvent(
           'system',
           termination.kind === 'error' ? 'error' : 'warning',
           failure.title || termination.title || (termination.kind === 'limit_exceeded' ? '运行达到上限' : termination.kind === 'cancelled' ? '运行已停止' : '运行结束'),
@@ -1179,16 +1539,11 @@ async function request(path, options = {}) {
     ].join(':');
     if (runtimeSignature === state.runtimeRenderSignature) return;
     state.runtimeRenderSignature = runtimeSignature;
-    const statusLabels = { idle: '空闲', running: '运行中', waiting_approval: '等待审批', completed: '已完成', budget_exceeded: '达到上限', limit_exceeded: '达到上限', error: '失败', cancelled: '已停止' };
-    $('runStatus').textContent = state.pendingApproval ? '等待审批' : (state.running ? (isWaiting() ? '等待输入' : '运行中') : (statusLabels[state.runStatus] || '空闲'));
-    $('stepCount').textContent = String(state.stepCount);
-    $('currentNode').textContent = state.currentNode || '—';
-    $('messageCount').textContent = String(Math.max(state.messagesCount, state.messages.length));
-    if ($('sandboxStatus')) $('sandboxStatus').textContent = state.sandbox?.label || 'Workspace guard';
-    $('start').disabled = state.running;
-    $('stop').disabled = !state.running;
     const inferenceNodes = Object.values(state.config?.pipeline?.nodes || {}).filter((node) => node.op === '推理').length;
-    if (state.pendingApproval) {
+    if (state.configurationDirty) {
+      state.activityText = '配置已切换 · 下一条消息会在当前 Session 中使用新配置';
+      state.activityKind = 'idle';
+    } else if (state.pendingApproval) {
       state.activityText = '已暂停 · 等待你审批高风险操作';
       state.activityKind = 'waiting';
     } else if (state.running && isWaiting()) {
@@ -1197,7 +1552,7 @@ async function request(path, options = {}) {
     } else if (!state.running) {
       state.activityText = state.runStatus === 'error'
         ? '执行失败 · 请查看上方错误'
-        : state.runStatus === 'cancelled' ? '运行已停止' : '就绪 · 发送消息开始';
+        : state.runStatus === 'cancelled' ? 'Session 已结束 · 可新建 Session 继续' : '就绪 · 发送消息开始';
       state.activityKind = state.runStatus === 'error' ? 'error' : 'idle';
     } else if (!state.activityText || ['idle', 'waiting'].includes(state.activityKind)) {
       state.activityText = inferenceNodes > 1
@@ -1206,8 +1561,6 @@ async function request(path, options = {}) {
       state.activityKind = 'running';
     }
     renderAgentActivity();
-    $('trace').innerHTML = state.trace.length ? state.trace.map((item, index) => '<div class="trace-item"><span class="trace-index">' + (index + 1) + '</span><span>' + escapeHtml(item.node) + '</span></div>').join('') : '<div class="muted">尚未执行</div>';
-    $('toolHistory').innerHTML = state.tools.length ? state.tools.map((tool) => '<div class="tool-item"><strong>' + escapeHtml(tool.title) + '</strong><pre>' + escapeHtml(pretty(tool.result)) + '</pre></div>').join('') : '<div class="muted">尚无工具调用</div>';
     renderDag();
   }
 
@@ -1217,38 +1570,85 @@ async function request(path, options = {}) {
     el.className = `agent-activity ${state.activityKind || 'idle'}`;
     el.setAttribute('aria-busy', state.activityKind === 'running' ? 'true' : 'false');
     $('composerHint').textContent = state.activityText || '就绪';
+    const stop = $('stopCurrentRun');
+    if (stop) stop.hidden = !state.running;
   }
 
   function setAgentActivity(text, kind = 'running') {
     state.activityText = text;
     state.activityKind = kind;
+    const bubble = currentProgressBubble();
+    if (bubble && (['running', 'waiting'].includes(bubble.progress.status) || kind === 'error')) {
+      bubble.progress = {...bubble.progress, title: text,
+        status: kind === 'error' ? 'error' : kind === 'idle' ? 'cancelled' :
+          kind === 'waiting' && !state.pendingApproval ? 'completed' : kind};
+      renderMessages();
+    }
     renderAgentActivity();
   }
 
   function connectWebSocket() {
+    if (document.hidden) return;
     try {
-      state.ws?.close();
+      if (state.ws?.readyState === WebSocket.OPEN || state.ws?.readyState === WebSocket.CONNECTING) return;
       const ws = new WebSocket(wsUrl);
       state.ws = ws;
-      ws.addEventListener('open', () => setConnection(true, '实时连接'));
+      ws.addEventListener('open', () => {
+        state.wsRetryAttempt = 0;
+        if (state.wsRetryTimer) clearTimeout(state.wsRetryTimer);
+        state.wsRetryTimer = null;
+        setConnection(true, '实时连接');
+        pollExecution(); // Recover messages produced before (re)subscription.
+      });
       ws.addEventListener('message', (event) => {
-        try { handleEvent(JSON.parse(event.data)); } catch {}
+        try { handleEvent(JSON.parse(event.data)); } catch (error) {
+          console.warn('[EgoAgent Chat] Could not apply live event; recovering snapshot', error);
+          pollExecution();
+        }
       });
       ws.addEventListener('close', () => {
         setConnection(false, '重连中');
-        setTimeout(connectWebSocket, 1800);
+        scheduleWebSocketReconnect();
       });
       ws.addEventListener('error', () => setConnection(false, '实时连接失败'));
     } catch {
-      setTimeout(connectWebSocket, 2200);
+      scheduleWebSocketReconnect();
     }
   }
+
+  function scheduleWebSocketReconnect(immediate = false) {
+    if (state.wsRetryTimer) return;
+    const delay = immediate ? 0 : Math.min(30000, 1000 * (2 ** Math.min(state.wsRetryAttempt, 5)));
+    state.wsRetryAttempt += 1;
+    state.wsRetryTimer = setTimeout(() => {
+      state.wsRetryTimer = null;
+      connectWebSocket();
+    }, delay);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    pollExecution();
+    if (state.ws?.readyState === WebSocket.OPEN) return;
+    if (state.wsRetryTimer) clearTimeout(state.wsRetryTimer);
+    state.wsRetryTimer = null;
+    state.wsRetryAttempt = 0;
+    scheduleWebSocketReconnect(true);
+  });
 
   async function pollExecution() {
     if (state.pollBusy) return;
     state.pollBusy = true;
+    const polledRunId = state.runId;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const execution = await request('/api/execution/state' + (state.runId ? runQuery() : workspaceQuery()));
+      if (!state.runId) {
+        await request('/api/workspace' + workspaceQuery(), { signal: controller.signal });
+        setConnection(true, state.ws?.readyState === WebSocket.OPEN ? '实时连接' : '已连接');
+        return;
+      }
+      const execution = await request('/api/execution/state' + runQuery() + '&projection=chat', { signal: controller.signal });
       // A workspace lookup can return its most recent completed run. Treat it
       // as history, not as the active Chat after a reload; otherwise an old
       // transaction silently re-enables stale editor decorations forever.
@@ -1256,11 +1656,36 @@ async function request(path, options = {}) {
         applyExecutionState(execution);
       }
       setConnection(true, state.ws?.readyState === WebSocket.OPEN ? '实时连接' : '已连接');
-    } catch {
-      setConnection(false, '后端不可用');
+    } catch (error) {
+      if (state.runId !== polledRunId) return; // Late response from a previous tab.
+      if (Number(error?.status) === 404 && state.runId) {
+        // A live API can lose in-memory handles after a service restart.
+        // Preserve the persisted Session and draft so the next send resumes it.
+        state.runId = '';
+        state.running = false;
+        state.waitingForInput = false;
+        state.runStatus = 'interrupted';
+        setAgentActivity('后台已重启 · 本轮中断，可重新发送并继续此 Session', 'error');
+        persist();
+        renderRuntime();
+        setConnection(true, '已连接 · 需继续对话');
+      } else {
+        setConnection(false, '后端不可用');
+      }
     } finally {
+      clearTimeout(timer);
       state.pollBusy = false;
+      state.lastExecutionPoll = Date.now();
     }
+  }
+
+  function reconcileExecution() {
+    if (document.hidden) return;
+    // A healthy socket is not proof that every event reached this webview.
+    // Reconcile only the selected run, at a low rate; keep streaming fast.
+    const connected = state.ws?.readyState === WebSocket.OPEN;
+    if (connected && (!state.runId || Date.now() - state.lastExecutionPoll < 15000)) return;
+    pollExecution();
   }
 
   function itemList(value, emptyLabel) {
@@ -1344,7 +1769,7 @@ async function request(path, options = {}) {
   }
 
   function needsReview(item) {
-    return pendingReviewHunks(item).length > 0 || item?.status === 'conflict';
+    return pendingReviewHunks(item).length > 0;
   }
 
   function renderDiffLines(oldLines, newLines) {
@@ -1375,13 +1800,13 @@ async function request(path, options = {}) {
       const actions = '<div class="hunk-actions"><button data-change-source="backend" data-change-action="accept" data-id="' + selector + '" data-hunk="' + escapeHtml(String(hunk.id)) + '" class="accept">✓ 接受</button><button data-change-source="backend" data-change-action="reject" data-id="' + selector + '" data-hunk="' + escapeHtml(String(hunk.id)) + '" class="reject">✕ 拒绝</button></div>';
       return '<article class="hunk ' + escapeHtml(hunk.status) + '"><div class="hunk-head"><span>原第 ' + (Number(hunk.old_start || 0) + 1) + ' 行 · ' + escapeHtml(hunk.tag || 'edit') + '</span>' + actions + '</div>' + renderDiffLines(hunk.old_lines, hunk.new_lines) + '</article>';
     }).join('') : '<pre class="unified-diff">' + escapeHtml((change.diff || []).join('')) + '</pre>';
-    const diffAction = change.change_type === 'text'
+    const diffAction = change.change_type === 'text' && pending
       ? '<button data-open-backend-diff="' + selector + '" data-hunk="' + escapeHtml(String(hunks[0]?.id || '')) + '">↔ Review Diff</button>'
       : '';
     const actions = '<div class="file-actions">' + diffAction + ((change.status === 'pending' || change.status === 'partial')
       ? '<button data-change-source="backend" data-change-action="acceptAll" data-id="' + selector + '">全部接受</button><button data-change-source="backend" data-change-action="rejectAll" data-id="' + selector + '">全部拒绝</button>'
       : '') + '</div>';
-    const conflict = change.conflict ? '<div class="muted">⚠ ' + escapeHtml(change.conflict.message || '文件已被外部修改，请先保存或手动合并后刷新') + '</div>' : '';
+    const conflict = change.conflict ? '<div class="muted">⚠ 当前文件在本次 Agent 改动后又被其他操作修改。为保护较新的内容，EgoAgent 不会自动覆盖；请重新生成改动或手动合并。</div>' : '';
     return '<section class="change-card backend"><div class="change-head"><div><button type="button" class="change-file-link" data-open-change-file="' + escapeHtml(change.file_path) + '" data-open-change-line="' + firstLine + '" data-review-transaction="' + escapeHtml(change.transaction_id || '') + '" title="在编辑器中打开并审阅本次运行"><strong>' + escapeHtml(change.file_path) + '</strong></button><span>' + escapeHtml(change.tool_name || 'DAG Agent') + ' · 真实 Agent 改动' + (change.is_new_file ? ' · 新文件（全文绿色）' : '') + (change.is_deleted_file ? ' · 删除文件' : '') + '</span></div><span class="status-pill">' + escapeHtml(statusText(change.status)) + (pending ? ' · ' + pending : '') + '</span></div>' + conflict + actions + hunkHtml + '</section>';
   }
 
@@ -1394,7 +1819,8 @@ async function request(path, options = {}) {
 
   function renderChanges() {
     const localPending = state.localProposals.reduce((total, proposal) => total + pendingReviewHunks(proposal).length, 0);
-    const backendPending = state.backendChanges.reduce((total, change) => total + pendingReviewHunks(change).length, 0);
+    const activeBackendChanges = backendChangesForActiveReview();
+    const backendPending = activeBackendChanges.reduce((total, change) => total + pendingReviewHunks(change).length, 0);
     const pending = localPending + backendPending;
     $('pendingBadge').textContent = String(pending);
     $('pendingBadge').classList.toggle('active', pending > 0);
@@ -1407,9 +1833,9 @@ async function request(path, options = {}) {
     ].map(([label, count]) => '<div class="summary-chip"><strong>' + count + '</strong>' + label + '</div>').join('');
     const html = [
       ...state.localProposals.filter(needsReview).map(localProposalHtml),
-      ...state.backendChanges.filter(needsReview).map(backendChangeHtml),
+      ...activeBackendChanges.filter(needsReview).map(backendChangeHtml),
     ].join('');
-    $('changeList').innerHTML = html || '<div class="changes-empty"><strong>当前没有待审查改动</strong><span>点击“AI 多段改动”生成提案；模型不可用时仍可体验逐段 Accept / Reject 和原生红绿 Diff。</span></div>';
+    $('changeList').innerHTML = html || '<div class="changes-empty"><strong>当前 Session 没有待审查改动</strong><span>这里只展示当前 Session/运行产生且尚未决定的 hunk；其他 Session 的历史改动不会混进来。</span></div>';
     renderReviewIssues();
   }
 
@@ -1447,7 +1873,7 @@ async function request(path, options = {}) {
 
   function attachmentReference(context) {
     const title = String(context?.title || 'Clipboard context').replace(/\s+/g, ' ').trim().slice(0, 240);
-    const kind = context?.kind === 'terminal' ? '终端附件' : context?.kind === 'selection' ? '代码附件' : context?.kind === 'file' ? '文件附件' : context?.kind === 'workspace' ? '项目上下文' : '文本附件';
+    const kind = context?.kind === 'terminal' ? '终端附件' : context?.kind === 'selection' ? '代码附件' : context?.kind === 'file' ? '文件附件' : context?.kind === 'folder' ? '文件夹附件' : context?.kind === 'workspace' ? '项目上下文' : '文本附件';
     return `[${kind}: ${title}]`;
   }
 
@@ -1503,7 +1929,7 @@ async function request(path, options = {}) {
   }
 
   function attachmentIcon(kind) {
-    return kind === 'terminal' ? '⌘' : kind === 'selection' || kind === 'file' ? '⌁' : '▤';
+    return kind === 'terminal' ? '⌘' : kind === 'folder' ? '▣' : kind === 'selection' || kind === 'file' ? '⌁' : '▤';
   }
 
   function attachmentPreview(context, limit = 180) {
@@ -1663,37 +2089,94 @@ async function request(path, options = {}) {
   }
 
   function switchTab(name) {
-    document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === name));
+    const target = ['chat', 'changes', 'context'].includes(name) ? name : 'chat';
+    document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === target));
     document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.remove('active'));
-    $(name + 'Tab').classList.add('active');
-    if (name === 'context') loadContext();
-    if (name === 'changes') loadTrackedChanges();
+    $(target + 'Tab').classList.add('active');
+    if (target === 'context') loadContext();
+    if (target === 'changes') loadTrackedChanges();
   }
 
   $('harnessSelect').addEventListener('change', async (event) => {
-    detachFromExecutionSelection();
-    try { await loadHarness(event.target.value); } catch (error) { toast(error.message, true); }
+    const selected = event.target.value;
+    markConfigurationChange();
+    // Slot names are Harness-local. Carrying bindings from the previous graph
+    // silently applies another Session's Identities to matching slot names.
+    state.bindings = {};
+    try { await loadHarness(selected, 'latest'); } catch (error) { toast(error.message, true); }
+  });
+  $('harnessVersionSelect').addEventListener('change', async (event) => {
+    const selected = event.target.value;
+    markConfigurationChange();
+    try { await loadHarness(state.harness, selected); } catch (error) { toast(error.message, true); }
   });
   $('harnessFilter').addEventListener('input', (event) => {
     state.harnessFilter = event.target.value;
     renderSelectors();
     persist();
   });
-  $('showWorkers').addEventListener('change', (event) => {
+  $('showWorkers')?.addEventListener('change', (event) => {
     state.showWorkers = event.target.checked;
     renderSelectors();
     persist();
   });
   $('identitySelect').addEventListener('change', (event) => {
-    detachFromExecutionSelection();
-    state.identity = event.target.value;
+    const selected = event.target.value;
+    markConfigurationChange();
+    const slots = Object.keys(state.config?.slots || {});
+    state.identity = selected;
+    if (slots.length === 1) state.bindings[slots[0]] = state.identity;
+    renderSelectors();
     renderBindings();
     persist();
   });
+  function renderApprovalMode() {
+    const button = $('approvalMode');
+    if (!button) return;
+    const auto = state.approvalMode === 'auto';
+    button.textContent = auto ? '工具审批：自动批准' : '工具审批：手动审批';
+    button.classList.toggle('automatic', auto);
+    $('approvalModeHint').textContent = auto ? '当前 Session · 禁止规则仍生效' : '高风险操作需要你确认';
+  }
+
+  async function changeApprovalMode(mode, target) {
+    if (target !== `${state.runId}:${state.sessionName}:${currentWorkspace()}`) {
+      toast('Session 已切换，请在目标 Session 中重新选择', true);
+      return;
+    }
+    const button = $('approvalMode');
+    button.disabled = true;
+    try {
+      if (state.runId) await request('/api/execution/approval-mode', {
+        method: 'POST', body: runBody({ approval_mode: mode, confirmed: mode === 'auto' }),
+      });
+      if (target !== `${state.runId}:${state.sessionName}:${currentWorkspace()}`) return;
+      state.approvalMode = mode;
+      persist();
+      renderApprovalMode();
+      toast(mode === 'auto' ? '当前 Session 的工具审批已自动批准；不解除禁止规则' : '已切回手动审批；已经批准或开始执行的操作不会被撤回');
+    } catch (error) { toast('审批设置未修改：' + error.message, true); }
+    finally { button.disabled = false; }
+  }
+
+  $('approvalMode')?.addEventListener('click', () => {
+    const target = `${state.runId}:${state.sessionName}:${currentWorkspace()}`;
+    if (state.approvalMode === 'auto') { void changeApprovalMode('manual', target); return; }
+    state.approvalModeTarget = target;
+    $('approvalModeDialog').showModal();
+  });
+  $('cancelAutoApproval')?.addEventListener('click', () => $('approvalModeDialog').close());
+  $('confirmAutoApproval')?.addEventListener('click', () => {
+    $('approvalModeDialog').close();
+    void changeApprovalMode('auto', state.approvalModeTarget);
+  });
+  renderApprovalMode();
+
   $('modeSelect').value = state.mode;
   $('modeSelect').addEventListener('change', (event) => {
-    detachFromExecutionSelection();
-    state.mode = event.target.value;
+    const selected = event.target.value;
+    markConfigurationChange();
+    state.mode = selected;
     renderSelectors();
     persist();
     const descriptions = {
@@ -1702,7 +2185,7 @@ async function request(path, options = {}) {
       agent: '完整 Agent：按权限策略执行并记录改动',
       debug: '调试：复现、修复并验证',
       evolve: '进化：仅允许修改当前 Harness 和已绑定 Identity',
-      evaluate: '隔离评测：默认禁网且禁止全局进化',
+      evaluate: '评测权限：仍使用当前项目；独立题目环境请打开 Workbench → Evaluate',
     };
     toast(descriptions[state.mode] || state.mode);
   });
@@ -1903,9 +2386,7 @@ async function request(path, options = {}) {
       toast('审批失败：' + error.message, true);
     }
   });
-  $('start').addEventListener('click', () => startExecution().catch((error) => toast(error.message, true)));
-  $('stop').addEventListener('click', () => stopExecution().catch((error) => toast(error.message, true)));
-  $('clear').addEventListener('click', () => { state.messages = []; state.trace = []; state.tools = []; state.entered = new Set(); renderMessages(); renderRuntime(); });
+  $('stopCurrentRun').addEventListener('click', () => stopExecution().catch((error) => toast(error.message, true)));
   $('refreshContext').addEventListener('click', loadContext);
   $('attachContext').addEventListener('click', (event) => {
     event.stopPropagation();
@@ -1914,15 +2395,68 @@ async function request(path, options = {}) {
   $('contextPicker').addEventListener('click', (event) => {
     const button = event.target.closest('[data-attach-kind]');
     if (!button) return;
+    if (button.dataset.attachKind === 'terminal') {
+      $('contextPicker').hidden = true;
+      vscode.postMessage({ type: 'attachTerminalContext' });
+      return;
+    }
     state.attachRequested = button.dataset.attachKind;
     $('contextPicker').hidden = true;
     vscode.postMessage({ type: 'requestEditorContext' });
   });
-  document.addEventListener('click', () => { $('contextPicker').hidden = true; });
+  $('sessionContextMenu')?.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    const button = event.target.closest('[data-session-action]');
+    if (!button) return;
+    const runId = state.sessionContextRunId;
+    const run = liveRun(runId);
+    const action = button.dataset.sessionAction;
+    closeSessionContextMenu();
+    if (action === 'rename') return beginSessionRename(runId);
+    if (action === 'observe') {
+      if (!runId) return;
+      return openWorkbench('harness', { linkRunId: runId });
+    }
+    if (action === 'fork') return forkSession(runId);
+    if (action === 'stop') {
+      if (!run?.running) return;
+      try {
+        await request('/api/execution/stop', { method: 'POST', body: JSON.stringify({ run_id: runId }) });
+        state.liveRunsSignature = '';
+        await refreshExecutionSessions();
+      } catch (error) { toast('结束 Session 失败：' + error.message, true); }
+      return;
+    }
+    if (action === 'delete') return deleteSession(runId);
+  });
+  document.addEventListener('click', () => { $('contextPicker').hidden = true; closeSessionContextMenu(); });
   $('createCheckpoint').addEventListener('click', createCheckpoint);
-  const openWorkbench = (tab) => vscode.postMessage({ type: 'openWorkbench', tab });
+  const openWorkbench = (tab, detail = {}) => vscode.postMessage({ type: 'openWorkbench', tab, ...detail });
   $('workbenchQuick')?.addEventListener('click', () => openWorkbench('home'));
+  $('remoteQuick')?.addEventListener('click', () => vscode.postMessage({ type: 'openRemoteWorkspace' }));
   $('openSessionPortfolio')?.addEventListener('click', () => openWorkbench('sessions'));
+  $('linkSessionWorkbench')?.addEventListener('click', async () => {
+    if (!state.runId && !state.sessionName) return toast('请先启动或选择一个 Session', true);
+    let targetRunId = String(state.runId || '');
+    if (targetRunId) {
+      try {
+        await request('/api/execution/state?run_id=' + encodeURIComponent(targetRunId));
+      } catch (error) {
+        if (Number(error?.status) !== 404) return toast('无法读取 Session：' + error.message, true);
+        targetRunId = '';
+      }
+    }
+    if (!targetRunId) {
+      try {
+        const resumed = await startExecution(true);
+        targetRunId = String(resumed.run_id || resumed.state?.run_id || state.runId || '');
+        toast('后端已恢复这个 Session；正在打开只读观察');
+      } catch (error) {
+        return toast('无法恢复 Session：' + error.message, true);
+      }
+    }
+    openWorkbench('harness', { linkRunId: targetRunId });
+  });
   $('newSession')?.addEventListener('click', startFreshSession);
   $('openWorkbench')?.addEventListener('click', () => openWorkbench('home'));
   $('openHarnessBuilder')?.addEventListener('click', () => openWorkbench('harness'));
@@ -1985,6 +2519,14 @@ async function request(path, options = {}) {
       state.workbenchStatus = message.status || state.workbenchStatus;
       renderWorkbenchStatus();
     }
+    if (message.type === 'harnessVersionCreated' && message.harness === state.harness) {
+      request('/api/harness-versions/' + encodeURIComponent(state.harness)).then((index) => {
+        state.harnessVersions = Array.isArray(index.versions) ? index.versions : [];
+        state.latestHarnessVersion = String(index.latest || message.version || '');
+        renderHarnessVersions();
+        if (state.harnessVersion !== state.latestHarnessVersion) toast('当前 Flow 已有新版本；可在 Agent 配置中切换');
+      }).catch(() => {});
+    }
     if (message.type === 'contextPasteResolved') {
       if (message.context) {
         const item = addPastedContext(message.context, message.requestId);
@@ -2026,7 +2568,7 @@ async function request(path, options = {}) {
       if (latest) state.lastComposerMutation = { kind: 'attachment', id: latest.id };
       renderEditorContext();
       $('prompt').focus();
-      toast(contexts.length ? `已把 ${contexts.length} 个文件/选区插入 Chat` : '没有可附加的文件或选区', !contexts.length);
+      toast(contexts.length ? `已把 ${contexts.length} 个文件/文件夹/选区插入 Chat` : '没有可附加的文件、文件夹或选区', !contexts.length);
     }
     if (message.type === 'editorContext') {
       const previousWorkspace = canonicalWorkspace(state.editorContext?.workspacePath);
@@ -2099,17 +2641,10 @@ async function request(path, options = {}) {
   refreshExecutionSessions();
   loadTrackedChanges();
   vscode.postMessage({ type: 'webviewReady' });
-  setInterval(() => {
-    if (document.hidden) return;
-    // The socket already delivers state and incremental events. Polling the
-    // full trace snapshot at the same time only duplicates JSON parsing and
-    // DOM work; keep HTTP strictly as a disconnected recovery path.
-    if (state.ws?.readyState === WebSocket.OPEN) return;
-    pollExecution();
-  }, 2500);
+  setInterval(reconcileExecution, 5000);
   setInterval(() => {
     if (!document.hidden) refreshExecutionSessions();
-  }, 4000);
+  }, 8000);
 })();
 } catch (error) {
   const connection = document.getElementById('connection');

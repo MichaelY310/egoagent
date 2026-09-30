@@ -1,0 +1,43 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_customer_migration_reuse",
+  "title": "Reuse an evolved customer migration capability",
+  "description": "A fresh session should discover, activate and execute the previously evolved deterministic customer normalizer instead of recreating it.",
+  "category": "code-product-acceptance",
+  "difficulty": "easy",
+  "tags": ["capability-search", "skill-activation", "reuse", "json"],
+  "prompt": "A reusable customer-record normalization capability may already exist. Search the capability catalog, activate an exact verified match if one exists, then normalize legacy/customer_08.json into normalized/customer_08.json according to SCHEMA.md. Do not recreate an existing capability.",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Migration workspace rules\n\n- Work offline.\n- Do not change legacy inputs or SCHEMA.md.\n- Prefer an exact verified catalog capability over ad-hoc code.\n",
+      "SCHEMA.md": "# Customer schema v2\n\nFor each legacy object, write exactly: integer schema_version 2; customer with id, trimmed display_name and lowercase email; status active only for trimmed case-insensitive yes; sorted unique lowercase non-empty comma-separated tags. Preserve no other fields.\n",
+      "legacy/customer_08.json": "{\"id\":108,\"first_name\":\" Frances \",\"last_name\":\" Allen \",\"email\":\" F.ALLEN@COMPILERS.EXAMPLE \",\"active\":\"YES\",\"tags\":\"Optimization, Compilers,optimization, Parallel\",\"ignored\":true}"
+    }
+  },
+  "selection": {
+    "recommended_harness": "product_adaptive_code_agent",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["product_adaptive_code_agent"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 1800},
+  "evolution": {"allowed": false, "targets": []},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {
+        "type": "json_equals",
+        "path": "normalized/customer_08.json",
+        "pointer": "",
+        "expected": {
+          "schema_version": 2,
+          "customer": {"id": 108, "display_name": "Frances Allen", "email": "f.allen@compilers.example"},
+          "status": "active",
+          "tags": ["compilers", "optimization", "parallel"]
+        },
+        "weight": 1
+      }
+    ]
+  }
+}

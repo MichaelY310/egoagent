@@ -59,12 +59,14 @@ if str(_PROJECT_ROOT_FOR_IMPORTS) not in sys.path:
 
 from llm.env_config import load_local_env
 from product_runtime import apply_product_environment
+from harness_catalog import classify_harness, is_public_runnable
 from local_api_security import (
     UnsafeResourcePath,
     is_trusted_local_origin,
     resolve_registered_root,
     resolve_resource_path,
     validate_resource_segment,
+    remote_request_authorized,
 )
 from trajectory import (
     TrajectoryReader,
@@ -88,6 +90,7 @@ from project_portfolio import (
 from interactive_runs import InteractiveRun, InteractiveRunManager
 from interactive_execution_service import InteractiveExecutionError, InteractiveExecutionService
 from agent_factory import AgentFactory
+from harness_editor.remote_api import handle as handle_remote_api
 
 # HEART_FLOW_DEMO_HOOK: optional experiment; core Project/Session management
 # does not import it.  Deleting ``heart_flow/`` therefore keeps the server
@@ -124,6 +127,11 @@ from harness_blueprint import (
     blueprint_guide,
 )
 from dag_contracts import dag_contract_catalog
+from harness_versions import (
+    ensure_harness_versions as _ensure_harness_versions,
+    resolve_harness_version_dir as _resolve_harness_version_dir,
+    snapshot_harness_version as _snapshot_harness_version,
+)
 
 HARNESS_DIR = Path(__file__).resolve().parent.parent / "harness"
 IDENTITY_DIR = Path(__file__).resolve().parent.parent / "identity"
@@ -504,6 +512,25 @@ def _configured_chat_token_limit(harness_config):
     return _DEFAULT_CHAT_TOKEN_LIMIT
 
 
+def _interactive_seed_data(harness_config, initial_input="", initial_data=None):
+    """Map one Chat prompt onto conventional and declared Flow input ports."""
+    text = str(initial_input or "")
+    seeded = dict(initial_data or {})
+    if not text.strip():
+        return seeded
+    for alias in ("request", "task", "user_input", "task_prompt"):
+        seeded.setdefault(alias, text)
+    component_inputs = dict(harness_config.get("component", {}).get("inputs", {}))
+    for input_name, input_spec in component_inputs.items():
+        if input_name in seeded or not isinstance(input_spec, dict):
+            continue
+        if "default" in input_spec:
+            seeded[input_name] = copy.deepcopy(input_spec["default"])
+        elif input_spec.get("required") and input_spec.get("schema", {}).get("type") == "string":
+            seeded[input_name] = text
+    return seeded
+
+
 def _cap_chat_agent_tokens(agent, multi_agent=False, configured_limit=_DEFAULT_CHAT_TOKEN_LIMIT):
     """Keep interactive DAG turns responsive on small hosted models.
 
@@ -533,24 +560,24 @@ def _cap_chat_agent_tokens(agent, multi_agent=False, configured_limit=_DEFAULT_C
         agent.llm.max_tokens = cap
     return agent
 
-def _build_chat_harness(messages, harness_name="react_single", identity_name="dante", workspace=None):
+def _build_chat_harness(messages, harness_name="adaptive_code_agent", identity_name="deepseek_operator", workspace=None):
     """Build one chat Harness identically for sync and streaming adapters."""
     from harness import Harness
 
     try:
-        harness_name = validate_resource_segment(harness_name or "react_single", label="harness name")
+        harness_name = validate_resource_segment(harness_name or "adaptive_code_agent", label="harness name")
     except UnsafeResourcePath:
-        harness_name = "react_single"
+        harness_name = "adaptive_code_agent"
     try:
-        identity_name = validate_resource_segment(identity_name or "dante", label="identity name")
+        identity_name = validate_resource_segment(identity_name or "deepseek_operator", label="identity name")
     except UnsafeResourcePath:
-        identity_name = "dante"
+        identity_name = "deepseek_operator"
     harness_path = resolve_resource_path(HARNESS_DIR, harness_name, label="harness path")
     identity_path = resolve_resource_path(IDENTITY_DIR, identity_name, label="identity path")
     if not harness_path.exists():
         harness_path = HARNESS_DIR / "react_single"
     if not identity_path.exists():
-        identity_path = IDENTITY_DIR / "dante"
+        identity_path = IDENTITY_DIR / "deepseek_operator"
 
     hconfig = json.loads((harness_path / "config.json").read_text(encoding="utf-8"))
     configured_limit = _configured_chat_token_limit(hconfig)
@@ -601,8 +628,8 @@ def _build_chat_harness(messages, harness_name="react_single", identity_name="da
 
 def _run_dag_completion(
     messages,
-    harness_name="react_single",
-    identity_name="dante",
+    harness_name="adaptive_code_agent",
+    identity_name="deepseek_operator",
     stream=False,
     workspace=None,
 ):
@@ -616,6 +643,7 @@ def _run_dag_completion(
         from pipeline_engine import PipelineRunner
 
         harness, slots = _build_chat_harness(messages, harness_name, identity_name, workspace=workspace)
+        harness.observation_metadata = {"entry_type": "api/completion"}
         workspace_root = Path(workspace).resolve() if workspace else _PROJECT_ROOT_FOR_IMPORTS
         permission_policy = _interactive_permission_policy(workspace_root, "agent", harness.config, ())
         with runtime_scope(harness=harness):
@@ -698,6 +726,7 @@ def _stream_single_agent(messages, harness_name, identity_name, send_chunk_fn, w
 def _run_dag_streaming(messages, harness_name, identity_name, send_chunk_fn, workspace=None):
     """Adapt PipelineRunner events to the OpenAI-compatible SSE protocol."""
     harness, _slots = _build_chat_harness(messages, harness_name, identity_name, workspace=workspace)
+    harness.observation_metadata = {"entry_type": "api/stream"}
     workspace_root = Path(workspace).resolve() if workspace else _PROJECT_ROOT_FOR_IMPORTS
     permission_policy = _interactive_permission_policy(workspace_root, "agent", harness.config, ())
 
@@ -779,8 +808,8 @@ def _execute_durable_run(record, emit, is_cancelled):
     """Execute one leased run through the same PipelineRunner as every UI/API."""
     from pipeline_engine import PipelineRunner
     payload = record.payload
-    harness_name = str(payload.get("harness", "react_single"))
-    identity_name = str(payload.get("identity", "dante"))
+    harness_name = str(payload.get("harness", "adaptive_code_agent"))
+    identity_name = str(payload.get("identity", "deepseek_operator"))
     messages = payload.get("messages", [])
     if not isinstance(messages, list):
         raise ValueError("messages must be an array")
@@ -804,6 +833,7 @@ def _execute_durable_run(record, emit, is_cancelled):
         workspace, mode, harness.config, mutation_targets,
     )
     initial_data = {**initial_data, "run_mode": mode, "mutation_targets": list(mutation_targets)}
+    harness.observation_metadata = {"entry_type": "durable", "source_run_id": record.id, "mode": mode}
     runner = PipelineRunner(
         harness,
         on_output=emit,
@@ -976,6 +1006,8 @@ def notify_output(msg_type, data):
     """向所有 WebSocket 客户端推送输出，并递增 _tick 强制重渲染"""
     handle = _current_interactive_run()
     execution_state = handle.state
+    from chat_progress import update_chat_progress
+    update_chat_progress(execution_state, msg_type, data if isinstance(data, dict) else {})
     accumulated_outputs = handle.outputs
     handle.touch()
     execution_state["_tick"] = (execution_state.get("_tick", 0) + 1) % 1000000
@@ -998,16 +1030,11 @@ def notify_output(msg_type, data):
         execution_state["waiting_for_input"] = True
         notify_clients(execution_state)
     elif msg_type == "approval_required":
-        with handle.approval_lock:
-            execution_state["waiting_for_input"] = True
-            execution_state["pending_approval"] = copy.deepcopy(data)
-            execution_state["status"] = "waiting_approval"
+        handle.request_approval(data)
         notify_clients(execution_state)
     elif msg_type == "approval":
-        with handle.approval_lock:
-            execution_state["waiting_for_input"] = False
-            execution_state["pending_approval"] = None
-            execution_state["status"] = "running"
+        # The nonce mailbox has already consumed this decision. Do not clear
+        # a different child Agent's pending approval.
         notify_clients(execution_state)
     elif msg_type == "model_output_truncated":
         warning = {"type": msg_type, **(copy.deepcopy(data) if isinstance(data, dict) else {})}
@@ -1027,6 +1054,7 @@ def notify_output(msg_type, data):
         }
         notify_clients(execution_state)
     elif msg_type == "done":
+        handle.close_approvals()
         done_status = str((data or {}).get("status") or "completed")
         if execution_state.get("termination") is None and done_status != "completed":
             execution_state["termination"] = {
@@ -1232,15 +1260,25 @@ def notify_output(msg_type, data):
                 output["sealed"] = True
                 break
 
+    output_configuration = {
+        "harness": execution_state.get("harness", ""),
+        "harness_version": execution_state.get("harness_version", ""),
+        "surface": execution_state.get("surface", "chat"),
+        "workspace": execution_state.get("workspace", ""),
+        "agents": copy.deepcopy(execution_state.get("agents", {})),
+        "mode": execution_state.get("mode", "agent"),
+        "run_id": execution_state.get("run_id", ""),
+        "session_name": execution_state.get("session_name", ""),
+    }
+    for output in accumulated_outputs:
+        output.setdefault("configuration", output_configuration)
+
     msg = json.dumps({
         "type": msg_type,
-        "scope": {
-            "workspace": execution_state.get("workspace", ""),
-            "harness": execution_state.get("harness", ""),
-            "agents": execution_state.get("agents", {}),
-            "mode": execution_state.get("mode", "agent"),
-            "run_id": execution_state.get("run_id", 0),
-        },
+        # Use the same configuration identity for streaming and HTTP replay.
+        # A missing version used to make Chat silently discard every token.
+        "scope": output_configuration,
+        "progress": execution_state.get("chat_progress"),
         "data": data,
     })
     for client in list(ws_clients):
@@ -1361,6 +1399,9 @@ class APIHandler(BaseHTTPRequestHandler):
             self.send_header("Vary", "Origin")
 
     def _guard_browser_request(self, *, require_json=False):
+        if self.command != 'OPTIONS' and not remote_request_authorized(self.headers):
+            self._send_error('Remote authentication required. Open this connection from the local EgoAgent window.', 401)
+            return False
         origin = self.headers.get("Origin", "")
         if origin and not is_trusted_local_origin(origin):
             self._send_error("This local EgoAgent API rejects requests from untrusted browser origins", 403)
@@ -1634,7 +1675,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self.send_response(204)
         self._send_security_headers(cors=True)
         self.send_header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type,X-EgoAgent-Remote-Token")
         self.end_headers()
 
     # ==================== GET ====================
@@ -1644,6 +1685,9 @@ class APIHandler(BaseHTTPRequestHandler):
             return
         parsed_url = urlparse(self.path)
         path = parsed_url.path
+
+        if handle_remote_api(self, path, 'GET'):
+            return
 
         if heart_flow_api and heart_flow_api.handle_get(
             self,
@@ -1796,10 +1840,17 @@ class APIHandler(BaseHTTPRequestHandler):
             self._send_json({**record.as_dict(), "checkpoint": queue.checkpoint_preview(run_id)})
 
         elif path == "/api/harnesses":
-            harnesses = [
-                d.name for d in HARNESS_DIR.iterdir()
-                if d.is_dir() and (d / "config.json").exists()
-            ]
+            harnesses = []
+            for d in HARNESS_DIR.iterdir():
+                config_path = d / "config.json"
+                if not d.is_dir() or not config_path.exists():
+                    continue
+                try:
+                    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if is_public_runnable(d.name, cfg):
+                    harnesses.append(d.name)
             self._send_json(sorted(harnesses))
 
         elif path == "/api/harnesses/detailed":
@@ -1809,12 +1860,14 @@ class APIHandler(BaseHTTPRequestHandler):
                     try:
                         cfg = json.loads((d / "config.json").read_text(encoding="utf-8"))
                         slots = cfg.get("slots", {})
+                        catalog = classify_harness(d.name, cfg)
                         result.append({
                             "name": d.name,
                             "description": cfg.get("description", ""),
                             "slot_count": len(slots),
                             "slots": list(slots.keys()),
                             "component": cfg.get("component") if isinstance(cfg.get("component"), dict) else None,
+                            **catalog,
                         })
                     except Exception:
                         result.append({"name": d.name, "description": "", "slot_count": 0, "slots": [], "component": None})
@@ -1855,6 +1908,31 @@ class APIHandler(BaseHTTPRequestHandler):
                         result.append(entry)
             self._send_json(result)
 
+        elif path.startswith("/api/harness-versions/"):
+            name = self._resource_name(path.split("/api/harness-versions/", 1)[1], "harness name")
+            harness_dir = self._resource_path(HARNESS_DIR, name, label="harness path")
+            if not (harness_dir / "config.json").is_file():
+                self._send_error(f"Harness not found: {name}", 404)
+                return
+            self._send_json(_ensure_harness_versions(harness_dir))
+
+        elif path.startswith("/api/harness-version/"):
+            parts = path.split("/api/harness-version/", 1)[1].strip("/").split("/", 1)
+            if len(parts) != 2:
+                self._send_error("Usage: /api/harness-version/<harness>/<version>", 400)
+                return
+            name = self._resource_name(parts[0], "harness name")
+            version = self._resource_name(parts[1], "harness version")
+            harness_dir = self._resource_path(HARNESS_DIR, name, label="harness path")
+            try:
+                version_dir, resolved_version = _resolve_harness_version_dir(harness_dir, version)
+            except FileNotFoundError as error:
+                self._send_error(str(error), 404)
+                return
+            config = json.loads((version_dir / "config.json").read_text(encoding="utf-8"))
+            config["_flow_version"] = resolved_version
+            self._send_json(config)
+
         elif path.startswith("/api/harness/") and path.endswith("/blueprint"):
             name = self._resource_name(
                 path.split("/api/harness/", 1)[1].rsplit("/blueprint", 1)[0].strip("/"),
@@ -1881,6 +1959,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 self._send_error(f"Harness not found: {name}", 404)
                 return
             config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["_flow_version"] = _ensure_harness_versions(config_path.parent).get("latest")
             self._send_json(config)
 
         elif path == "/api/identities":
@@ -2321,14 +2400,16 @@ class APIHandler(BaseHTTPRequestHandler):
                 "workspace": (query.get("workspace") or [None])[0],
             }
             try:
-                self._send_json(interactive_execution.state(lookup, include_outputs=True))
+                self._send_json(interactive_execution.state(lookup, include_outputs=True,
+                    include_traces=(query.get("projection") or [""])[0] != "chat"))
             except InteractiveExecutionError as error:
                 self._send_error(str(error), error.status)
 
         elif path == "/api/execution/runs":
             query = parse_qs(parsed_url.query)
             workspace = (query.get("workspace") or [None])[0]
-            self._send_json({"runs": interactive_execution.list(workspace)})
+            self._send_json({"runs": interactive_execution.list(workspace,
+                include_traces=(query.get("projection") or [""])[0] != "chat")})
 
         elif path.startswith("/api/analyze-status/"):
             task_id = path.split("/")[-1]
@@ -2663,11 +2744,17 @@ class APIHandler(BaseHTTPRequestHandler):
             config_dir.mkdir(parents=True, exist_ok=True)
             config_path = config_dir / "config.json"
 
+            if config_path.is_file():
+                _ensure_harness_versions(config_dir)
+            data.pop("_flow_version", None)
+            version_label = str(data.pop("version_label", "") or "")
+
             config_path.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            self._send_json({"ok": True, "name": name})
+            version = _snapshot_harness_version(config_dir, label=version_label)
+            self._send_json({"ok": True, "name": name, "version": version["id"], "version_created": version["created"]})
 
         elif path.startswith("/api/identity/") and not any(
             x in path for x in ["/skill/", "/knowledge/", "/superego", "/clone"]
@@ -2878,6 +2965,9 @@ class APIHandler(BaseHTTPRequestHandler):
             return
         path = urlparse(self.path).path
 
+        if handle_remote_api(self, path, 'POST'):
+            return
+
         if heart_flow_api and heart_flow_api.handle_post(
             self,
             path,
@@ -3063,6 +3153,7 @@ class APIHandler(BaseHTTPRequestHandler):
                     str(body.get("session") or ""),
                     body.get("changes") if isinstance(body.get("changes"), dict) else {},
                 )
+                interactive_execution.rename_session(session["name"], session.get("title", ""))
             except FileNotFoundError as error:
                 self._send_error(f"Session not found: {error}", 404)
                 return
@@ -3070,6 +3161,43 @@ class APIHandler(BaseHTTPRequestHandler):
                 self._send_error(str(error), 400)
                 return
             self._send_json({"ok": True, "session": session})
+            return
+
+        if path == "/api/sessions/create":
+            body = self._read_body()
+            try:
+                workspace = Path(str(body.get("workspace") or _PROJECT_ROOT_FOR_IMPORTS)).expanduser().resolve()
+                if not workspace.is_dir():
+                    raise ValueError(f"Workspace does not exist: {workspace}")
+                result = SessionBranchService(SESSIONS_DIR, workspace=workspace).create(
+                    destination_name=body.get("name") or body.get("destination"),
+                    agent_config=body.get("agent_config") if isinstance(body.get("agent_config"), dict) else None,
+                )
+                title = str(body.get("title") or "").strip()
+                _project_portfolio().register_project(workspace, touch=False)
+                if title:
+                    _project_portfolio().update_session(result["session"], {"title": title})
+                result["title"] = title
+            except SessionBranchError as error:
+                self._send_error(str(error), 400)
+                return
+            except (OSError, ValueError, TypeError) as error:
+                self._send_error(f"Unable to create session: {error}", 400)
+                return
+            self._send_json(result)
+            return
+
+        if path.startswith("/api/session/") and path.endswith("/trash"):
+            name = path.split("/api/session/", 1)[1].rsplit("/trash", 1)[0]
+            try:
+                result = _project_portfolio().trash_session(unquote(name))
+            except FileNotFoundError as error:
+                self._send_error(f"Session not found: {error}", 404)
+                return
+            except (OSError, ValueError, TypeError) as error:
+                self._send_error(str(error), 400)
+                return
+            self._send_json({"ok": True, "session": result})
             return
 
         if path.startswith("/api/session/") and path.endswith("/fork"):
@@ -3109,6 +3237,35 @@ class APIHandler(BaseHTTPRequestHandler):
                     destination_name=body.get("name") or body.get("destination"),
                     threshold_tokens=int(body.get("threshold_tokens") or 12000),
                     dialogue_rounds=int(body.get("dialogue_rounds") or 2),
+                )
+            except SessionBranchError as error:
+                self._send_error(str(error), 400)
+                return
+            except (OSError, ValueError, TypeError) as error:
+                self._send_error(f"Unable to merge sessions: {error}", 500)
+                return
+            except Exception as error:
+                self._send_error(f"Model-backed merge failed: {error}", 502)
+                return
+            self._send_json(result)
+            return
+
+        if path == "/api/sessions/merge-many":
+            body = self._read_body()
+            try:
+                names = body.get("sessions") if isinstance(body.get("sessions"), list) else []
+                source_names = [str(name) for name in names]
+                if not source_names:
+                    raise SessionBranchError("Choose at least two sessions to merge")
+                first_dir = APIHandler._resolve_session_dir(source_names[0])
+                first_workspace, _provenance = infer_session_workspace(first_dir)
+                target_workspace = str(body.get("target_workspace") or first_workspace or _PROJECT_ROOT_FOR_IMPORTS)
+                result = SessionBranchService(SESSIONS_DIR, workspace=target_workspace).merge_many(
+                    source_names,
+                    mode=str(body.get("mode") or "direct"),
+                    destination_name=body.get("name") or body.get("destination"),
+                    threshold_tokens=int(body.get("threshold_tokens") or 12000),
+                    dialogue_rounds=int(body.get("dialogue_rounds") or 1),
                 )
             except SessionBranchError as error:
                 self._send_error(str(error), 400)
@@ -3252,8 +3409,8 @@ class APIHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/runs":
             body = self._read_body()
-            harness_name = self._resource_name(body.get("harness", "react_single"), "harness name")
-            identity_name = self._resource_name(body.get("identity", "dante"), "identity name")
+            harness_name = self._resource_name(body.get("harness", "adaptive_code_agent"), "harness name")
+            identity_name = self._resource_name(body.get("identity", "deepseek_operator"), "identity name")
             harness_config = self._resource_path(
                 HARNESS_DIR, harness_name, "config.json", label="harness path"
             )
@@ -3421,6 +3578,10 @@ class APIHandler(BaseHTTPRequestHandler):
             if mode not in {"chat", "plan", "agent", "debug", "evolve", "evaluate"}:
                 self._send_error("mode must be chat, plan, agent, debug, evolve or evaluate", 400)
                 return
+            surface = str(data.get("surface", "unknown") or "unknown").strip().lower()
+            if surface not in {"chat", "builder", "unknown"}:
+                self._send_error("surface must be chat, builder or unknown", 400)
+                return
             mutation_targets = data.get("mutation_targets", [])
             if isinstance(mutation_targets, str):
                 mutation_targets = [mutation_targets]
@@ -3444,14 +3605,46 @@ class APIHandler(BaseHTTPRequestHandler):
             if not workspace_path.is_dir():
                 self._send_error(f"Workspace not found: {workspace_path}", 404)
                 return
+            resume_session = str(data.get("resume_session", "") or "").strip()
+            if resume_session:
+                try:
+                    resume_dir = self._resolve_session_dir(resume_session)
+                    resume_metadata_path = resume_dir / "session.json"
+                    resume_metadata = (
+                        json.loads(resume_metadata_path.read_text(encoding="utf-8"))
+                        if resume_metadata_path.is_file() else {}
+                    )
+                    recorded_workspace = str(resume_metadata.get("workspace") or "").strip()
+                    if recorded_workspace and Path(recorded_workspace).resolve() != workspace_path:
+                        self._send_error("A Session can only be reconfigured inside its original workspace", 409)
+                        return
+                    resume_session = resume_dir.name
+                except FileNotFoundError:
+                    self._send_error(f"Session not found: {resume_session}", 404)
+                    return
+                except (OSError, ValueError, json.JSONDecodeError) as error:
+                    self._send_error(f"Invalid Session resume request: {error}", 400)
+                    return
+            initial_input = str(data.get("initial_input", "") or "")
+            initial_data = data.get("initial_data", {})
+            if not isinstance(initial_data, dict):
+                self._send_error("initial_data must be an object", 400)
+                return
             try:
                 _project_portfolio().register_project(workspace_path)
             except (OSError, ValueError, TypeError) as error:
                 self._send_error(f"Unable to register workspace: {error}", 400)
                 return
 
+            live_harness_dir = self._resource_path(HARNESS_DIR, harness_name, label="harness path")
+            requested_version = str(data.get("harness_version", "latest") or "latest")
+            try:
+                version_harness_dir, resolved_harness_version = _resolve_harness_version_dir(live_harness_dir, requested_version)
+            except FileNotFoundError as error:
+                self._send_error(str(error), 404)
+                return
             config_path = self._resource_path(
-                HARNESS_DIR, harness_name, "config.json", label="harness path"
+                version_harness_dir, "config.json", label="harness version path"
             )
             if not config_path.exists():
                 self._send_error(f"Harness not found: {harness_name}", 404)
@@ -3468,17 +3661,8 @@ class APIHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, json.JSONDecodeError) as error:
                 self._send_error(f"Unable to load workspace security policy: {error}", 400)
                 return
-            handle = interactive_execution.start(
-                workspace=workspace_path,
-                harness=harness_name,
-                agents=agents,
-                debug_mode=debug_mode,
-                mode=mode,
-                mutation_targets=mutation_targets,
-                security=preview_policy.public(),
-                sandbox=sandbox_status,
-                worker_target=_run_harness_in_thread,
-                worker_args=lambda created: (
+            def execution_worker_args(created):
+                return (
                     harness_name,
                     agents,
                     created.input_queue,
@@ -3486,9 +3670,35 @@ class APIHandler(BaseHTTPRequestHandler):
                     workspace_path,
                     mode,
                     mutation_targets,
-                ),
+                    resume_session,
+                    initial_input,
+                    initial_data,
+                    resolved_harness_version,
+                )
+
+            handle = interactive_execution.start(
+                workspace=workspace_path,
+                harness=harness_name,
+                agents=agents,
+                debug_mode=debug_mode,
+                mode=mode,
+                surface=surface,
+                harness_version=resolved_harness_version,
+                approval_mode="auto" if data.get("approval_mode") == "auto" and data.get("approval_confirmed") is True else "manual",
+                mutation_targets=mutation_targets,
+                security=preview_policy.public(),
+                sandbox=sandbox_status,
+                session_name=resume_session,
+                worker_target=_run_harness_in_thread,
+                worker_args=execution_worker_args,
             )
-            self._send_json({"ok": True, "run_id": handle.run_id, "state": handle.snapshot()})
+            self._send_json({
+                "ok": True,
+                "run_id": handle.run_id,
+                "session_name": resume_session,
+                "initial_input_seeded": bool(initial_input.strip()),
+                "state": handle.snapshot(),
+            })
 
         elif path == "/api/execution/control":
             data = self._read_body()
@@ -3498,9 +3708,17 @@ class APIHandler(BaseHTTPRequestHandler):
             data = self._read_body()
             self._send_execution_operation(interactive_execution.stop, data)
 
+        elif path == "/api/execution/dismiss":
+            data = self._read_body()
+            self._send_execution_operation(interactive_execution.dismiss, data)
+
         elif path == "/api/execution/approval":
             data = self._read_body()
             self._send_execution_operation(interactive_execution.approval, data)
+
+        elif path == "/api/execution/approval-mode":
+            data = self._read_body()
+            self._send_execution_operation(interactive_execution.set_approval_mode, data)
 
         elif path == "/api/execution/input":
             data = self._read_body()
@@ -4140,10 +4358,10 @@ class APIHandler(BaseHTTPRequestHandler):
             stream = body.get("stream", False)
             
             # Extract harness/identity from body fields or model name
-            harness_name = body.get("harness", "react_single")
-            identity_name = body.get("identity", "dante")
+            harness_name = body.get("harness", "adaptive_code_agent")
+            identity_name = body.get("identity", "deepseek_operator")
             workspace = body.get("workspace")
-            if harness_name == "react_single" and ":" in model:
+            if harness_name == "adaptive_code_agent" and ":" in model:
                 parts = model.split(":")
                 if len(parts) >= 2:
                     harness_name = parts[1]
@@ -4579,7 +4797,8 @@ def _run_evolution_harness(task_id, target_harness, target_identity, max_iterati
 
 def _run_harness_in_thread(
     harness_name, agents_dict, input_queue, run_id, workspace_path=None,
-    mode="agent", mutation_targets=(),
+    mode="agent", mutation_targets=(), resume_session="", initial_input="",
+    initial_data=None, harness_version="",
 ):
     handle = interactive_runs.get(run_id)
     if handle is None:
@@ -4593,12 +4812,17 @@ def _run_harness_in_thread(
             workspace_path,
             mode,
             mutation_targets,
+            resume_session,
+            initial_input,
+            initial_data,
+            harness_version,
         )
 
 
 def _run_harness_in_thread_bound(
     harness_name, agents_dict, input_queue, run_id, workspace_path=None,
-    mode="agent", mutation_targets=(),
+    mode="agent", mutation_targets=(), resume_session="", initial_input="",
+    initial_data=None, harness_version="",
 ):
     handle = _current_interactive_run()
     run_state = handle.state
@@ -4639,7 +4863,8 @@ def _run_harness_in_thread_bound(
         agents = {}
         is_multi_agent = len(agents_dict) > 1
         safe_harness_name = validate_resource_segment(harness_name, label="harness name")
-        harness_dir = resolve_resource_path(HARNESS_DIR, safe_harness_name, label="harness path")
+        live_harness_dir = resolve_resource_path(HARNESS_DIR, safe_harness_name, label="harness path")
+        harness_dir, resolved_harness_version = _resolve_harness_version_dir(live_harness_dir, harness_version or "latest")
         harness_config = json.loads((harness_dir / "config.json").read_text(encoding="utf-8"))
         configured_limit = _configured_chat_token_limit(harness_config)
         for slot_name, identity_path in agents_dict.items():
@@ -4660,13 +4885,29 @@ def _run_harness_in_thread_bound(
             print(f"[exec] Agent loaded: {slot_name} -> {full_identity}")
 
         harness = Harness(str(harness_dir), agents, workspace=workspace_root)
-        # Persist each interactive Chat as an addressable Session.  The run-id
-        # suffix prevents two parallel tasks using the same Harness in the same
-        # second from colliding on one directory.
-        import time as _time
-        run_suffix = str(run_id).rsplit("_", 1)[-1][-8:]
-        session_dir = app_root / "sessions" / f"{safe_harness_name}_{_time.strftime('%Y%m%d_%H%M%S')}_{run_suffix}"
-        harness.session.set_save_dir(session_dir)
+        harness.flow_version = resolved_harness_version
+        if resume_session:
+            resume_dir = (SESSIONS_DIR / str(resume_session)).resolve()
+            resume_dir.relative_to(SESSIONS_DIR.resolve())
+            if not resume_dir.is_dir():
+                raise ValueError(f"Session not found: {resume_session}")
+            harness.session.load(resume_dir)
+            session_dir = resume_dir
+        else:
+            # Persist each interactive Chat as an addressable Session.  The
+            # run-id suffix prevents parallel tasks from colliding.
+            import time as _time
+            run_suffix = str(run_id).rsplit("_", 1)[-1][-8:]
+            session_dir = app_root / "sessions" / f"{safe_harness_name}_{_time.strftime('%Y%m%d_%H%M%S')}_{run_suffix}"
+            harness.session.set_save_dir(session_dir)
+        harness.session.set_agent_config({
+            "harness": safe_harness_name,
+            "harness_version": resolved_harness_version,
+            "agents": dict(agents_dict),
+            "mode": str(mode or "agent"),
+            "debug_mode": str(run_state.get("debug_mode") or "auto"),
+            "mutation_targets": list(mutation_targets),
+        }, run_id=run_id)
         run_state["session_name"] = session_dir.name
         run_state["session_id"] = harness.session.session_id
         run_state["project_id"] = project_id_for_workspace(workspace_root)
@@ -4693,6 +4934,16 @@ def _run_harness_in_thread_bound(
         def is_running():
             return run_state["running"] and run_state.get("run_id") == run_id
 
+        def record_approval_mode(approval_mode):
+            harness.session.state["approval_mode"] = approval_mode
+            recorder = getattr(harness.session, "trajectory", None)
+            if recorder is not None:
+                recorder.append("approval.mode_changed", {"approval_mode": approval_mode, "scope": "session_run"},
+                                run_id=run_id, session_id=getattr(harness.session, "session_id", None))
+
+        handle.approval_mode_observer = record_approval_mode
+        record_approval_mode(run_state.get("approval_mode", "manual"))
+
         permission_policy = _interactive_permission_policy(
             workspace_root, mode, harness_config, mutation_targets,
         )
@@ -4700,6 +4951,21 @@ def _run_harness_in_thread_bound(
         _settings, sandbox_status = _workspace_security(workspace_root)
         run_state["sandbox"] = sandbox_status
         notify_clients(run_state)
+        seeded_data = _interactive_seed_data(harness_config, initial_input, initial_data)
+        if initial_input.strip():
+            # Seed the Session before the graph starts. Interactive Input nodes
+            # reuse this newest user turn; autonomous/task graphs read the same
+            # value from ctx.request / ctx.task / ctx.user_input. No queue item
+            # is left behind to become an accidental second turn.
+            initial_message = {"role": "user", "content": initial_input}
+            harness.session.record(initial_message)
+            harness.session.record_full(initial_message.copy())
+        seeded_data.update({"run_mode": mode, "mutation_targets": list(mutation_targets)})
+        harness.observation_metadata = {
+            "entry_type": run_state.get("surface", "chat"), "source_run_id": run_id,
+            "flow_version": run_state.get("harness_version"), "mode": mode,
+            "session_name": run_state.get("session_name"),
+        }
         run_pipeline_stream(
             harness,
             on_output,
@@ -4708,7 +4974,8 @@ def _run_harness_in_thread_bound(
             before_node=_debug_before_node,
             on_node_error=_debug_on_node_error,
             permission_policy=permission_policy,
-            initial_data={"run_mode": mode, "mutation_targets": list(mutation_targets)},
+            initial_data=seeded_data,
+            get_approval=handle.wait_for_approval,
         )
 
     except Exception as e:
@@ -4722,6 +4989,8 @@ def _run_harness_in_thread_bound(
         import traceback
         traceback.print_exc()
     finally:
+        handle.close_approvals()
+        handle.approval_mode_observer = None
         # 保存 session 记录
         try:
             if harness is not None:
@@ -4741,7 +5010,9 @@ def _run_harness_in_thread_bound(
                 ]
                 last_user = next((
                     msg.get("content", "") for msg in reversed(messages)
-                    if msg.get("role") == "user" and "<tool_response>" not in msg.get("content", "")
+                    if msg.get("role") == "user" and "<tool_response>" not in str(msg.get("content", ""))
+                    and not str(msg.get("content", "")).startswith("[System] Working directory:")
+                    and not str(msg.get("name", "")).startswith("runtime_")
                 ), "")
                 last_assistant = next((
                     msg.get("content", "") for msg in reversed(messages)
@@ -4916,51 +5187,62 @@ def handle_ws(conn):
         conn.close()
 
 
+def accept_ws_connection(conn):
+    """Authenticate one bounded handshake without blocking other webviews."""
+    import hashlib
+    from email.parser import Parser
+
+    try:
+        conn.settimeout(10)
+        raw = bytearray()
+        while b'\r\n\r\n' not in raw and len(raw) < 8192:
+            part = conn.recv(min(4096, 8192 - len(raw)))
+            if not part:
+                return
+            raw.extend(part)
+        if b'\r\n\r\n' not in raw:
+            return
+        headers = Parser().parsestr(bytes(raw).decode('iso-8859-1').split('\r\n', 1)[-1])
+        status = None
+        if not remote_request_authorized(headers):
+            status = '401 Unauthorized'
+        elif not is_trusted_local_origin(headers.get('Origin', '')):
+            status = '403 Forbidden'
+        elif headers.get('Upgrade', '').lower() != 'websocket' or not headers.get('Sec-WebSocket-Key'):
+            status = '400 Bad Request'
+        if status:
+            conn.sendall(f'HTTP/1.1 {status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'.encode())
+            return
+        key = headers['Sec-WebSocket-Key'].strip()
+        accept = base64.b64encode(hashlib.sha1((key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
+        # Browser WebSocket cannot set arbitrary headers. Echo the selected
+        # authenticated subprotocol so the browser accepts the upgrade.
+        protocols = [p.strip() for p in headers.get('Sec-WebSocket-Protocol', '').split(',')]
+        protocol = next((p for p in protocols if p.startswith('egoagent-token.')), '')
+        selected = f'Sec-WebSocket-Protocol: {protocol}\r\n' if protocol and os.environ.get('EGOAGENT_REMOTE_TOKEN') else ''
+        conn.sendall(('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+                      f'Sec-WebSocket-Accept: {accept}\r\n{selected}\r\n').encode())
+        conn.settimeout(None)
+        handle_ws(conn)
+    except (OSError, ValueError):
+        pass
+    finally:
+        conn.close()
+
+
 def main():
     import socket
     import subprocess
     import signal
 
-    http_port = 8765
-    ws_port = 8766
+    from runtime_endpoints import runtime_ports
+    ports = runtime_ports()
+    http_port = ports['BACKEND']
+    ws_port = ports['WS']
     bind_host = os.environ.get("EGOAGENT_HOST", "127.0.0.1")
 
-    # Kill any process occupying our ports (works even without fuser/lsof)
-    for port in [http_port, ws_port]:
-        try:
-            # Use /proc/net/tcp to find processes on the port
-            port_hex = f"{port:04X}"
-            pids_to_kill = set()
-            with open("/proc/net/tcp") as f:
-                for line in f:
-                    parts = line.strip().split()
-                    if len(parts) >= 10:
-                        local_addr = parts[1]
-                        if local_addr.endswith(f":{port_hex}") and parts[3] == "0A":  # LISTEN state
-                            inode = parts[9]
-                            # Find pid by scanning /proc/*/fd
-                            import glob
-                            for fd_link in glob.glob("/proc/[0-9]*/fd/*"):
-                                try:
-                                    target = os.readlink(fd_link)
-                                    if f"socket:[{inode}]" in target:
-                                        pid = int(fd_link.split("/")[2])
-                                        if pid != os.getpid():
-                                            pids_to_kill.add(pid)
-                                except (PermissionError, FileNotFoundError, ValueError):
-                                    pass
-            for pid in pids_to_kill:
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                    print(f"[API Server] Killed stale process {pid} on port {port}")
-                except ProcessLookupError:
-                    pass
-            if pids_to_kill:
-                import time
-                time.sleep(0.5)
-        except Exception:
-            pass
-
+    # An occupied port is a startup error, not permission to kill its owner.
+    # Remote runtimes may share the host with unrelated user services.
     httpd = ThreadingHTTPServer((bind_host, http_port), APIHandler)
 
     ws_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -4975,41 +5257,22 @@ def main():
     durable_worker = _start_durable_run_worker()
     print(f"[API Server] Durable run worker: {durable_worker.owner}")
 
+    ws_capacity = threading.BoundedSemaphore(64)
+
+    def serve_ws_client(conn):
+        try:
+            accept_ws_connection(conn)
+        finally:
+            ws_capacity.release()
+
     def run_ws():
         while True:
             try:
                 conn, addr = ws_sock.accept()
-                request = conn.recv(4096).decode("utf-8", errors="ignore")
-                if "Upgrade: websocket" in request:
-                    key = ""
-                    origin = ""
-                    for line in request.split("\r\n"):
-                        if line.lower().startswith("sec-websocket-key:"):
-                            key = line.split(":", 1)[1].strip()
-                        elif line.lower().startswith("origin:"):
-                            origin = line.split(":", 1)[1].strip()
-                    if origin and not is_trusted_local_origin(origin):
-                        conn.sendall(b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
-                        conn.close()
-                    elif key:
-                        import hashlib
-                        accept = base64.b64encode(
-                            hashlib.sha1(
-                                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()
-                            ).digest()
-                        ).decode()
-                        response = (
-                            "HTTP/1.1 101 Switching Protocols\r\n"
-                            "Upgrade: websocket\r\n"
-                            "Connection: Upgrade\r\n"
-                            f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
-                        )
-                        conn.send(response.encode())
-                        handle_ws(conn)
-                    else:
-                        conn.close()
-                else:
+                if not ws_capacity.acquire(blocking=False):
                     conn.close()
+                    continue
+                threading.Thread(target=serve_ws_client, args=(conn,), daemon=True).start()
             except Exception:
                 pass
 

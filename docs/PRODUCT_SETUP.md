@@ -7,13 +7,21 @@ native DAG Chat extension, and stops child processes when it exits.
 ## Windows
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\install.ps1
-.\.runtime\venv\Scripts\python.exe .\scripts\egoagent.py start
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+npm --prefix harness_editor ci
+npm --prefix harness_editor run build
+.\.venv\Scripts\python.exe start-all.py
 ```
 
-Use `.\scripts\install.ps1 -Offline` after the Python/npm caches and the
-`void-web` runtime have already been copied to the machine.
+The complete IDE requires a matching **Void Web server runtime** in `void-web/`.
+It is not included in Git and there is no verified automatic installer yet.
+Without it, run `.\.venv\Scripts\python.exe harness_editor/server.py` and open
+`http://127.0.0.1:8765/` for the standalone Workbench (no native IDE Chat/editor).
+See the [README](../README.md) for desktop prerequisites. The legacy dependency
+installer `scripts/install.ps1` uses `.runtime/venv`, whereas the desktop launcher
+requires `.venv`; the commands above work for both browser and desktop modes.
+Do not change an organization's script policy just to run the desktop installer.
 
 ## macOS and Linux
 

@@ -17,7 +17,7 @@ from harness import Harness
 from agent_bus import AgentBus
 from pipeline_engine import PipelineRunner
 from pipeline_schema import validate_pipeline
-from test_pipeline_runtime import FakeAgent
+from tests.test_pipeline_runtime import FakeAgent
 
 
 class ContinueToolLoopAgent(FakeAgent):

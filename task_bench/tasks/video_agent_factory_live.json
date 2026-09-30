@@ -1,0 +1,36 @@
+{
+  "version": "ego.task.v1",
+  "id": "video_agent_factory_live",
+  "title": "录屏：Agent 自己创建可复用 Agent",
+  "description": "由 Agent Designer SubFlow 设计 Agent Spec，经人工审批后搜索能力库并创建可视化 Identity + Harness。",
+  "category": "self-evolution",
+  "difficulty": "demo",
+  "tags": ["video", "agent-creation", "subflow", "approval", "live-topology"],
+  "prompt": "创建一个名为 video_incident_triage_agent 的可复用事故日志分诊 Agent。输入是一组本地日志文件和用户问题；它必须先读取证据，再把发现按 blocker、warning、noise 分类，输出引用文件与行号的紧凑报告；不得联网，不得修改用户日志。请使用 EgoAgent 自己的 Identity + 可视化 Flow 创建能力，不要手写一个独立 Python Agent。创建前搜索能力库避免重复，并给出一个可执行的验收示例。",
+  "workspace": {
+    "files": {
+      "logs/app.log": "INFO boot complete\nWARN cache miss ratio 0.42\nERROR database connection refused\n",
+      "logs/worker.log": "INFO job 17 started\nERROR job 17 timed out after 30s\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "agent_factory",
+    "recommended_identity": "dante",
+    "compatible_harnesses": ["agent_factory"],
+    "compatible_identities": ["dante"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 600, "interactive": true},
+  "evolution": {"allowed": true, "targets": ["agent", "harness", "identity"]},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"type": "node_visited", "node": "design_agent", "weight": 1},
+      {"type": "event_emitted", "event": "approval_required", "weight": 1},
+      {"type": "tool_called", "name": "search_capabilities", "weight": 1},
+      {"type": "harness_created", "name": "video_incident_triage_agent", "weight": 2},
+      {"type": "identity_created", "name": "video_incident_triage_agent", "weight": 2},
+      {"type": "event_emitted", "event": "agent_system_created", "weight": 1}
+    ]
+  }
+}

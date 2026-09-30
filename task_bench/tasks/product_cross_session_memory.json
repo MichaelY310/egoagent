@@ -1,0 +1,35 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_cross_session_memory",
+  "title": "Durable workspace memory across fresh trajectories",
+  "description": "Stores a synthetic project fact in one trajectory, then starts a fresh trajectory in the same workspace and requires exact recall without writing the fact to project files.",
+  "category": "agent-product-acceptance",
+  "difficulty": "medium",
+  "tags": ["multi-session", "memory", "ablation", "recall"],
+  "prompt": "Treat explicitly labelled durable project facts as reusable workspace memory. Never write a durable fact into project files unless asked.",
+  "workspace": {"files": {"README.md": "Synthetic memory fixture. This repository intentionally contains no deployment rollback code.\n"}},
+  "selection": {
+    "recommended_harness": "product_adaptive_code_agent",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["code_agent_auto", "code_agent_long", "product_adaptive_code_agent", "product_adaptive_no_memory"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 1800},
+  "evolution": {"allowed": false, "targets": []},
+  "evaluation": {"pass_score": 1.0, "checks": []},
+  "steps": [
+    {
+      "id": "teach",
+      "prompt": "DURABLE PROJECT_NEBULA fact: its emergency deployment rollback code is Q7-EMBER-491. Keep it as workspace memory, do not write it to a file, and reply only ACK-MEMORY.",
+      "resume_trajectory": false,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-MEMORY", "weight": 1}]}
+    },
+    {
+      "id": "fresh_recall",
+      "prompt": "This is a fresh trajectory with no prior chat history. What is the exact emergency deployment rollback code for PROJECT_NEBULA? Reply with the code only.",
+      "resume_trajectory": false,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "Q7-EMBER-491", "weight": 1}]}
+    }
+  ]
+}

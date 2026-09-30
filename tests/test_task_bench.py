@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from task_bench.engine import (
+    CodexCliTaskRun,
     TaskBenchError,
     TaskBenchManager,
     evaluate_task,
@@ -92,7 +93,70 @@ def _waiting_harness(root: Path, name: str) -> None:
     })
 
 
+def _recoverable_harness(root: Path, name: str) -> None:
+    _write_json(root / "harness" / name / "config.json", {
+        "name": name,
+        "description": "checkpoint then finish without replaying the write",
+        "slots": {}, "prompts": {}, "return_mode": "last",
+        "pipeline": {
+            "start": "write", "max_steps": 4, "workspace_preview": False,
+            "checkpoint_dir": ".egoagent/checkpoints",
+            "nodes": {
+                "write": {
+                    "id": "write", "op": "工作区", "action": "write_text",
+                    "path": "answer.txt", "value": "task bench",
+                    # The same recoverable Flow is exercised by every task
+                    # episode.  Make the fixture write idempotent so a later
+                    # episode tests checkpoint recovery rather than the
+                    # Workspace node's safe no-overwrite default.
+                    "overwrite": True,
+                    "checkpoint": True, "checkpoint_label": "after-write",
+                    "edges": [{"condition": "default", "to": "finish"}],
+                },
+                "finish": {"id": "finish", "op": "输出", "value": "done", "edges": []},
+            },
+        },
+    })
+
+
 class TaskBenchTests(unittest.TestCase):
+    def test_codex_runner_projects_upstream_jsonl_into_common_traces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            manager = TaskBenchManager(project, task_dir=project / "tasks", runs_dir=project / "runs")
+            run = CodexCliTaskRun(manager, _task(), {
+                "runner": "codex_cli", "harness": "original_codex",
+                "harness_version": "resolved_at_run", "identity": "codex_native",
+                "environments": [], "slot_bindings": {}, "ide_context": [],
+            }, "auto")
+            run._external_trace({
+                "type": "item.completed",
+                "item": {"id": "msg-1", "type": "agent_message", "text": "finished"},
+            })
+            run._external_trace({
+                "type": "turn.completed",
+                "usage": {"input_tokens": 9, "cached_input_tokens": 3, "output_tokens": 4},
+            })
+            run._external_trace({
+                "type": "item.completed",
+                "item": {"id": "cmd-1", "type": "command_execution", "command": "python -V", "status": "completed"},
+            })
+            run._external_trace({
+                "type": "turn.completed",
+                "usage": {"input_tokens": 2, "cached_input_tokens": 1, "output_tokens": 1},
+            })
+            self.assertEqual(run.state["node_traces"][0]["op"], "Model")
+            self.assertEqual(run.state["node_traces"][0]["model"]["response"], "finished")
+            self.assertEqual(run.state["outputs"][0]["agent"], "original_codex")
+            self.assertEqual(run.state["stats"]["input_tokens"], 11)
+            self.assertEqual(run.state["stats"]["output_tokens"], 5)
+            self.assertEqual(run.state["stats"]["total_tokens"], 16)
+            self.assertEqual(run.state["stats"]["model_calls"], 2)
+            self.assertEqual(run.state["stats"]["tool_calls"], 1)
+            run.state["started_at"] = 100.0
+            self.assertEqual(run._record_elapsed_seconds(112.5), 12.5)
+            self.assertEqual(run.state["stats"]["elapsed_seconds"], 12.5)
+
     def test_single_slot_uses_selected_identity_and_multi_slot_keeps_defaults(self):
         self.assertEqual(
             _resolve_slot_identity(
@@ -208,6 +272,21 @@ class TaskBenchTests(unittest.TestCase):
             self.assertTrue(result["passed"], result)
             self.assertEqual(result["checks"][0]["details"]["exit_code"], 0)
 
+    def test_response_not_contains_supports_confidentiality_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            spec = _task()
+            spec["evaluation"] = {"pass_score": 1, "checks": [
+                {"type": "response_not_contains", "value": "sk-private-token"},
+                {"type": "response_contains", "value": "REDACTED"},
+            ]}
+            result = evaluate_task(
+                spec,
+                Path(directory),
+                messages=[{"role": "assistant", "content": "Token: [REDACTED]"}],
+            )
+            self.assertTrue(result["passed"], result)
+            self.assertTrue(all(check["passed"] for check in result["checks"]))
+
     def test_real_task_runner_isolated_across_harness_identity_combinations(self):
         for harness_name, identity_name in (("writer_linear", "fixture_alpha"), ("writer_compact", "fixture_beta")):
             with self.subTest(harness=harness_name, identity=identity_name), tempfile.TemporaryDirectory() as directory:
@@ -233,6 +312,27 @@ class TaskBenchTests(unittest.TestCase):
                 self.assertEqual(state["task_steps"][0]["evaluation"]["score"], 1)
                 self.assertIn(run_dir.resolve(), Path(state["workspace"]).resolve().parents)
                 self.assertEqual((Path(state["workspace"]) / "answer.txt").read_text(encoding="utf-8"), "task bench passed")
+
+    def test_run_comparison_keeps_exact_flow_versions_and_aligned_traces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "project"
+            task_dir = project / "task_bench" / "tasks"
+            _write_json(task_dir / "offline_write.json", _task())
+            _identity(project, "fixture")
+            _harness(project, "writer")
+            manager = TaskBenchManager(project, task_dir=task_dir, runs_dir=project / "runs")
+            first = self._wait(manager, manager.start({
+                "task_id": "offline_write", "harness": "writer", "identity": "fixture",
+            })["id"])
+            second = self._wait(manager, manager.start({
+                "task_id": "offline_write", "harness": "writer", "identity": "fixture",
+            })["id"])
+            compared = manager.compare_runs([first["id"], second["id"]])
+            self.assertEqual(compared["schema"], "ego.task-run-comparison.v1")
+            self.assertTrue(compared["same_task"])
+            self.assertEqual(len(compared["runs"]), 2)
+            self.assertTrue(all(item["harness_version"].startswith("v") for item in compared["runs"]))
+            self.assertEqual([row["diverged"] for row in compared["trace_rows"]], [False, False])
 
     def test_ide_context_is_copied_into_run_without_leaking_content_in_public_selection(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -314,6 +414,111 @@ class TaskBenchTests(unittest.TestCase):
             state = self._wait(manager, created["id"], timeout=4)
             self.assertEqual(state["status"], "timeout")
             self.assertIn("exceeded", state["error"])
+
+    def test_stopped_task_recovers_in_new_workspace_without_replaying_completed_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "project"
+            task_dir = project / "task_bench" / "tasks"
+            task = _task("checkpoint_recovery")
+            task["evaluation"] = {
+                "pass_score": 1,
+                "checks": [{"type": "file_contains", "path": "answer.txt", "value": "task bench"}],
+            }
+            _write_json(task_dir / "checkpoint_recovery.json", task)
+            _identity(project, "fixture")
+            _recoverable_harness(project, "recoverable")
+            manager = TaskBenchManager(project, task_dir=task_dir, runs_dir=project / "runs")
+
+            created = manager.start({
+                "task_id": "checkpoint_recovery", "harness": "recoverable",
+                "identity": "fixture", "debug_mode": "paused",
+            })
+            first_pause = self._wait_for(manager, created["id"], lambda item: item["paused"])
+            self.assertEqual(first_pause["pending_node"], "write")
+            manager.control(created["id"], "step")
+            after_write = self._wait_for(
+                manager, created["id"],
+                lambda item: item["paused"] and item["pending_node"] == "finish",
+            )
+            source_workspace = Path(after_write["workspace"])
+            self.assertEqual((source_workspace / "answer.txt").read_text(encoding="utf-8"), "task bench")
+            manager.control(created["id"], "stop")
+            stopped = self._wait(manager, created["id"])
+            self.assertEqual(stopped["status"], "stopped")
+            history_item = next(item for item in manager.list_runs() if item["id"] == created["id"])
+            self.assertTrue(history_item["recovery_available"])
+            tampered = json.loads(json.dumps(stopped))
+            tampered["workspace"] = str(project)
+            with self.assertRaisesRegex(TaskBenchError, "confined Task run directory"):
+                manager._recovery_checkpoint(tampered)
+
+            recovered = manager.recover(created["id"])
+            finished = self._wait(manager, recovered["id"])
+            recovered_workspace = Path(finished["workspace"])
+            self.assertEqual(finished["status"], "passed", finished.get("error"))
+            self.assertNotEqual(recovered_workspace, source_workspace)
+            self.assertEqual((recovered_workspace / "answer.txt").read_text(encoding="utf-8"), "task bench")
+            self.assertEqual([trace["node_id"] for trace in finished["node_traces"]], ["finish"])
+            self.assertEqual(finished["recovery"]["source_run_id"], created["id"])
+            self.assertEqual(finished["recovery"]["source_step"], "main")
+            self.assertTrue(any(event["type"] == "resumed" for event in finished["events"]))
+
+    def test_multistep_recovery_inherits_completed_step_scores(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "project"
+            task_dir = project / "task_bench" / "tasks"
+            task = _task("multistep_recovery")
+            task["steps"] = [
+                {
+                    "id": step_id, "title": step_id, "prompt": f"complete {step_id}",
+                    "workspace": {"files": {}}, "resume_trajectory": False,
+                    "evaluation": {
+                        "pass_score": 1,
+                        "checks": [{"type": "file_contains", "path": "answer.txt", "value": "task bench"}],
+                    },
+                }
+                for step_id in ("one", "two")
+            ]
+            _write_json(task_dir / "multistep_recovery.json", task)
+            _identity(project, "fixture")
+            _recoverable_harness(project, "recoverable")
+            manager = TaskBenchManager(project, task_dir=task_dir, runs_dir=project / "runs")
+
+            created = manager.start({
+                "task_id": "multistep_recovery", "harness": "recoverable",
+                "identity": "fixture", "debug_mode": "paused",
+            })
+            self._wait_for(manager, created["id"], lambda item: item["paused"] and item["task_step"] == "one")
+            manager.control(created["id"], "step")
+            self._wait_for(manager, created["id"], lambda item: item["paused"] and item["pending_node"] == "finish")
+            manager.control(created["id"], "step")
+            self._wait_for(manager, created["id"], lambda item: item["paused"] and item["task_step"] == "two" and item["pending_node"] == "write")
+            manager.control(created["id"], "step")
+            self._wait_for(manager, created["id"], lambda item: item["paused"] and item["task_step"] == "two" and item["pending_node"] == "finish")
+            manager.control(created["id"], "stop")
+            stopped = self._wait(manager, created["id"])
+            self.assertEqual([step["status"] for step in stopped["task_steps"]], ["passed", "stopped"])
+            checkpoint_steps = sorted(
+                str(((json.loads(path.read_text(encoding="utf-8")).get("data") or {}).get("task") or {}).get("step"))
+                for path in (Path(stopped["workspace"]) / ".egoagent" / "checkpoints").glob("*.json")
+                if json.loads(path.read_text(encoding="utf-8")).get("phase", "completed") == "completed"
+            )
+            self.assertEqual(
+                checkpoint_steps,
+                ["one", "two"],
+                {
+                    "traces": [(trace["node_id"], trace["status"]) for trace in stopped["node_traces"]],
+                    "checkpoints": [event["data"] for event in stopped["events"] if event["type"] == "checkpoint"],
+                },
+            )
+
+            recovered = self._wait(manager, manager.recover(created["id"])["id"])
+            self.assertEqual(recovered["status"], "passed", recovered.get("error"))
+            self.assertEqual([step["status"] for step in recovered["task_steps"]], ["passed", "passed"])
+            self.assertEqual(recovered["evaluation"]["score"], 1.0)
+            self.assertTrue(recovered["evaluation"]["passed"])
+            self.assertEqual(recovered["recovery"]["inherited_steps"], 1, recovered["recovery"])
+            self.assertEqual([trace["node_id"] for trace in recovered["node_traces"]], ["finish"])
 
     def test_react_style_task_finishes_after_first_model_answer(self):
         with tempfile.TemporaryDirectory() as directory:

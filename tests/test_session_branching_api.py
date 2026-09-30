@@ -84,6 +84,13 @@ class SessionBranchingApiTests(unittest.TestCase):
         self.assertEqual(merged_info["lineage"]["merge_mode"], "direct")
         self.assertEqual(merged_info["lineage"]["parents"], ["left", "right"])
 
+        self.request("POST", "/api/session/source/fork", {"name": "third"})
+        _, merged_many = self.request("POST", "/api/sessions/merge-many", {
+            "sessions": ["left", "right", "third"], "mode": "direct", "name": "merged-many",
+        })
+        self.assertEqual(merged_many["parent_count"], 3)
+        self.assertEqual(merged_many["parents"], ["left", "right", "third"])
+
     def test_api_rejects_traversal_destination(self):
         quoted = urllib.parse.quote("source", safe="")
         request = urllib.request.Request(

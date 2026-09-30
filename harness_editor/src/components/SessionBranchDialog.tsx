@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { forkSession, mergeSessions } from '../api/client';
+import { forkSession, mergeManySessions } from '../api/client';
 
 export type BranchableSession = {
   name: string;
+  title?: string;
   message_count: number;
   project_id?: string;
   project_title?: string;
@@ -14,6 +15,7 @@ type Props = {
   source: string;
   sourceProjectId?: string;
   sourceWorkspace?: string;
+  initialSources?: string[];
   sessions: BranchableSession[];
   onClose: () => void;
   onCreated: (session: string) => void;
@@ -31,26 +33,31 @@ const fieldStyle = {
 };
 
 const modeDescriptions = {
-  auto: '新增内容较短时原样拼接；超过阈值后分别摘要两个分支。',
-  direct: '保留左侧当前上下文，并原样追加右侧分支点后的消息；不调用模型。',
-  summary: '分别压缩两个分支的新增消息，再组成干净的新上下文。',
-  dialogue: '分支 A、分支 B 轮流校对信息，最后由综合 Agent 生成带冲突说明的记忆。',
+  auto: '同项目且新增内容较短时走规则合并；跨项目或过长时自动分别摘要。',
+  direct: 'Rule-based：按选择顺序合并公共历史后的独有消息，去除完全重复项；不调用模型。',
+  summary: '分别压缩每个 Session 的新增消息，再组成干净的新上下文。',
+  dialogue: '每个 Session 由一个独立 Agent 代表，轮流交换事实和冲突，最后综合为继续工作所需的记忆。',
 };
 
-export default function SessionBranchDialog({ action, source, sourceProjectId, sourceWorkspace, sessions, onClose, onCreated }: Props) {
+export default function SessionBranchDialog({ action, source, sourceWorkspace, initialSources, sessions, onClose, onCreated }: Props) {
   const candidates = useMemo(
     () => sessions.filter((session) => session.name !== source && !session.name.includes('/')),
     [sessions, source],
   );
-  const [target, setTarget] = useState(candidates[0]?.name || '');
+  const [mergeSources, setMergeSources] = useState<string[]>(() => {
+    const requested = (initialSources || []).filter((name) => sessions.some((session) => session.name === name));
+    if (requested.length >= 2) return Array.from(new Set(requested));
+    return candidates[0] ? [source, candidates[0].name] : [source];
+  });
   const [name, setName] = useState('');
   const [mode, setMode] = useState<'auto' | 'direct' | 'summary' | 'dialogue'>('auto');
   const [threshold, setThreshold] = useState(12000);
   const [rounds, setRounds] = useState(2);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const targetSession = candidates.find((session) => session.name === target);
-  const crossProject = Boolean(action === 'merge' && sourceProjectId && targetSession?.project_id && sourceProjectId !== targetSession.project_id);
+  const selectedSessions = sessions.filter((session) => mergeSources.includes(session.name));
+  const selectedProjects = new Set(selectedSessions.map((session) => session.project_id || 'unknown'));
+  const crossProject = action === 'merge' && selectedProjects.size > 1;
 
   const submit = async () => {
     setBusy(true);
@@ -58,9 +65,8 @@ export default function SessionBranchDialog({ action, source, sourceProjectId, s
     try {
       const result = action === 'fork'
         ? await forkSession(source, name.trim() || undefined, sourceWorkspace)
-        : await mergeSessions({
-          left: source,
-          right: target,
+        : await mergeManySessions({
+          sessions: mergeSources,
           mode,
           name: name.trim() || undefined,
           threshold_tokens: threshold,
@@ -75,7 +81,7 @@ export default function SessionBranchDialog({ action, source, sourceProjectId, s
     }
   };
 
-  const disabled = busy || (action === 'merge' && !target);
+  const disabled = busy || (action === 'merge' && mergeSources.length < 2);
   return (
     <div
       role="dialog"
@@ -103,29 +109,36 @@ export default function SessionBranchDialog({ action, source, sourceProjectId, s
           </label>
 
           {action === 'merge' && <>
-            <label style={{ color: 'var(--text-dim)', fontSize: 11 }}>
-              要合并的另一个 Session
-              <select value={target} onChange={(event) => {
-                const next = event.target.value;
-                setTarget(next);
-                const candidate = candidates.find((session) => session.name === next);
-                if (mode === 'direct' && sourceProjectId && candidate?.project_id !== sourceProjectId) setMode('summary');
-              }} style={{ ...fieldStyle, marginTop: 5 }}>
-                {candidates.map((session) => <option key={session.name} value={session.name}>{session.project_title ? `${session.project_title} / ` : ''}{session.name} · {session.message_count} messages</option>)}
-              </select>
-            </label>
+            <fieldset style={{ margin: 0, padding: 10, border: '1px solid var(--border-strong)', borderRadius: 5 }}>
+              <legend style={{ color: 'var(--text-dim)', fontSize: 11, padding: '0 5px' }}>选择 2–8 个 Session · 当前 {mergeSources.length} 个</legend>
+              <div style={{ maxHeight: 170, overflow: 'auto', display: 'grid', gap: 4 }}>
+                {sessions.filter((session) => !session.name.includes('/')).map((session) => {
+                  const checked = mergeSources.includes(session.name);
+                  return <label key={session.name} style={{ display: 'flex', gap: 7, alignItems: 'center', padding: '5px 6px', color: 'var(--text-secondary)', background: checked ? 'var(--surface-2)' : 'transparent', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={checked} disabled={!checked && mergeSources.length >= 8} onChange={() => {
+                      const next = checked ? mergeSources.filter((name) => name !== session.name) : [...mergeSources, session.name];
+                      setMergeSources(next);
+                      const projectIds = new Set(sessions.filter((item) => next.includes(item.name)).map((item) => item.project_id || 'unknown'));
+                      if (mode === 'direct' && projectIds.size > 1) setMode('summary');
+                    }} />
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.project_title ? `${session.project_title} / ` : ''}{session.title || session.name}</span>
+                    <small>{session.message_count}</small>
+                  </label>;
+                })}
+              </div>
+            </fieldset>
             <label style={{ color: 'var(--text-dim)', fontSize: 11 }}>
               合并方法
               <select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)} style={{ ...fieldStyle, marginTop: 5 }}>
                 <option value="auto">Auto · 长度自适应</option>
-                <option value="direct" disabled={crossProject}>Direct · 原样追加{crossProject ? '（仅同项目）' : ''}</option>
-                <option value="summary">Summary · 双分支独立摘要</option>
-                <option value="dialogue">Dialogue · 两分支 Agent 对话</option>
+                <option value="direct" disabled={crossProject}>Rule-based · 确定性合并{crossProject ? '（仅同项目）' : ''}</option>
+                <option value="summary">Summary · 各 Session 独立摘要</option>
+                <option value="dialogue">Agent Communication · 多 Agent 交流</option>
               </select>
             </label>
             <div style={{ padding: '9px 11px', color: 'var(--text-secondary)', background: 'var(--surface-2)', borderLeft: '2px solid var(--focus)', fontSize: 11, lineHeight: 1.45 }}>
               {crossProject
-                ? '跨项目合并会把结果保存到左侧项目。为避免旧文件路径污染新项目，只允许分别摘要或 Agent 对话；Auto 会自动使用 Summary。'
+                ? '跨项目合并会把结果保存到第一个 Session 的项目。为避免旧路径污染，只允许分别摘要或 Agent Communication；Auto 会自动使用 Summary。'
                 : modeDescriptions[mode]}
             </div>
             {mode === 'auto' && <label style={{ color: 'var(--text-dim)', fontSize: 11 }}>
@@ -133,7 +146,7 @@ export default function SessionBranchDialog({ action, source, sourceProjectId, s
               <input type="number" min={256} max={1000000} value={threshold} onChange={(event) => setThreshold(Number(event.target.value) || 12000)} style={{ ...fieldStyle, marginTop: 5 }} />
             </label>}
             {mode === 'dialogue' && <label style={{ color: 'var(--text-dim)', fontSize: 11 }}>
-              A/B 对话轮数（1–4）
+              每个 Session 的交流轮数（1–4）
               <input type="number" min={1} max={4} value={rounds} onChange={(event) => setRounds(Math.max(1, Math.min(4, Number(event.target.value) || 2)))} style={{ ...fieldStyle, marginTop: 5 }} />
             </label>}
           </>}

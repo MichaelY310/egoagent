@@ -1,0 +1,184 @@
+{
+  "name": "flow_evolution_showcase",
+  "description": "Inspectable, approval-gated Flow evolution demo. It reads a target Blueprint, proposes the smallest structural change, applies it transactionally and verifies the new revision.",
+  "slots": {
+    "architect": {
+      "description": "Flow architect allowed to inspect and patch Harness Blueprints",
+      "required": true,
+      "identity": "dante"
+    }
+  },
+  "prompts": {
+    "propose": {
+      "default": "You are reviewing a request to evolve an existing EgoAgent Flow. Request:\n{request}\n\nFresh inspection evidence:\n{inspection}\n\nPropose the SMALLEST reusable structural change justified by that evidence. Do not put domain answers in the Flow. Prefer a reusable SubFlow when the problem is duplicated hidden work; prefer an approval/checkpoint gate when the problem is irreversible execution. The compact operation forms are: add_step={{\"op\":\"add_step\",\"step\":{{\"id\":\"...\",\"type\":\"approval|subflow|...\",\"routes\":[{{\"condition\":\"...\",\"to\":\"...\"}}],\"config\":{{...}}}},\"after\":\"existing_id\"}}; update_step={{\"op\":\"update_step\",\"id\":\"...\",\"changes\":{{...}}}}; connect={{\"op\":\"connect\",\"from\":\"...\",\"condition\":\"text|default|approved|rejected\",\"to\":\"...\",\"replace\":true}}; disconnect={{\"op\":\"disconnect\",\"from\":\"...\",\"condition\":\"...\"}}. The expected_revision MUST be copied from the fresh inspection. Return ONLY JSON: {{\"target_harness\":\"...\",\"expected_revision\":\"...\",\"operations\":[{{\"op\":\"...\"}}],\"reason\":\"...\",\"expected_effect\":\"...\",\"verification\":\"...\"}}"
+    },
+    "report": {
+      "default": "Summarize this Flow evolution transaction for a user recording a demo. State: (1) observed failure, (2) exact structural change, (3) transaction/revision evidence, (4) how to run the evolved Flow, and (5) what was NOT proven. Be concise and never claim benchmark improvement without paired measurements.\n\nRequest: {request}\nProposal: {proposal}\nApply result: {apply_result}\nVerification: {verification}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 24,
+    "workspace_preview": true,
+    "budget": {
+      "max_model_calls": 8,
+      "max_tool_calls": 8,
+      "max_tokens": 48000
+    },
+    "context": {
+      "request": "",
+      "inspection": "",
+      "mutation_plan": {},
+      "apply_result": "",
+      "verification": ""
+    },
+    "nodes": {
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "outputs": {"text": "request"},
+        "edges": [{"condition": "input", "to": "inspect"}]
+      },
+      "inspect": {
+        "id": "inspect",
+        "op": "Agent",
+        "agent": "architect",
+        "tools": "all",
+        "visible_tools": ["manage_harness"],
+        "max_tool_rounds": 2,
+        "instructions": "Read the target_harness name explicitly stated in this request and call manage_harness(action='inspect', harness_name=...) exactly once. Do not mutate anything. Then report the returned revision and compact Blueprint verbatim enough for another model to author patch operations.\n\n${ctx.request}",
+        "outputs": {"text": "inspection"},
+        "edges": [
+          {"condition": "has_tool_calls", "to": "inspect_tools"},
+          {"condition": "has_text", "to": "propose"}
+        ]
+      },
+      "inspect_tools": {
+        "id": "inspect_tools",
+        "op": "工具",
+        "agent": "architect",
+        "edges": [{"condition": "default", "to": "inspect"}]
+      },
+      "propose": {
+        "id": "propose",
+        "op": "模型",
+        "agent": "architect",
+        "prompt": "propose",
+        "parse_as": "json_object",
+        "json_fallback": {"target_harness": "", "expected_revision": "", "operations": []},
+        "temperature": 0.1,
+        "max_tokens": 2600,
+        "inputs": {
+          "request": "$ctx.request",
+          "inspection": "$ctx.inspection"
+        },
+        "outputs": {"structured": "mutation_plan"},
+        "edges": [
+          {"condition": "has_text", "to": "plan_valid"},
+          {"condition": "json_fallback", "to": "plan_valid"}
+        ]
+      },
+      "plan_valid": {
+        "id": "plan_valid",
+        "op": "条件",
+        "condition": "ctx.mutation_plan.target_harness != '' and ctx.mutation_plan.expected_revision != '' and len(ctx.mutation_plan.operations) > 0",
+        "edges": [
+          {"condition": "true", "to": "approve"},
+          {"condition": "false", "to": "invalid"}
+        ]
+      },
+      "approve": {
+        "id": "approve",
+        "op": "人工审批",
+        "name": "Flow structure mutation",
+        "prompt_text": "模型提出了下面这次 Flow 结构变更。批准后才会原子写入；拒绝则不会改文件。\n${ctx.mutation_plan}",
+        "data": "$ctx.mutation_plan",
+        "editable": true,
+        "default": "rejected",
+        "edges": [
+          {"condition": "approved", "to": "apply"},
+          {"condition": "rejected", "to": "rejected"}
+        ]
+      },
+      "apply": {
+        "id": "apply",
+        "op": "Agent",
+        "agent": "architect",
+        "tools": "all",
+        "visible_tools": ["manage_harness"],
+        "max_tool_rounds": 2,
+        "instructions": "Apply exactly this approved plan using one manage_harness(action='patch') call. Copy target_harness, expected_revision, operations and reason exactly; set dry_run=false. Do not redesign it and do not perform any second mutation. Then report ok, transaction_id, revision and diff.\n\n${ctx.mutation_plan}",
+        "outputs": {"text": "apply_result"},
+        "edges": [
+          {"condition": "has_tool_calls", "to": "apply_tools"},
+          {"condition": "has_text", "to": "verify"}
+        ]
+      },
+      "apply_tools": {
+        "id": "apply_tools",
+        "op": "工具",
+        "agent": "architect",
+        "edges": [{"condition": "default", "to": "apply"}]
+      },
+      "verify": {
+        "id": "verify",
+        "op": "Agent",
+        "agent": "architect",
+        "tools": "all",
+        "visible_tools": ["manage_harness"],
+        "max_tool_rounds": 2,
+        "instructions": "Verify the approved target with exactly one fresh manage_harness(action='inspect') call. Confirm whether the proposed steps and edges exist and record the new revision. Do not mutate. Target and proposal: ${ctx.mutation_plan}",
+        "outputs": {"text": "verification"},
+        "edges": [
+          {"condition": "has_tool_calls", "to": "verify_tools"},
+          {"condition": "has_text", "to": "report"}
+        ]
+      },
+      "verify_tools": {
+        "id": "verify_tools",
+        "op": "工具",
+        "agent": "architect",
+        "edges": [{"condition": "default", "to": "verify"}]
+      },
+      "report": {
+        "id": "report",
+        "op": "模型",
+        "agent": "architect",
+        "prompt": "report",
+        "temperature": 0.1,
+        "max_tokens": 1400,
+        "inputs": {
+          "request": "$ctx.request",
+          "proposal": "$ctx.mutation_plan",
+          "apply_result": "$ctx.apply_result",
+          "verification": "$ctx.verification"
+        },
+        "edges": [{"condition": "has_text", "to": "done"}]
+      },
+      "invalid": {
+        "id": "invalid",
+        "op": "结束",
+        "value": "没有生成可验证的最小 Flow 变更；未写入任何文件。",
+        "edges": []
+      },
+      "rejected": {
+        "id": "rejected",
+        "op": "结束",
+        "value": "用户拒绝了 Flow 结构变更；未写入任何文件。",
+        "edges": []
+      },
+      "done": {
+        "id": "done",
+        "op": "结束",
+        "value": {
+          "proposal": "$ctx.mutation_plan",
+          "apply_result": "$ctx.apply_result",
+          "verification": "$ctx.verification"
+        },
+        "record": true,
+        "edges": []
+      }
+    }
+  }
+}

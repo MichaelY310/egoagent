@@ -1,0 +1,122 @@
+{
+  "name": "code_agent_auto",
+  "display_name": "Code Agent · Auto",
+  "description": "Recommended default coding Agent. A small private routing call selects Fast, Standard, Long/Evolving or Team from the request and bounded workspace size. Prefix with /fast, /standard, /long or /team to override. The profiles reuse two tested engines and enable only mechanisms supported by matched product experiments.",
+  "tags": ["product", "code", "automatic", "adaptive", "user-facing"],
+  "catalog": {"category": "system", "visibility": "public", "display_name": "Code Agent · Auto (recommended)"},
+  "component": {
+    "name": "code_agent_auto",
+    "display_name": "Code Agent · Auto",
+    "category": "Agent",
+    "icon": "◈",
+    "description": "Routes each request to a tested coding profile without duplicating the underlying Flow.",
+    "share_session": true,
+    "inputs": {},
+    "outputs": {
+      "answer": {"path": "answer", "default": ""},
+      "profile": {"path": "routing.profile", "default": "standard"},
+      "routing": {"path": "routing", "default": {"profile": "standard", "reason": "fallback"}},
+      "evolved": {"path": "evolved", "default": false},
+      "context_stats": {"path": "context_stats", "default": {}},
+      "reviews": {"path": "reviews", "default": []}
+    }
+  },
+  "slots": {
+    "agent": {"description": "Primary adaptive software engineer", "required": true, "identity": "adaptive_deepseek_coder"},
+    "governor": {"description": "Private profile router, planner, context governor and evolver", "required": true, "identity": "adaptive_deepseek_coder"},
+    "quality_reviewer": {"description": "Independent correctness reviewer", "required": true, "identity": "deepseek_operator"},
+    "safety_reviewer": {"description": "Independent scope and safety reviewer", "required": true, "identity": "deepseek_operator"}
+  },
+  "prompts": {
+    "route": {
+      "default": "Choose the least expensive coding profile that can safely complete the request. This is private orchestration metadata, not a user-facing answer. Explicit leading /fast, /standard, /long or /team always wins. FAST: read-only questions, explanations, or focused changes in at most about 3 files with a direct test; it has no capability search, durable memory, context governance, evolution or delegation. STANDARD: ordinary multi-file implementation/debugging; it has capability discovery, memory, passive compaction, tool-result pruning and independent reviews, but no periodic curation, evolution or delegation. LONG: repeated work across turns, likely very large accumulated context, explicit reusable-skill creation/self-evolution, or prolonged autonomous work; it adds governed evolution but intentionally leaves periodic curation and delegation off. TEAM: at least two substantial, disjoint, independently testable scopes where child-context isolation is valuable; do not choose TEAM merely because many files exist. Do not choose LONG merely because the repository itself is large.\nRequest: {request}\nBounded workspace measure: {workspace_scope}\nReturn ONLY JSON: {\"profile\":\"fast|standard|long|team\",\"reason\":\"one concrete sentence\"}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 620,
+    "max_node_steps": 3600,
+    "timeout_seconds": 7200,
+    "workspace_preview": true,
+    "interactive_max_tokens": null,
+    "budget": {"max_model_calls": 310, "max_tool_calls": 970, "max_tokens": 2050000},
+    "context": {"request": "", "workspace_scope": {}, "routing": {"profile": "standard", "reason": "fallback"}, "answer": "", "evolved": false, "context_stats": {}, "reviews": []},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "override_fast"}]},
+      "override_fast": {"id": "override_fast", "op": "条件", "condition": "starts_with(lower(strip(ctx.request)), '/fast')", "edges": [{"condition": "true", "to": "set_fast_override"}, {"condition": "false", "to": "override_standard"}]},
+      "set_fast_override": {"id": "set_fast_override", "op": "数据", "action": "set", "key": "routing", "value": {"profile": "fast", "reason": "Explicit /fast override."}, "edges": [{"condition": "default", "to": "run_fast"}]},
+      "override_standard": {"id": "override_standard", "op": "条件", "condition": "starts_with(lower(strip(ctx.request)), '/standard')", "edges": [{"condition": "true", "to": "set_standard_override"}, {"condition": "false", "to": "override_long"}]},
+      "set_standard_override": {"id": "set_standard_override", "op": "数据", "action": "set", "key": "routing", "value": {"profile": "standard", "reason": "Explicit /standard override."}, "edges": [{"condition": "default", "to": "run_standard"}]},
+      "override_long": {"id": "override_long", "op": "条件", "condition": "starts_with(lower(strip(ctx.request)), '/long')", "edges": [{"condition": "true", "to": "set_long_override"}, {"condition": "false", "to": "override_team"}]},
+      "set_long_override": {"id": "set_long_override", "op": "数据", "action": "set", "key": "routing", "value": {"profile": "long", "reason": "Explicit /long override."}, "edges": [{"condition": "default", "to": "run_long"}]},
+      "override_team": {"id": "override_team", "op": "条件", "condition": "starts_with(lower(strip(ctx.request)), '/team')", "edges": [{"condition": "true", "to": "set_team_override"}, {"condition": "false", "to": "measure_workspace"}]},
+      "set_team_override": {"id": "set_team_override", "op": "数据", "action": "set", "key": "routing", "value": {"profile": "team", "reason": "Explicit /team override."}, "edges": [{"condition": "default", "to": "run_team"}]},
+      "measure_workspace": {"id": "measure_workspace", "op": "工作区", "action": "measure", "paths": ["."], "max_files": 500, "max_total_bytes": 20000000, "output_var": "workspace_scope", "edges": [{"condition": "default", "to": "route"}]},
+      "route": {
+        "id": "route",
+        "op": "模型",
+        "agent": "governor",
+        "prompt": "route",
+        "parse_as": "json_object",
+        "json_fallback": {"profile": "standard", "reason": "Router output was invalid; use the conservative standard profile."},
+        "output_schema": {"type": "object", "required": ["profile", "reason"], "properties": {"profile": {"type": "string", "enum": ["fast", "standard", "long", "team"]}, "reason": {"type": "string", "minLength": 1}}, "additionalProperties": false},
+        "temperature": 0.05,
+        "max_tokens": 220,
+        "outputs": {"structured": "routing"},
+        "edges": [{"condition": "has_text", "to": "is_fast"}, {"condition": "json_fallback", "to": "is_fast"}]
+      },
+      "is_fast": {"id": "is_fast", "op": "条件", "condition": "ctx.routing.profile == 'fast'", "edges": [{"condition": "true", "to": "run_fast"}, {"condition": "false", "to": "is_long"}]},
+      "is_long": {"id": "is_long", "op": "条件", "condition": "ctx.routing.profile == 'long'", "edges": [{"condition": "true", "to": "run_long"}, {"condition": "false", "to": "is_team"}]},
+      "is_team": {"id": "is_team", "op": "条件", "condition": "ctx.routing.profile == 'team'", "edges": [{"condition": "true", "to": "run_team"}, {"condition": "false", "to": "run_standard"}]},
+      "run_fast": {
+        "id": "run_fast",
+        "op": "子流程",
+        "harness": "product_core_code_agent",
+        "share_session": true,
+        "agent_map": {"agent": "agent", "governor": "governor"},
+        "component_outputs": {"answer": "answer", "change_review": "change_review"},
+        "result_mode": "data",
+        "output_var": "profile_result",
+        "edges": [{"condition": "subflow_done", "to": "done"}]
+      },
+      "run_standard": {
+        "id": "run_standard",
+        "op": "子流程",
+        "harness": "product_adaptive_code_agent",
+        "share_session": true,
+        "agent_map": {"agent": "agent", "governor": "governor", "quality_reviewer": "quality_reviewer", "safety_reviewer": "safety_reviewer"},
+        "component_inputs": {"enable_evolution": false, "enable_delegation": false, "enable_memory": true, "enable_curation": false, "enable_compaction": true, "enable_tool_pruning": true},
+        "component_outputs": {"answer": "answer", "evolved": "evolved", "context_stats": "context_stats", "reviews": "reviews"},
+        "result_mode": "data",
+        "output_var": "profile_result",
+        "edges": [{"condition": "subflow_done", "to": "done"}]
+      },
+      "run_long": {
+        "id": "run_long",
+        "op": "子流程",
+        "harness": "product_adaptive_code_agent",
+        "share_session": true,
+        "agent_map": {"agent": "agent", "governor": "governor", "quality_reviewer": "quality_reviewer", "safety_reviewer": "safety_reviewer"},
+        "component_inputs": {"enable_evolution": true, "enable_delegation": false, "enable_memory": true, "enable_curation": false, "enable_compaction": true, "enable_tool_pruning": true},
+        "component_outputs": {"answer": "answer", "evolved": "evolved", "context_stats": "context_stats", "reviews": "reviews"},
+        "result_mode": "data",
+        "output_var": "profile_result",
+        "edges": [{"condition": "subflow_done", "to": "done"}]
+      },
+      "run_team": {
+        "id": "run_team",
+        "op": "子流程",
+        "harness": "product_adaptive_code_agent",
+        "share_session": true,
+        "agent_map": {"agent": "agent", "governor": "governor", "quality_reviewer": "quality_reviewer", "safety_reviewer": "safety_reviewer"},
+        "component_inputs": {"enable_evolution": false, "enable_delegation": true, "enable_memory": true, "enable_curation": false, "enable_compaction": true, "enable_tool_pruning": true},
+        "component_outputs": {"answer": "answer", "evolved": "evolved", "context_stats": "context_stats", "reviews": "reviews"},
+        "result_mode": "data",
+        "output_var": "profile_result",
+        "edges": [{"condition": "subflow_done", "to": "done"}]
+      },
+      "done": {"id": "done", "op": "结束", "value": {"answer": "$ctx.answer", "routing": "$ctx.routing", "evolved": "$ctx.evolved", "context": "$ctx.context_stats", "reviews": "$ctx.reviews", "change_review": "$ctx.change_review"}, "edges": []}
+    }
+  }
+}

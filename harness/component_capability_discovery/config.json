@@ -14,34 +14,60 @@
     },
     "outputs": {
       "result": {"path": "discovery_result", "default": ""},
-      "searched": {"path": "searched", "default": false}
+      "searched": {"path": "searched", "default": false},
+      "activation": {"path": "activation_evidence", "default": []}
     }
   },
   "slots": {"searcher": {"description": "Identity that selects concise search terms", "required": true, "identity": "dante"}},
   "prompts": {},
   "return_mode": "last",
   "pipeline": {
-    "start": "search", "max_steps": 16,
+    "start": "fast_match", "max_steps": 18,
     "budget": {"max_model_calls": 5, "max_tool_calls": 4, "max_tokens": 32000},
-    "context": {"searched": false, "discovery_result": ""},
+    "context": {"searched": false, "discovery_result": "", "search_evidence": [], "raw_activation_evidence": [], "activation_evidence": []},
     "nodes": {
+      "fast_match": {
+        "id": "fast_match", "op": "能力", "action": "search_and_activate", "agent": "searcher",
+        "query": "$ctx.query", "kinds": ["skill", "tool", "knowledge", "harness"], "top_k": 4,
+        "min_score": 2.5, "min_margin": 0.7, "min_query_coverage": 0.6,
+        "min_lexical_score": 10.0, "min_semantic_score": 0.62, "strong_semantic_score": 0.64,
+        "min_semantic_margin": 0.12, "min_coverage_margin": 0.05,
+        "outputs": {"activation": "activation_evidence", "value": "discovery_result"},
+        "edges": [{"condition": "activated", "to": "mark"}, {"condition": "not_found", "to": "search"}, {"condition": "error", "to": "search"}]
+      },
       "search": {
         "id": "search", "op": "Agent", "agent": "searcher", "tools": "all",
         "visible_tools": ["search_capabilities"],
         "max_tool_calls_per_turn": 1,
         "max_tool_rounds": "$ctx.max_tool_rounds",
-        "instructions": "Call search_capabilities exactly once for reusable abilities relevant to this need: ${ctx.query}\nUse one concise semantic query. Include kind harness when delegation or a reusable DAG may help. Do not activate or create anything in this node; the next node performs an auditable selection.",
+        "instructions": "Call search_capabilities exactly once for reusable abilities relevant to this need: ${ctx.query}\nUse one concise semantic query containing only the requested operation, contract and artifact type. Do not add DAG, Harness, delegation or other capability kinds unless the original need explicitly asks for them. Do not activate or create anything in this node; the next node performs an auditable selection.",
         "edges": [{"condition": "has_tool_calls", "to": "search_tools"}, {"condition": "has_text", "to": "select"}]
       },
-      "search_tools": {"id": "search_tools", "op": "工具", "agent": "searcher", "edges": [{"condition": "default", "to": "select"}]},
+      "search_tools": {"id": "search_tools", "op": "工具", "agent": "searcher", "outputs": {"results": "search_evidence"}, "edges": [{"condition": "default", "to": "activate_refined"}]},
+      "activate_refined": {
+        "id": "activate_refined", "op": "能力", "action": "activate_best_from_search_evidence", "agent": "searcher",
+        "inputs": {"source": "$ctx.search_evidence"}, "output_var": "activation_evidence",
+        "min_score": 2.5, "min_margin": 0.7, "min_query_coverage": 0.6,
+        "min_lexical_score": 10.0, "min_semantic_score": 0.62, "strong_semantic_score": 0.64,
+        "min_semantic_margin": 0.12, "min_coverage_margin": 0.05,
+        "edges": [{"condition": "activated", "to": "mark"}, {"condition": "not_found", "to": "select"}, {"condition": "error", "to": "select"}]
+      },
       "select": {
         "id": "select", "op": "Agent", "agent": "searcher", "tools": "all",
-        "visible_tools": ["activate_capability"], "max_tool_calls_per_turn": 1,
-        "instructions": "Inspect the immediately preceding capability search result. Prefer workspace scope, exact documented triggers and proven usage. If one result directly helps the requested need, call activate_capability exactly once with its capability_id; this records usage and loads compact Skill instructions or returns a DAG/Identity reuse contract. Do not activate an adjacent result. If no result is adequate, explain that briefly without calling a tool.",
+        "visible_tools": ["activate_capability"], "max_tool_calls_per_turn": 1, "max_tool_rounds": 1, "max_tokens": 700,
+        "instructions": "You are only the capability compatibility gate, not the task-solving Agent and not the evolution-cost judge. Inspect the immediately preceding search result; do not inspect the workspace, retry search, solve the task, or propose implementation steps. Prefer workspace scope, exact documented triggers and proven usage. A task being one-off is NOT a reason to reject an already-existing exact capability: activation is reuse, not creation. If exactly one result's documented input, output and contract directly cover the requested need, call activate_capability exactly once with its capability_id even when the request names a new file instance. Otherwise output exactly one short sentence beginning NO_MATCH:. Never activate an adjacent or merely generic result.",
         "outputs": {"text": "discovery_result"},
         "edges": [{"condition": "has_tool_calls", "to": "activation_tools"}, {"condition": "has_text", "to": "mark"}]
       },
-      "activation_tools": {"id": "activation_tools", "op": "工具", "agent": "searcher", "edges": [{"condition": "default", "to": "summarize"}]},
+      "activation_tools": {"id": "activation_tools", "op": "工具", "agent": "searcher", "outputs": {"results": "raw_activation_evidence"}, "edges": [{"condition": "default", "to": "validate_selected"}]},
+      "validate_selected": {
+        "id": "validate_selected", "op": "能力", "action": "activate_best_from_search_evidence", "agent": "searcher",
+        "inputs": {"source": "$ctx.search_evidence"}, "output_var": "activation_evidence",
+        "min_score": 2.5, "min_margin": 0.7, "min_query_coverage": 0.6,
+        "min_lexical_score": 10.0, "min_semantic_score": 0.62, "strong_semantic_score": 0.64,
+        "min_semantic_margin": 0.12, "min_coverage_margin": 0.05,
+        "edges": [{"condition": "activated", "to": "summarize"}, {"condition": "not_found", "to": "mark"}, {"condition": "error", "to": "mark"}]
+      },
       "summarize": {
         "id": "summarize", "op": "Agent", "agent": "searcher", "tools": "all", "visible_tools": [],
         "instructions": "Summarize the just-completed activation for the parent. Include the selected capability ID and name, returned activation action, compact instructions or DAG reuse mode, and why it applies. Do not call tools and do not repeat the full search result.",
@@ -49,7 +75,7 @@
         "edges": [{"condition": "has_text", "to": "mark"}]
       },
       "mark": {"id": "mark", "op": "数据", "action": "set", "key": "searched", "value": true, "edges": [{"condition": "default", "to": "done"}]},
-      "done": {"id": "done", "op": "结束", "value": {"searched": "$ctx.searched", "result": "$ctx.discovery_result"}, "edges": []}
+      "done": {"id": "done", "op": "结束", "value": {"searched": "$ctx.searched", "result": "$ctx.discovery_result", "activation": "$ctx.activation_evidence"}, "edges": []}
     }
   }
 }

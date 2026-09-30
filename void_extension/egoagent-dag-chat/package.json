@@ -2,7 +2,7 @@
   "name": "egoagent-dag-chat",
   "displayName": "EgoAgent for Void",
   "description": "Native Void AI coding workspace: DAG agents, model-backed Tab completion, inline edits and per-hunk change review.",
-	"version": "0.21.11",
+  "version": "0.21.24",
   "publisher": "egoagent",
   "license": "MIT",
   "engines": {
@@ -32,6 +32,12 @@
   ],
   "contributes": {
     "commands": [
+      {
+        "command": "egoagent.openRemoteWorkspace",
+        "title": "Open SSH / WSL Workspace · 打开远程项目",
+        "category": "EgoAgent",
+        "icon": "$(remote)"
+      },
       {
         "command": "egoagent.openWorkbench",
         "title": "Open Agent Workbench",
@@ -64,7 +70,7 @@
       },
       {
         "command": "egoagent.attachFileToChat",
-        "title": "Attach File to Chat",
+        "title": "Attach File or Folder to Chat",
         "category": "EgoAgent"
       },
       {
@@ -101,6 +107,11 @@
       {
         "command": "egoagent.toggleLocalCompletion",
         "title": "Toggle AI Tab Completion",
+        "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.triggerCompletion",
+        "title": "Trigger AI Tab Completion",
         "category": "EgoAgent"
       },
       {
@@ -150,8 +161,14 @@
       },
       {
         "command": "egoagent.copyTerminalContext",
-        "title": "Copy Terminal Selection for Chat Context",
+        "title": "复制终端选区供 EgoAgent 使用",
         "category": "EgoAgent"
+      },
+      {
+        "command": "egoagent.attachTerminalSelectionToChat",
+        "title": "将终端选区加入 EgoAgent 对话",
+        "category": "EgoAgent",
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "egoagent.nextPendingChange",
@@ -210,6 +227,11 @@
           "command": "egoagent.refreshDagChat",
           "when": "view == egoagent.dagChat",
           "group": "navigation@2"
+        },
+        {
+          "command": "egoagent.attachTerminalSelectionToChat",
+          "when": "view == terminal && terminalTextSelected",
+          "group": "navigation@0"
         }
       ],
       "editor/context": [
@@ -247,6 +269,28 @@
     },
     "keybindings": [
       {
+        "command": "egoagent.triggerCompletion",
+        "key": "alt+\\",
+        "when": "editorTextFocus && !editorReadonly"
+      },
+      {
+        "command": "editor.action.inlineSuggest.commit",
+        "key": "tab",
+        "when": "editorTextFocus && inlineSuggestionVisible && !suggestWidgetVisible && !inSnippetMode && !editorTabMovesFocus && inlineSuggestionHasIndentationLessThanTabSize"
+      },
+      {
+        "command": "editor.action.inlineSuggest.acceptNextWord",
+        "key": "ctrl+right",
+        "mac": "cmd+right",
+        "when": "editorTextFocus && inlineSuggestionVisible && !suggestWidgetVisible"
+      },
+      {
+        "command": "editor.action.inlineSuggest.acceptNextLine",
+        "key": "ctrl+alt+right",
+        "mac": "cmd+alt+right",
+        "when": "editorTextFocus && inlineSuggestionVisible && !suggestWidgetVisible"
+      },
+      {
         "command": "egoagent.inlineEdit",
         "key": "ctrl+i",
         "mac": "cmd+i",
@@ -281,8 +325,8 @@
       },
       {
         "command": "egoagent.copyTerminalContext",
-        "key": "ctrl+c",
-        "mac": "cmd+c",
+        "key": "ctrl+shift+c",
+        "mac": "cmd+shift+c",
         "when": "terminalFocus && terminalTextSelected"
       },
       {
@@ -293,7 +337,9 @@
       }
     ],
     "configurationDefaults": {
-      "diffEditor.codeLens": true
+      "diffEditor.codeLens": true,
+      "editor.inlineSuggest.enabled": true,
+      "editor.inlineSuggest.showToolbar": "onHover"
     },
     "configuration": {
       "title": "EgoAgent",
@@ -306,7 +352,30 @@
         "egoagent.localCompletion.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable inline Tab suggestions. The model provider is used when available, with deterministic local fallback."
+          "description": "显示原生灰色代码补全；Tab 接受，Esc 取消。不会自动修改文件。"
+        },
+        "egoagent.localCompletion.localWordFallback": {
+          "type": "boolean",
+          "default": true,
+          "description": "模型不可用时只补全当前文件中已有的单词，不生成模板或模拟代码。"
+        },
+        "egoagent.localCompletion.includeOpenFiles": {
+          "type": "boolean",
+          "default": false,
+          "description": "允许将同一工作区内最多两个可见文件的节选发送给补全模型；始终过滤敏感文件。"
+        },
+        "egoagent.localCompletion.exclude": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "额外排除的路径 glob（如 **/private/**）。内置排除 .env、密钥、凭据、依赖目录等。"
+        },
+        "egoagent.ai.completionTimeoutMs": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 1000,
+          "maximum": 30000,
+          "description": "代码补全总等待时间，含服务检查。超时在状态栏显示，不打断输入。"
         },
         "egoagent.ai.enabled": {
           "type": "boolean",

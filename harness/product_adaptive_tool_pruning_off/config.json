@@ -1,0 +1,100 @@
+{
+  "name": "product_adaptive_tool_pruning_off",
+  "description": "Matched Product Adaptive Code Agent profile with deterministic model-facing tool observation pruning disabled.",
+  "tags": [
+    "experiment",
+    "code",
+    "context",
+    "tool-pruning",
+    "control"
+  ],
+  "slots": {
+    "agent": {
+      "description": "Primary software engineer",
+      "required": true,
+      "identity": "adaptive_deepseek_coder"
+    },
+    "governor": {
+      "description": "Planner and judge",
+      "required": true,
+      "identity": "adaptive_deepseek_coder"
+    },
+    "quality_reviewer": {
+      "description": "Independent correctness reviewer",
+      "required": true,
+      "identity": "deepseek_operator"
+    },
+    "safety_reviewer": {
+      "description": "Independent scope reviewer",
+      "required": true,
+      "identity": "deepseek_operator"
+    }
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "run",
+    "max_steps": 580,
+    "max_node_steps": 3400,
+    "timeout_seconds": 7200,
+    "workspace_preview": true,
+    "interactive_max_tokens": null,
+    "budget": {
+      "max_model_calls": 300,
+      "max_tool_calls": 960,
+      "max_tokens": 2000000
+    },
+    "context": {
+      "result": {}
+    },
+    "nodes": {
+      "run": {
+        "id": "run",
+        "op": "子流程",
+        "harness": "product_adaptive_code_agent",
+        "share_session": true,
+        "agent_map": {
+          "agent": "agent",
+          "governor": "governor",
+          "quality_reviewer": "quality_reviewer",
+          "safety_reviewer": "safety_reviewer"
+        },
+        "component_inputs": {
+          "enable_evolution": false,
+          "enable_delegation": false,
+          "enable_memory": false,
+          "enable_curation": false,
+          "enable_compaction": false,
+          "enable_tool_pruning": false,
+          "context_limit_tokens": 16384,
+          "context_high_watermark": 0.60,
+          "context_target_ratio": 0.40,
+          "context_minimum_savings_tokens": 256
+        },
+        "component_outputs": {
+          "answer": "answer",
+          "context_stats": "context_stats",
+          "reviews": "reviews"
+        },
+        "result_mode": "data",
+        "output_var": "result",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "done"
+          }
+        ]
+      },
+      "done": {
+        "id": "done",
+        "op": "结束",
+        "value": {
+          "answer": "$ctx.answer",
+          "context": "$ctx.context_stats",
+          "reviews": "$ctx.reviews"
+        },
+        "edges": []
+      }
+    }
+  }
+}

@@ -1,20 +1,21 @@
 # Harness catalog and validation matrix
 
-Updated: 2026-08-12
+Updated: 2026-08-31
 
 ## Outcome
 
-The user-facing catalog now contains **43 runnable harnesses**:
+The user-facing catalog now contains **46 runnable Flows**:
 
-- 19 open-source replicas
-- 13 internal workers required by parent DAGs
-- 7 reusable templates
-- 4 evolution harnesses
+- 8 system/product Flows
+- 28 examples and open-source reproductions
+- 10 experiments/evolution Flows
+- 22 internal workers/components remain runtime-addressable, but are hidden
+  from Chat and the main Build selector; Build can still reuse them as SubFlows.
 
-Six development leftovers were removed: `new_harness`, `quick_test`,
-`verify_test`, `research_loop`, `self_improve`, and the invalid/duplicated
-`turn_based` harness. `debate_with_moderator` remains as the maintained
-turn-based template.
+Eight empty development leftovers were removed: `incident_daily_review`,
+`new_harness`, `quick_test`, `verify_test`, `research_loop`, `self_improve`,
+`weekly_library_review`, and the invalid/duplicated `turn_based` shell.
+`debate_with_moderator` remains as the maintained turn-based example.
 
 ## What “tested” means
 
@@ -121,4 +122,3 @@ contained no mojibake.
   workspaces every 1.5 seconds.
 - DeepSeek V4 Flash uses non-thinking tool mode by default, with bounded node
   token/temperature controls.
-

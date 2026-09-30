@@ -1,0 +1,112 @@
+{
+  "version": "ego.task.v1",
+  "id": "team_threshold_large",
+  "title": "P5 threshold: large — Two independent multi-file subsystem repairs",
+  "description": "Repair two disjoint Python subsystems whose source, contract and tests each form a substantial isolated scope.",
+  "category": "code-product-acceptance",
+  "difficulty": "hard",
+  "tags": [
+    "python",
+    "multi-file",
+    "delegation",
+    "isolation",
+    "hidden-tests",
+    "team-threshold",
+    "p5-parity"
+  ],
+  "prompt": "Repair both independent packages in this offline repository and run the complete unittest suite. slug_codec normalizes release envelopes; quota_engine builds resource policies. Preserve every public signature and make minimal changes. The scopes are disjoint: each package contains its own contract, implementation, and tests (about fifteen files), so inspect the repository and decide whether one bounded scope merits isolated execution. The final answer must combine concrete evidence for both packages.",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Dual subsystem repair rules\n\n- The repository is offline; do not browse.\n- Preserve public signatures.\n- Never modify tests or contract documents.\n- Keep slug_codec and quota_engine changes inside their respective directories.\n- Run `python -m unittest discover -v`.\n",
+      "slug_codec/__init__.py": "from .api import encode_release\n\n__all__ = ['encode_release']\n",
+      "slug_codec/CONTRACT.md": "# slug_codec contract\n\nNames are trimmed, lower-cased, and every non-alphanumeric run becomes one hyphen. Versions are trimmed and lose one leading v/V. Targets are pipe-delimited, trimmed, upper-cased, deduplicated, and sorted. Enabled values are true for 1/true/yes/on (case-insensitive). Wave is an integer clamped to 1..9. encode_release returns exactly schema/name/version/targets/enabled/wave and schema is release/v2.\n",
+      "slug_codec/name.py": "import re\n\ndef normalize_name(value: str) -> str:\n    return value.strip()\n",
+      "slug_codec/version.py": "def parse_version(value: str) -> str:\n    return value\n",
+      "slug_codec/targets.py": "def normalize_targets(value: str) -> list[str]:\n    return value.split('|')\n",
+      "slug_codec/enabled.py": "def parse_enabled(value: str) -> bool:\n    return bool(value)\n",
+      "slug_codec/wave.py": "def clamp_wave(value: str | int) -> int:\n    return int(value)\n",
+      "slug_codec/api.py": "from .enabled import parse_enabled\nfrom .name import normalize_name\nfrom .targets import normalize_targets\nfrom .version import parse_version\nfrom .wave import clamp_wave\n\ndef encode_release(record: dict) -> dict:\n    return dict(record)\n",
+      "slug_codec/tests/__init__.py": "",
+      "slug_codec/tests/test_name.py": "import unittest\nfrom slug_codec.name import normalize_name\nclass T(unittest.TestCase):\n    def test_name(self):\n        self.assertEqual(normalize_name('  API / Gateway__V2  '), 'api-gateway-v2')\n",
+      "slug_codec/tests/test_version.py": "import unittest\nfrom slug_codec.version import parse_version\nclass T(unittest.TestCase):\n    def test_version(self):\n        self.assertEqual(parse_version(' V1.2.0 '), '1.2.0')\n        self.assertEqual(parse_version('2.0'), '2.0')\n",
+      "slug_codec/tests/test_targets.py": "import unittest\nfrom slug_codec.targets import normalize_targets\nclass T(unittest.TestCase):\n    def test_targets(self):\n        self.assertEqual(normalize_targets('us-east| EU-west |us-east||'), ['EU-WEST','US-EAST'])\n",
+      "slug_codec/tests/test_enabled.py": "import unittest\nfrom slug_codec.enabled import parse_enabled\nclass T(unittest.TestCase):\n    def test_enabled(self):\n        for value in ('1','TRUE',' yes ','On'): self.assertTrue(parse_enabled(value))\n        for value in ('0','false','no','off',''): self.assertFalse(parse_enabled(value))\n",
+      "slug_codec/tests/test_wave.py": "import unittest\nfrom slug_codec.wave import clamp_wave\nclass T(unittest.TestCase):\n    def test_wave(self):\n        self.assertEqual(clamp_wave('-3'), 1)\n        self.assertEqual(clamp_wave('4'), 4)\n        self.assertEqual(clamp_wave(15), 9)\n",
+      "slug_codec/tests/test_api.py": "import unittest\nfrom slug_codec import encode_release\nclass T(unittest.TestCase):\n    def test_envelope(self):\n        raw={'package':' Search.Index ','version':'v3.4','target':'us-west|EU-NORTH|us-west','ship':'yes','batch':'12','drop':1}\n        self.assertEqual(encode_release(raw), {'schema':'release/v2','name':'search-index','version':'3.4','targets':['EU-NORTH','US-WEST'],'enabled':True,'wave':9})\n",
+      "quota_engine/__init__.py": "from .api import build_policy\n\n__all__ = ['build_policy']\n",
+      "quota_engine/CONTRACT.md": "# quota_engine contract\n\nparse_bytes accepts non-negative integer strings suffixed B/KiB/MiB/GiB and uses powers of 1024. bounded_percent clamps numeric values to 0..100. retry_delay is min(cap, base * 2**attempt) with non-negative attempt. normalize_tier maps prod/production/stable to stable, beta/canary to preview, otherwise dev. shard_ids parses comma-delimited non-negative integers, deduplicated and sorted; invalid or negative entries raise ValueError. build_policy returns exactly tier/limit_bytes/alert_percent/retry_seconds/shards.\n",
+      "quota_engine/bytesize.py": "def parse_bytes(value: str) -> int:\n    return int(value)\n",
+      "quota_engine/percent.py": "def bounded_percent(value: int | float | str) -> float:\n    return float(value)\n",
+      "quota_engine/retry.py": "def retry_delay(base: int, attempt: int, cap: int) -> int:\n    return base + attempt\n",
+      "quota_engine/tier.py": "def normalize_tier(value: str) -> str:\n    return value\n",
+      "quota_engine/shards.py": "def shard_ids(value: str) -> list[int]:\n    return [int(part) for part in value.split(',')]\n",
+      "quota_engine/api.py": "from .bytesize import parse_bytes\nfrom .percent import bounded_percent\nfrom .retry import retry_delay\nfrom .shards import shard_ids\nfrom .tier import normalize_tier\n\ndef build_policy(record: dict) -> dict:\n    return dict(record)\n",
+      "quota_engine/tests/__init__.py": "",
+      "quota_engine/tests/test_bytesize.py": "import unittest\nfrom quota_engine.bytesize import parse_bytes\nclass T(unittest.TestCase):\n    def test_sizes(self):\n        self.assertEqual(parse_bytes('7B'), 7)\n        self.assertEqual(parse_bytes('2KiB'), 2048)\n        self.assertEqual(parse_bytes('3MiB'), 3*1024**2)\n        self.assertEqual(parse_bytes('1GiB'), 1024**3)\n        for bad in ('-1B','3KB','x'): self.assertRaises(ValueError, parse_bytes, bad)\n",
+      "quota_engine/tests/test_percent.py": "import unittest\nfrom quota_engine.percent import bounded_percent\nclass T(unittest.TestCase):\n    def test_percent(self):\n        self.assertEqual(bounded_percent('-5'), 0.0)\n        self.assertEqual(bounded_percent('72.5'), 72.5)\n        self.assertEqual(bounded_percent(140), 100.0)\n",
+      "quota_engine/tests/test_retry.py": "import unittest\nfrom quota_engine.retry import retry_delay\nclass T(unittest.TestCase):\n    def test_retry(self):\n        self.assertEqual(retry_delay(2, 0, 30), 2)\n        self.assertEqual(retry_delay(2, 3, 30), 16)\n        self.assertEqual(retry_delay(2, 9, 30), 30)\n        self.assertRaises(ValueError, retry_delay, 2, -1, 30)\n",
+      "quota_engine/tests/test_tier.py": "import unittest\nfrom quota_engine.tier import normalize_tier\nclass T(unittest.TestCase):\n    def test_tier(self):\n        self.assertEqual(normalize_tier(' Production '), 'stable')\n        self.assertEqual(normalize_tier('CANARY'), 'preview')\n        self.assertEqual(normalize_tier('nightly'), 'dev')\n",
+      "quota_engine/tests/test_shards.py": "import unittest\nfrom quota_engine.shards import shard_ids\nclass T(unittest.TestCase):\n    def test_shards(self):\n        self.assertEqual(shard_ids('3, 1,3,2'), [1,2,3])\n        for bad in ('1,-2','1,x'): self.assertRaises(ValueError, shard_ids, bad)\n",
+      "quota_engine/tests/test_api.py": "import unittest\nfrom quota_engine import build_policy\nclass T(unittest.TestCase):\n    def test_policy(self):\n        raw={'lane':'beta','limit':'2MiB','alert':'105','base':3,'attempt':2,'cap':20,'shards':'4,2,4','drop':1}\n        self.assertEqual(build_policy(raw), {'tier':'preview','limit_bytes':2097152,'alert_percent':100.0,'retry_seconds':12,'shards':[2,4]})\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "code_agent_long",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": [
+      "code_agent_long",
+      "code_agent_team"
+    ],
+    "compatible_identities": [
+      "adaptive_deepseek_coder"
+    ]
+  },
+  "environment": {
+    "backend": "local",
+    "network": "disabled"
+  },
+  "execution": {
+    "timeout_seconds": 5400
+  },
+  "evolution": {
+    "allowed": false,
+    "targets": []
+  },
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {
+        "type": "command",
+        "command": [
+          "python",
+          "-m",
+          "unittest",
+          "discover",
+          "-v"
+        ],
+        "weight": 12
+      },
+      {
+        "type": "file_not_contains",
+        "path": "slug_codec/api.py",
+        "value": "return dict(record)",
+        "weight": 1
+      },
+      {
+        "type": "file_not_contains",
+        "path": "quota_engine/api.py",
+        "value": "return dict(record)",
+        "weight": 1
+      }
+    ]
+  },
+  "experiment": {
+    "campaign": "P5-team-threshold-20260908",
+    "source_task": "product_large_dual_subsystem_repair",
+    "team_threshold": {
+      "workspace_files": 31,
+      "workspace_bytes": 6059,
+      "deterministic_child_gate": "files >= 12 OR bytes >= 12000"
+    }
+  }
+}

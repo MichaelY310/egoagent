@@ -21,7 +21,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.audit_harness_catalog import audit
-from scripts.reset_video_demo import EVOLUTION_ARTIFACTS, RECORDING_CREATED_ARTIFACTS
+from scripts.reset_video_demo import (
+    EVOLUTION_ARTIFACTS,
+    FLOW_DEMO_BASELINES,
+    RECORDING_CREATED_ARTIFACTS,
+    changed_flow_demos,
+)
 
 
 BACKEND = "http://127.0.0.1:8765"
@@ -56,7 +61,26 @@ def check_local_services():
 
 def check_catalog():
     report = audit(ROOT)
-    require(report["ok"], f"Harness audit has {report['failures']} failures")
+    # The editor persists an untouched "new_harness" as a local draft before
+    # it has any nodes.  It is intentionally not runnable and must not be
+    # presented as a validated Catalog entry, but it also should not block a
+    # recording preflight.  Every other invalid Harness remains a hard error.
+    ignored_drafts = [
+        item for item in report["harnesses"]
+        if item["name"] == "new_harness"
+        and item["nodes"] == 0
+        and not item["description"]
+        and not item["ok"]
+    ]
+    failures = [
+        item for item in report["harnesses"]
+        if not item["ok"] and item not in ignored_drafts
+    ]
+    require(
+        not failures,
+        "Harness audit failures: "
+        + "; ".join(f"{item['name']}: {', '.join(item['errors'])}" for item in failures),
+    )
     names = {item["name"] for item in report["harnesses"]}
     required = {
         "tutorial_full_stack_code_agent",
@@ -67,9 +91,14 @@ def check_catalog():
         "component_context_curator",
         "component_repeat_tool_guard",
         "component_tool_result_pruner",
+        "flow_evolution_showcase",
+        "demo_fragile_release_flow",
+        "demo_noisy_research_flow",
     }
     require(required <= names, "recording Harnesses are missing: " + ", ".join(sorted(required - names)))
-    print(f"PASS harness catalog: {report['total']} validated, failures=0")
+    validated = sum(1 for item in report["harnesses"] if item["ok"])
+    draft_note = f", ignored empty drafts={len(ignored_drafts)}" if ignored_drafts else ""
+    print(f"PASS harness catalog: {validated} runnable Harnesses validated{draft_note}")
 
 
 def check_tutorial_assets():
@@ -82,6 +111,10 @@ def check_tutorial_assets():
         or (FIXTURE / relative).read_text(encoding="utf-8") != content
     ]
     require(not drift, "recording fixture needs reset: " + ", ".join(drift))
+    require(
+        not changed_flow_demos(),
+        "Flow evolution fixtures need reset: " + ", ".join(changed_flow_demos()),
+    )
     namespace: dict = {}
     exec((FIXTURE / "garden.py").read_text(encoding="utf-8"), namespace)
     require(namespace["should_water"](20) is False, "fixture bug was already fixed; reset it")
@@ -115,6 +148,9 @@ def check_product_apis():
         "video_capability_evolution_walkthrough",
         "video_context_governance_walkthrough",
         "video_self_evolution_walkthrough",
+        "video_agent_factory_live",
+        "video_flow_safety_evolution",
+        "video_subflow_extraction_evolution",
     }
     require(expected_tasks <= task_ids, "recording Tasks are missing: " + ", ".join(sorted(expected_tasks - task_ids)))
 
@@ -143,7 +179,7 @@ def check_product_apis():
     require(reusable, "DAG search returned no typed SubDAG reuse contract")
     first = reusable[0]
     print(
-        "PASS product APIs: four recording Tasks + Identity/Environment visible; "
+        "PASS product APIs: seven recording Tasks + Identity/Environment visible; "
         f"DAG search reusable={first.get('name')}"
     )
 
@@ -161,7 +197,11 @@ def check_frontend_recording_contracts():
         if path.suffix in {".css", ".js"}
     )
 
-    require("Agent 启动失败：" in chat, "Chat bundle lacks actionable startup failure details")
+    require(
+        "addEvent('system', 'error', '发送失败', detail)" in chat
+        and "发送失败 · 请查看错误详情" in chat,
+        "Chat bundle lacks actionable startup failure details",
+    )
     require("[${kind}: ${title}]" in chat, "Chat bundle lacks in-message attachment references")
     require("pendingContextPastes: new Map()" in chat, "Chat bundle cannot guard unresolved attachment pastes")
     require("function syncComposerContexts()" in chat and ".inline-attachment[data-context-id]" in chat,
@@ -180,6 +220,8 @@ def check_frontend_recording_contracts():
         require(f"label: '{label}'" in app, f"Workbench route is missing: {label}")
     require('className="session-explorer-list"' in session_ui, "Sessions responsive layout hook is missing")
     require(".session-explorer-list" in packaged_assets, "packaged Workbench is stale; run npm run package:extension")
+    require("LIVE ARCHITECTURE" in packaged_assets, "packaged Workbench lacks real-time Agent topology")
+    require("Flow 版本变化" in packaged_assets, "packaged Workbench lacks structural mutation projection")
     print("PASS frontend contracts: attachment order, startup errors, copy commands, routes and narrow Sessions bundle")
 
 

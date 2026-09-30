@@ -10,9 +10,11 @@ from environment import (
 )
 import base64
 import copy
+import fnmatch
 import json
 import mimetypes
 import os
+import re
 import sys
 import time
 import uuid
@@ -35,6 +37,26 @@ _WORKSPACE_PATH_ARGUMENTS = {
     "exec_command": ("workdir",),
 }
 
+
+def _workspace_path_argument_keys(tool_name: str, arguments: dict) -> tuple[str, ...]:
+    """Return explicit and conventional path-bearing tool arguments.
+
+    Generated executable Skills cannot be enumerated here in advance. Their
+    typed interfaces conventionally use ``*_path``; recognizing that suffix
+    extends Task Bench's boundary to evolved tools without misclassifying
+    unrelated values such as ``harness_dir`` as workspace files.
+    """
+
+    keys = list(_WORKSPACE_PATH_ARGUMENTS.get(str(tool_name), ()))
+    for key, value in (arguments or {}).items():
+        if (
+            isinstance(value, (str, os.PathLike))
+            and (str(key).endswith("_path") or str(key) in {"path", "file_path"})
+            and key not in keys
+        ):
+            keys.append(str(key))
+    return tuple(keys)
+
 _BUILTIN_ACTIVATED_CAPABILITIES = {
     "search_capabilities",
     "activate_capability",
@@ -52,6 +74,23 @@ _BUILTIN_ACTIVATED_CAPABILITIES = {
     "exec_command",
     "write_stdin",
     "update_plan",
+}
+
+_SUPEREGO_CAPABILITY_SWITCHES = {
+    "allow_create_agent", "allow_create_identity", "allow_modify_agent", "allow_modify_identity",
+    "allow_add_skill_to_self", "allow_add_knowledge_to_self", "allow_add_skill_to_other",
+    "allow_add_knowledge_to_other", "allow_add_tool_to_environment",
+    "allow_add_knowledge_to_environment",
+}
+
+_SUPEREGO_SIMPLE_MUTATION_RULES = {
+    "create_agent_system": ("allow_create_agent", "allow_create_identity"),
+    "create_harness": ("allow_create_agent",),
+    "design_harness": ("allow_create_agent",),
+    "modify_harness": ("allow_modify_agent",),
+    "create_identity": ("allow_create_identity",),
+    "copy_identity": ("allow_create_identity",),
+    "modify_identity": ("allow_modify_identity",),
 }
 
 
@@ -86,6 +125,31 @@ def _console_write(value: str, end: str = "") -> None:
         sys.stdout.flush()
     except (AttributeError, OSError):
         pass
+
+
+def _compact_tool_preamble(value: str, max_chars: int) -> str:
+    """Keep tool-call progress terse while the exact model output stays in trace.
+
+    Some OpenAI-compatible coding models emit a long implementation draft in
+    ``content`` before returning structured tool calls. Replaying that draft to
+    the next model step is both noisy and expensive; the tool calls and results
+    are the actionable protocol. This helper keeps a short human-visible lead
+    and makes the elision explicit instead of silently dropping content.
+    """
+
+    text = str(value or "").strip()
+    limit = max(0, int(max_chars))
+    if not text or len(text) <= limit:
+        return text
+    marker = "… [工具调用前分析已从工作上下文压缩；完整原文保留在轨迹中]"
+    if limit <= len(marker):
+        return marker
+    prefix_limit = limit - len(marker)
+    prefix = text[:prefix_limit].rstrip()
+    boundary = max(prefix.rfind("\n"), prefix.rfind("。"), prefix.rfind(". "))
+    if boundary >= max(20, prefix_limit // 3):
+        prefix = prefix[: boundary + 1].rstrip()
+    return f"{prefix}{marker}"
 
 
 def build_tool_image_message(result, tool_name, workspace, max_bytes=8_000_000):
@@ -383,16 +447,64 @@ class Agent:
 
         return "\n".join(parts)
 
-    def get_tools_desc(self):
+    def _superego_output_policy(self) -> dict:
+        """Return the declarative hard output policy for this Identity.
+
+        Prompt instructions express intent but cannot guarantee that a model
+        will not repeat a protected value while explaining a refusal.  A
+        Superego can therefore declare bounded redaction rules that run before
+        streaming, persistence, or projection to the user.
+        """
+
+        if not self.identity.SEGO:
+            return {}
+        config, _ = self.identity.SEGO
+        policy = config.get("output_policy") or {}
+        return policy if isinstance(policy, dict) else {}
+
+    def _apply_superego_output_policy(self, value: str) -> tuple[str, int]:
+        policy = self._superego_output_policy()
+        redactions = policy.get("redactions") or []
+        if not isinstance(redactions, list):
+            raise ValueError("Superego output_policy.redactions must be a list")
+        output = str(value or "")
+        replacements = 0
+        for rule in redactions[:32]:
+            if not isinstance(rule, dict):
+                raise ValueError("Each Superego output redaction must be an object")
+            pattern = str(rule.get("pattern") or "")
+            if not pattern or len(pattern) > 512:
+                raise ValueError("Superego output redaction pattern must contain 1..512 characters")
+            replacement = str(rule.get("replacement", "[REDACTED]"))[:256]
+            try:
+                output, count = re.subn(pattern, replacement, output)
+            except re.error as error:
+                raise ValueError(f"Invalid Superego output redaction pattern: {error}") from error
+            replacements += count
+        return output, replacements
+
+    def get_tools_desc(self, include_tools=None, exclude_tools=None):
         """获取所有 tools + knowledges 的 desc 列表（传给 LLM），已按权限过滤。
         传给 LLM 的 function.name 使用短名字（不含 IDENTITY<...>:TOOL: 前缀），节省 token。
+
+        ``include_tools`` / ``exclude_tools`` are node-local schema filters.
+        Applying them before the global prompt budget is important: a tightly
+        scoped Flow node must not lose an explicitly requested mutation tool
+        merely because unrelated Identity tools filled the first N slots.
         """
         descs = []
-        tool_limit = max(2, int(CONFIG.get("max_prompt_tools", 20)))
+        identity_tool_limit = self.identity.ID.get("max_prompt_tools")
+        tool_limit = max(2, int(
+            identity_tool_limit
+            if identity_tool_limit is not None
+            else CONFIG.get("max_prompt_tools", 20)
+        ))
         knowledge_limit = max(0, int(CONFIG.get("max_prompt_knowledges", 10)))
         preferred_tools = self.identity.ID.get("preferred_tools", [])
         if not isinstance(preferred_tools, list):
             preferred_tools = []
+        include_patterns = [str(item).casefold() for item in (include_tools or []) if str(item)]
+        exclude_patterns = [str(item).casefold() for item in (exclude_tools or []) if str(item)]
         preferred_order = {
             str(name).strip(): index
             for index, name in enumerate(preferred_tools)
@@ -415,13 +527,31 @@ class Agent:
             # explicit preference list keeps task-critical tools visible under
             # the global prompt-schema budget without globally increasing
             # tokens or marking every inherited tool as active.
-            if short in preferred_order:
-                return (2, preferred_order[short], short)
             if short in self._activated_capabilities:
-                return (3, short)
+                # A catalog activation is useful only if the newly loaded
+                # schema survives the prompt budget.  Put it ahead of the
+                # broad Identity preference list while retaining registry and
+                # completion controls at the very top.
+                return (2, short)
+            if short in preferred_order:
+                return (3, preferred_order[short], short)
             return (4, short)
 
-        visible_tools = sorted(self.tools.values(), key=tool_priority)[:tool_limit]
+        def selected_by_node(tool):
+            short = self._short_name(tool.name).casefold()
+            full = str(tool.name).casefold()
+            included = not include_patterns or any(
+                fnmatch.fnmatchcase(short, pattern) or fnmatch.fnmatchcase(full, pattern)
+                for pattern in include_patterns
+            )
+            excluded = any(
+                fnmatch.fnmatchcase(short, pattern) or fnmatch.fnmatchcase(full, pattern)
+                for pattern in exclude_patterns
+            )
+            return included and not excluded
+
+        eligible_tools = [tool for tool in self.tools.values() if selected_by_node(tool)]
+        visible_tools = sorted(eligible_tools, key=tool_priority)[:tool_limit]
         for t in visible_tools:
             if self._check_tool_access(t.name, for_schema=True) is None:
                 # 复制 desc，用短名字替换 function.name
@@ -1115,7 +1245,16 @@ class Agent:
 
         return self._sanitize_tool_protocol(converted)
 
-    def step(self, messages, tools_desc=None, on_token=None, max_tokens=None, temperature=None):
+    def step(
+        self,
+        messages,
+        tools_desc=None,
+        on_token=None,
+        max_tokens=None,
+        temperature=None,
+        compact_tool_preamble_chars=None,
+        on_reasoning=None,
+    ):
         """调用一次 LLM（流式），返回 (response, tool_calls)
         自动插入 system prompt，自动记录到全局 session
         on_token: 可选回调，每收到一个 token 时调用 on_token(token_text)
@@ -1157,6 +1296,14 @@ class Agent:
         response = ""
         reasoning_content = ""
         tool_calls = []
+        # A hard output policy must see the complete model response before any
+        # character reaches the user. This intentionally trades token-by-token
+        # rendering for a real confidentiality boundary on protected Identities.
+        defer_visible_content = (
+            compact_tool_preamble_chars is not None
+            or bool(self._superego_output_policy().get("redactions"))
+        )
+        defer_reasoning = bool(self._superego_output_policy().get("redactions"))
         metadata_before = dict(getattr(self.llm, "last_response_metadata", {}) or {})
         _in_think = False
         try:
@@ -1172,6 +1319,8 @@ class Agent:
             for delta in self.llm.chat_stream(full_messages, **stream_options):
                 if delta.get("reasoning_content"):
                     reasoning_content += str(delta["reasoning_content"])
+                    if on_reasoning and not defer_reasoning:
+                        on_reasoning(str(delta["reasoning_content"]))
                 content = delta.get("content", "")
                 if content:
                     # Filter out <think>...</think> blocks from response and token callback
@@ -1200,9 +1349,10 @@ class Agent:
                         # console rendering; terminal encoding is not part of
                         # the Agent protocol and must not lose a model turn.
                         response += filtered
-                        _console_write(filtered)
-                        if on_token:
-                            on_token(filtered)
+                        if not defer_visible_content:
+                            _console_write(filtered)
+                            if on_token:
+                                on_token(filtered)
                 if delta.get("tool_calls"):
                     tool_calls = delta["tool_calls"]
         except StopIteration:
@@ -1273,9 +1423,46 @@ class Agent:
             tool_calls = []
             notice = "\n\n> ⚠️ 模型达到输出长度上限，本次回复已被截断。请发送“继续”，我会从中断处续写。"
             response = f"{response}{notice}" if response else notice.strip()
-            _console_write(notice)
+            if not defer_visible_content:
+                _console_write(notice)
+                if on_token:
+                    on_token(notice)
+
+        unfiltered_response = response
+        response, response_redactions = self._apply_superego_output_policy(response)
+        reasoning_content, reasoning_redactions = self._apply_superego_output_policy(reasoning_content)
+        if on_reasoning and defer_reasoning and reasoning_content:
+            on_reasoning(reasoning_content)
+        if harness and (response_redactions or reasoning_redactions):
+            harness.session.trace(
+                "superego.output_redacted",
+                {
+                    "response_replacements": response_redactions,
+                    "reasoning_replacements": reasoning_redactions,
+                    "before_chars": len(unfiltered_response),
+                    "after_chars": len(response),
+                    "model_call_id": model_call_id,
+                },
+                agent=self.name,
+            )
+        exact_response = response
+        if tool_calls and compact_tool_preamble_chars is not None:
+            response = _compact_tool_preamble(response, compact_tool_preamble_chars)
+            if harness and response != exact_response:
+                harness.session.trace(
+                    "context.tool_preamble_compacted",
+                    {
+                        "before_chars": len(exact_response),
+                        "after_chars": len(response),
+                        "saved_chars": len(exact_response) - len(response),
+                        "model_call_id": model_call_id,
+                    },
+                    agent=self.name,
+                )
+        if defer_visible_content and response:
+            _console_write(response)
             if on_token:
-                on_token(notice)
+                on_token(response)
 
         # post_llm_hook: 在 LLM 返回后触发
         if self.hooks["post_llm_hook"]:
@@ -1285,7 +1472,7 @@ class Agent:
             harness.session.finish_model_call(
                 model_call_id,
                 agent=self.name,
-                content=response,
+                content=exact_response,
                 reasoning=reasoning_content,
                 tool_calls=tool_calls,
                 finish_reason=finish_reason,
@@ -1299,6 +1486,7 @@ class Agent:
 
             # 构建 session 中的 assistant 消息：tool_calls 转为 <tool_call> 文本标签
             session_content = response
+            full_session_content = exact_response
             if tool_calls:
                 tc_parts = []
                 for tc in tool_calls:
@@ -1315,7 +1503,9 @@ class Agent:
                         "arguments": serialized_arguments,
                     }, ensure_ascii=False)
                     tc_parts.append(f'<tool_call>{serialized_call}</tool_call>')
-                session_content = (session_content + "\n" + "\n".join(tc_parts)).strip() if session_content else "\n".join(tc_parts)
+                calls_text = "\n".join(tc_parts)
+                session_content = (session_content + "\n" + calls_text).strip() if session_content else calls_text
+                full_session_content = (full_session_content + "\n" + calls_text).strip() if full_session_content else calls_text
 
             msg = {"role": "assistant", "name": self.name, "content": session_content}
             if tool_calls and reasoning_content:
@@ -1328,7 +1518,7 @@ class Agent:
                 # tool responses carry the original ids; strict providers then
                 # reject the next turn as an unpaired tool call.
                 msg["tool_calls"] = tool_calls
-            full_msg = dict(msg)
+            full_msg = {**msg, "content": full_session_content}
             session.record(msg)
             session.record_full(full_msg)
 
@@ -1361,9 +1551,11 @@ class Agent:
         """检查 tool 是否被权限规则允许。返回 None 表示允许，返回字符串表示拒绝原因。"""
         if self.identity.SEGO:
             sego_config, _ = self.identity.SEGO
-            tool_access = sego_config.get("tool_access", {})
-            whitelist = tool_access.get("whitelist", [])
-            blacklist = tool_access.get("blacklist", [])
+            found = self._find_tool_or_knowledge(tool_name)
+            access_key = "knowledge_access" if found and found[0] == "knowledge" else "tool_access"
+            access = sego_config.get(access_key, {})
+            whitelist = access.get("whitelist", [])
+            blacklist = access.get("blacklist", [])
 
             short = self._short_name(tool_name)
 
@@ -1379,7 +1571,13 @@ class Agent:
             if blacklist:
                 for pattern in blacklist:
                     if pattern == tool_name or pattern == short or self._short_name(pattern) == short:
-                        return f"Tool '{tool_name}' is blocked by blacklist."
+                        return f"{found[0].title() if found else 'Tool'} '{tool_name}' is blocked by {access_key} blacklist."
+
+            mutation_denial = self._check_superego_mutation_access(
+                short, arguments or {}, sego_config, for_schema=for_schema
+            )
+            if mutation_denial:
+                return mutation_denial
 
         from harness import get_current_run_context
         current_run = get_current_run_context()
@@ -1398,6 +1596,151 @@ class Agent:
 
         return None
 
+    def _activated_capability_workspace_snapshot(self, found):
+        """Capture reversible workspace state around an activated arbitrary Skill.
+
+        Generated Skills are ordinary Python and may write with ``Path`` rather
+        than the built-in edit tools. The workspace boundary confines those
+        writes, but this snapshot also brings them into the IDE review journal.
+        Only dynamically activated capability tools pay this cost.
+        """
+        if not found or found[0] != "tool" or not self.workspace:
+            return None
+        source_path = getattr(found[1], "source_path", None)
+        if not source_path:
+            return None
+        try:
+            source = Path(source_path).resolve()
+            activated_sources = {
+                Path(ref.source).resolve()
+                for ref in getattr(self, "_activated_capability_refs", {}).values()
+                if getattr(ref, "source", "") and getattr(ref, "kind", "") in {"skill", "tool"}
+            }
+        except (OSError, ValueError):
+            return None
+        if source not in activated_sources:
+            return None
+
+        root = Path(self.workspace).resolve()
+        ignored = {".git", ".egoagent", ".venv", "node_modules", "__pycache__"}
+        snapshot = {}
+        total_bytes = 0
+        for path in root.rglob("*"):
+            try:
+                relative = path.relative_to(root)
+            except ValueError:
+                continue
+            if any(part in ignored for part in relative.parts) or path.is_symlink() or not path.is_file():
+                continue
+            if len(snapshot) >= 20_000:
+                return None
+            try:
+                payload = path.read_bytes()
+            except OSError:
+                continue
+            total_bytes += len(payload)
+            if total_bytes > 256 * 1024 * 1024:
+                return None
+            snapshot[relative.as_posix()] = payload
+        return snapshot
+
+    def _record_activated_capability_workspace_changes(self, before, found, tool_name):
+        if before is None or not self.workspace:
+            return
+        after = self._activated_capability_workspace_snapshot(found)
+        if after is None:
+            return
+        from harness import get_current_run_context
+        from harness_editor.change_tracker import record_binary_change, record_change
+
+        root = Path(self.workspace).resolve()
+        active_run = get_current_run_context()
+        transaction_id = getattr(active_run, "change_transaction_id", None)
+        for relative in sorted(set(before) | set(after)):
+            old_bytes = before.get(relative)
+            new_bytes = after.get(relative)
+            if old_bytes == new_bytes:
+                continue
+            path = root / Path(relative)
+            try:
+                old_text = old_bytes.decode("utf-8") if old_bytes is not None else None
+                new_text = new_bytes.decode("utf-8") if new_bytes is not None else None
+            except UnicodeDecodeError:
+                record_binary_change(path, old_bytes, new_bytes, tool_name, transaction_id=transaction_id)
+            else:
+                record_change(path, old_text, new_text, tool_name, transaction_id=transaction_id)
+
+    def _check_superego_mutation_access(
+        self,
+        short_name: str,
+        arguments: dict,
+        sego_config: dict,
+        *,
+        for_schema: bool,
+    ) -> str:
+        """Enforce the mutation switches already exposed by Identity Manager.
+
+        Older Superego files that contain none of these keys retain their
+        legacy RuntimePolicy-only behavior.  Once any switch is present the
+        contract becomes explicit and fail-closed for all mutation classes,
+        which lets existing Identities migrate without silently changing an
+        unrelated read-only role.
+        """
+        if not any(key in sego_config for key in _SUPEREGO_CAPABILITY_SWITCHES):
+            return None
+
+        def require(*keys: str) -> str:
+            denied = [key for key in keys if not bool(sego_config.get(key, False))]
+            if not denied:
+                return ""
+            return (
+                f"Superego denies '{short_name}': required capability switch(es) are off: "
+                + ", ".join(denied)
+                + ". RuntimePolicy or Flow permissions cannot widen Superego."
+            )
+
+        if short_name in _SUPEREGO_SIMPLE_MUTATION_RULES:
+            return require(*_SUPEREGO_SIMPLE_MUTATION_RULES[short_name])
+
+        if short_name in {"create_skill", "create_tool", "create_knowledge"}:
+            knowledge = short_name == "create_knowledge"
+            own_key = "allow_add_knowledge_to_self" if knowledge else "allow_add_skill_to_self"
+            other_key = "allow_add_knowledge_to_other" if knowledge else "allow_add_skill_to_other"
+            if for_schema:
+                return "" if bool(sego_config.get(own_key) or sego_config.get(other_key)) else require(own_key)
+            target = str(arguments.get("identity_name") or arguments.get("target_identity") or "").strip()
+            aliases = {
+                str(self.identity.ID.get("name", "")).strip(),
+                Path(self.identity.identity_path).name,
+                str(self.name),
+            }
+            return require(own_key if not target or target in aliases else other_key)
+
+        if short_name == "evolve_capabilities":
+            action = str(arguments.get("action", "")).lower()
+            if for_schema or action in {"", "list", "analyze", "inspect"}:
+                return ""
+            target = str(arguments.get("identity_name") or "").strip()
+            aliases = {str(self.identity.ID.get("name", "")).strip(), Path(self.identity.identity_path).name, str(self.name)}
+            if not target or target in aliases:
+                return "" if (
+                    sego_config.get("allow_add_skill_to_self")
+                    or sego_config.get("allow_add_knowledge_to_self")
+                    or sego_config.get("allow_modify_identity")
+                ) else require("allow_modify_identity")
+            return "" if (
+                sego_config.get("allow_add_skill_to_other")
+                or sego_config.get("allow_add_knowledge_to_other")
+                or sego_config.get("allow_modify_identity")
+            ) else require("allow_modify_identity")
+
+        if short_name in {"manage_harness", "run_evolution_cycle"}:
+            action = str(arguments.get("action", "")).lower()
+            if for_schema or action in {"", "inspect", "list", "analyze", "dry_run", "evaluate"}:
+                return ""
+            return require("allow_modify_agent")
+        return None
+
     def _check_workspace_path_access(self, tool_name: str, arguments: dict) -> str:
         """Reject filesystem paths that escape a Task Bench workspace.
 
@@ -1412,7 +1755,7 @@ class Agent:
         if not (root / ".egoagent" / "environment.json").is_file():
             return None
         short = self._short_name(tool_name)
-        for key in _WORKSPACE_PATH_ARGUMENTS.get(short, ()):
+        for key in _workspace_path_argument_keys(short, arguments):
             raw_value = arguments.get(key)
             if raw_value in (None, ""):
                 continue
@@ -1438,7 +1781,7 @@ class Agent:
             return
         root = Path(self.workspace).resolve()
         short = self._short_name(tool_name)
-        for key in _WORKSPACE_PATH_ARGUMENTS.get(short, ()):
+        for key in _workspace_path_argument_keys(short, arguments):
             raw_value = arguments.get(key)
             if raw_value in (None, ""):
                 if short in {"search_files", "glob_search", "create_harness", "run_command"} and key in {"path", "workspace", "cwd"}:
@@ -1460,7 +1803,7 @@ class Agent:
         if not self.workspace:
             return
         short = self._short_name(tool_name)
-        path_keys = _WORKSPACE_PATH_ARGUMENTS.get(short, ())
+        path_keys = _workspace_path_argument_keys(short, arguments)
         target = next((arguments.get(key) for key in path_keys if arguments.get(key)), None)
         if not target:
             return
@@ -1581,6 +1924,7 @@ class Agent:
         capability_started = time.perf_counter()
         if found and found[0] == "tool":
             tool = found[1]
+            _activated_workspace_before = self._activated_capability_workspace_snapshot(found)
             try:
                 # 如果 tool 函数签名中有 _context 参数，自动注入运行时上下文
                 import inspect
@@ -1653,6 +1997,9 @@ class Agent:
                                 )
                         except ImportError:
                             pass  # change_tracker not available
+                    self._record_activated_capability_workspace_changes(
+                        _activated_workspace_before, found, tool_name
+                    )
             except EndSession as error:
                 if harness:
                     harness.session.trace(

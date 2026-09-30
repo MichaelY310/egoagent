@@ -12,7 +12,7 @@ EXTENSION = ROOT / "void_extension" / "egoagent-dag-chat"
 class VoidWorkbenchIntegrationTests(unittest.TestCase):
     def test_manifest_loads_the_versioned_native_extension(self):
         manifest = json.loads((EXTENSION / "package.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "0.21.11")
+        self.assertEqual(manifest["version"], "0.21.24")
         self.assertEqual(manifest["main"], "./extension-v21.js")
         self.assertEqual(manifest["browser"], manifest["main"])
         self.assertEqual(manifest["extensionKind"][0], "workspace")
@@ -44,14 +44,31 @@ class VoidWorkbenchIntegrationTests(unittest.TestCase):
         sessions = (ROOT / "harness_editor" / "src" / "components" / "SessionExplorer.tsx").read_text(encoding="utf-8")
         heart_flow = (ROOT / "harness_editor" / "src" / "heartflow" / "HeartFlowDemo.tsx").read_text(encoding="utf-8")
         project_dialog = (ROOT / "harness_editor" / "src" / "components" / "ProjectDialog.tsx").read_text(encoding="utf-8")
+        session_create_dialog = (ROOT / "harness_editor" / "src" / "components" / "SessionCreateDialog.tsx").read_text(encoding="utf-8")
+        branch_dialog = (ROOT / "harness_editor" / "src" / "components" / "SessionBranchDialog.tsx").read_text(encoding="utf-8")
         extension = (EXTENSION / "extension-v21.js").read_text(encoding="utf-8")
 
-        # The popup must be a toolbar sibling, not a child of the scrolling
-        # nav that used to clip it and make More look unresponsive.
-        self.assertRegex(app, r"</nav> : <div[\s\S]{0,300}EMBEDDED_IN_IDE && showAdvancedNavigation")
+        # More is a real route instead of a clipped/disappearing popup. Every
+        # click now produces a persistent page with explicit destinations.
+        self.assertIn("function MoreWorkbench", app)
+        self.assertIn("{tab === 'more' &&", app)
+        self.assertIn("更多 EgoAgent 工作台", app)
+        self.assertNotIn("showAdvancedNavigation", app)
         self.assertIn('aria-label="Workbench 主题"', app)
         self.assertIn("Project = workspace 文件夹", sessions)
         self.assertIn("＋ Project", sessions)
+        self.assertIn("＋ Session", sessions)
+        self.assertIn("onDoubleClick", sessions)
+        self.assertIn("onContextMenu", sessions)
+        self.assertIn('role="menu"', sessions)
+        self.assertIn("checkedSessions", sessions)
+        self.assertIn("Move session to trash", sessions)
+        self.assertIn("createPortfolioSession", session_create_dialog)
+        self.assertIn("此 Session 的 Agent 配置", session_create_dialog)
+        self.assertIn("agent_config:", session_create_dialog)
+        self.assertIn("listHarnesses", session_create_dialog)
+        self.assertIn("mergeManySessions", branch_dialog)
+        self.assertIn("Agent Communication", branch_dialog)
         self.assertIn("选择已有文件夹", project_dialog)
         self.assertIn("创建新文件夹", project_dialog)
         self.assertIn("pick-project-folder", extension)
@@ -63,8 +80,10 @@ class VoidWorkbenchIntegrationTests(unittest.TestCase):
         package_script = (ROOT / "harness_editor" / "scripts" / "package-extension.mjs").read_text(encoding="utf-8")
         self.assertIn("canonicalWorkbench", package_script)
         self.assertIn("runtimeWorkbench", package_script)
+        self.assertIn("runtimeMedia", package_script)
         self.assertIn("'void-web', 'extensions', 'egoagent-dag-chat'", package_script)
-        self.assertIn("await cp(source, runtimeWorkbench, { recursive: true })", package_script)
+        self.assertIn("await syncDirectory(source, runtimeWorkbench)", package_script)
+        self.assertIn("await syncDirectory(canonicalMedia, runtimeMedia)", package_script)
 
     def test_explicit_dark_theme_does_not_inherit_light_ide_tokens(self):
         css = (ROOT / "harness_editor" / "src" / "index.css").read_text(encoding="utf-8")
@@ -157,6 +176,44 @@ class VoidWorkbenchIntegrationTests(unittest.TestCase):
         self.assertIn(".agent-activity.running", css)
         self.assertIn(".process-card", css)
 
+    def test_workbench_projects_real_child_runs_and_flow_mutations(self):
+        app = (ROOT / "harness_editor" / "src" / "App.tsx").read_text(encoding="utf-8")
+        task_bench = (ROOT / "harness_editor" / "src" / "components" / "TaskBench.tsx").read_text(encoding="utf-8")
+        topology = (ROOT / "harness_editor" / "src" / "runtimeTopology.ts").read_text(encoding="utf-8")
+        live = (ROOT / "harness_editor" / "src" / "components" / "LiveAgentArchitecture.tsx").read_text(encoding="utf-8")
+        node = (ROOT / "harness_editor" / "src" / "nodes" / "PipelineNode.tsx").read_text(encoding="utf-8")
+        css = (ROOT / "harness_editor" / "src" / "index.css").read_text(encoding="utf-8")
+
+        self.assertIn("runtimeEventBelongsToRoot", app)
+        self.assertIn("reduceRuntimeRunEvent", app)
+        self.assertIn("normalizeMutationPayload", app)
+        self.assertIn("diffFlowGraphs", app)
+        self.assertIn("<LiveAgentArchitecture", app)
+        self.assertIn("deriveRuntimeRuns", task_bench)
+        self.assertIn("live-story", live)
+        self.assertIn("live-mutation-story", live)
+        self.assertIn("parent_run_id", topology)
+        self.assertIn("subagent_spawned", topology)
+        self.assertIn("harness_mutation", topology)
+        self.assertIn("_mutationState", node)
+        self.assertIn("mutation-${mutationState}", node)
+        self.assertIn(".live-run-children", css)
+        self.assertIn(".node-mutation-badge", css)
+
+    def test_task_replay_normalizes_legacy_chat_messages_before_rendering(self):
+        app = (ROOT / "harness_editor" / "src" / "App.tsx").read_text(encoding="utf-8")
+        projection = (ROOT / "harness_editor" / "src" / "executionProjection.ts").read_text(encoding="utf-8")
+        main = (ROOT / "harness_editor" / "src" / "main.tsx").read_text(encoding="utf-8")
+        boundary = (ROOT / "harness_editor" / "src" / "components" / "WorkbenchErrorBoundary.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("normalizeChatMessages(taskRun.outputs)", app)
+        self.assertIn("normalizeChatMessages(state.outputs)", app)
+        self.assertIn("export function normalizeChatMessages", projection)
+        self.assertIn("Array.isArray(item.tools)", projection)
+        self.assertIn("Array.isArray(item.blocked)", projection)
+        self.assertIn("<WorkbenchErrorBoundary>", main)
+        self.assertIn("getDerivedStateFromError", boundary)
+
     def test_casual_greeting_skips_repo_context_retrieval(self):
         chat = (EXTENSION / "media" / "chat.js").read_text(encoding="utf-8")
         harness = json.loads((ROOT / "harness" / "adaptive_code_agent" / "config.json").read_text(encoding="utf-8"))
@@ -166,7 +223,8 @@ class VoidWorkbenchIntegrationTests(unittest.TestCase):
         self.assertIn("contexts.length === 1 && contexts[0]?.kind === 'clipboard'", chat)
         self.assertIn("const requestText = casualText || text", chat)
         self.assertIn("state.contextPlan = casualText ? null : await buildContextPlan", chat)
-        self.assertIn("runBody({ text: requestText + contextBlock })", chat)
+        self.assertIn("initialInput: submittedText", chat)
+        self.assertIn("runBody({ text: submittedText })", chat)
         self.assertIn("needs_workflow", harness["pipeline"]["nodes"])
         self.assertFalse(harness["pipeline"]["nodes"]["discover"]["share_session"])
         self.assertFalse(discovery["component"]["share_session"])
@@ -210,18 +268,35 @@ assert.equal(helpers.casualTurnText('[代码附件: garden.py:1-4]', [{{kind:'se
         commands = {item["command"] for item in manifest["contributes"]["commands"]}
         self.assertIn("egoagent.copyEditorContext", commands)
         self.assertIn("egoagent.copyTerminalContext", commands)
+        self.assertIn("egoagent.attachTerminalSelectionToChat", commands)
         self.assertIn("egoagent.attachFileToChat", commands)
         self.assertIn("egoagent.attachSelectionToChat", commands)
         keybindings = {item["command"]: item for item in manifest["contributes"]["keybindings"]}
         self.assertEqual(keybindings["egoagent.copyEditorContext"]["key"], "ctrl+c")
         self.assertIn("editorHasSelection", keybindings["egoagent.copyEditorContext"]["when"])
-        self.assertEqual(keybindings["egoagent.copyTerminalContext"]["key"], "ctrl+c")
+        self.assertEqual(keybindings["egoagent.copyTerminalContext"]["key"], "ctrl+shift+c")
         self.assertIn("terminalTextSelected", keybindings["egoagent.copyTerminalContext"]["when"])
+        self.assertNotIn("terminal/context", manifest["contributes"]["menus"])
+        terminal_title_actions = [
+            item for item in manifest["contributes"]["menus"]["view/title"]
+            if item["command"] == "egoagent.attachTerminalSelectionToChat"
+        ]
+        self.assertEqual(len(terminal_title_actions), 1)
+        self.assertIn("view == terminal", terminal_title_actions[0]["when"])
+        self.assertIn("terminalTextSelected", terminal_title_actions[0]["when"])
+        self.assertEqual(terminal_title_actions[0]["group"], "navigation@0")
 
         self.assertIn("function selectionLineRange(selection)", extension)
+        self.assertIn("function clipboardLineCount(value)", extension)
+        self.assertIn("async function readClipboardAfterCopy(previousText", extension)
+        self.assertIn("已将终端选区加入 EgoAgent 对话", extension)
+        self.assertIn("type: 'externalContextsAttached', contexts: [terminalContext]", extension)
         self.assertIn("resolveContextPaste(message)", extension)
         self.assertIn("openContextLocation(context)", extension)
         self.assertIn("workbench.action.terminal.copySelection", extension)
+        self.assertIn('data-attach-kind="terminal"', extension)
+        self.assertIn("attachTerminalContext", chat)
+
         self.assertIn("startLine: range.startLine", extension)
         self.assertIn("endLine: range.endLine", extension)
 
@@ -253,14 +328,55 @@ assert.equal(helpers.casualTurnText('[代码附件: garden.py:1-4]', [{{kind:'se
         self.assertIn("message.type === 'externalContextsAttached'", chat)
         self.assertIn("message.type === 'resolveContextDrop'", extension)
         self.assertIn("contextForDroppedResource", extension)
+        self.assertIn("kind: 'folder'", extension)
+        self.assertIn("vscode.workspace.fs.readDirectory(directory)", extension)
+        self.assertIn("revealInExplorer", extension)
         self.assertIn("attachResourcesToChat(uri, selectedUris, selectionOnly = false)", extension)
         self.assertIn('data-attach-kind="file"', extension)
         self.assertIn('data-attach-kind="selection"', extension)
         self.assertIn('data-attach-kind="workspace"', extension)
         self.assertIn("requestedKind === 'workspace'", chat)
+        self.assertIn("item.kind === 'folder' ? 'folder'", chat)
+        self.assertIn("context?.kind === 'folder' ? '文件夹附件'", chat)
         self.assertIn(".inline-attachment", css)
         self.assertIn(".attachment-editor", css)
         self.assertIn("white-space: pre", css)
+
+        launcher = (ROOT / "start-all.py").read_text(encoding="utf-8")
+        self.assertIn("const transfer=event.dataTransfer", launcher)
+        self.assertIn("DataTransfer.prototype.setData=function(type,value)", launcher)
+        self.assertIn("this===capturingTransfer", launcher)
+        self.assertIn("queueMicrotask(capture)", launcher)
+        self.assertIn("setTimeout(capture,0)", launcher)
+        self.assertIn("const live=snapshot(event.dataTransfer)", launcher)
+        self.assertIn("insideTarget(event.clientX,event.clientY)", launcher)
+        self.assertIn("event.preventDefault()", launcher)
+        self.assertIn("event.dataTransfer.dropEffect='copy'", launcher)
+
+    def test_flow_versions_and_editable_directed_edges_are_visible_in_the_ide(self):
+        extension = (EXTENSION / "extension-v21.js").read_text(encoding="utf-8")
+        chat = (EXTENSION / "media" / "chat.js").read_text(encoding="utf-8")
+        app = (ROOT / "harness_editor" / "src" / "App.tsx").read_text(encoding="utf-8")
+        edge = (ROOT / "harness_editor" / "src" / "edges" / "ConditionEdge.tsx").read_text(encoding="utf-8")
+        inspector = (ROOT / "harness_editor" / "src" / "components" / "RightPanel.tsx").read_text(encoding="utf-8")
+        self.assertIn('id="harnessVersionSelect"', extension)
+        self.assertIn("harness_version: state.harnessVersion", chat)
+        self.assertIn("harnessVersionCreated", chat)
+        self.assertIn("MarkerType.ArrowClosed", app)
+        self.assertIn("edge.id === selectedEdgeId", app)
+        self.assertIn("平滑贝塞尔（推荐）", inspector)
+        self.assertIn("reroutes", inspector)
+        self.assertIn("curvature", inspector)
+        self.assertIn("sourceStub", edge)
+        self.assertIn("targetStub", edge)
+        self.assertIn("sourceDirection", edge)
+        self.assertIn("targetDirection", edge)
+        self.assertIn("buildCurves", edge)
+        self.assertIn("edge-reroute-socket", edge)
+        self.assertIn("insertAt", edge)
+        self.assertIn("edge-terminal-chevron", edge)
+        self.assertIn("strokeLinecap: 'round'", edge)
+        self.assertIn("labelOffset", edge)
 
     def test_clipboard_context_is_not_duplicated_and_can_be_edited_in_place(self):
         extension = (EXTENSION / "extension-v21.js").read_text(encoding="utf-8")
@@ -287,7 +403,9 @@ assert.equal(helpers.casualTurnText('[代码附件: garden.py:1-4]', [{{kind:'se
     def test_changes_tab_contains_only_unresolved_review_items(self):
         chat = (EXTENSION / "media" / "chat.js").read_text(encoding="utf-8")
         self.assertIn("state.localProposals.filter(needsReview).map(localProposalHtml)", chat)
-        self.assertIn("state.backendChanges.filter(needsReview).map(backendChangeHtml)", chat)
+        self.assertIn("activeBackendChanges.filter(needsReview).map(backendChangeHtml)", chat)
+        self.assertIn("function backendChangesForActiveReview()", chat)
+        self.assertIn("当前 Session 没有待审查改动", chat)
         self.assertIn("const reviewHunks = pendingReviewHunks(proposal)", chat)
         self.assertIn("const hunks = pendingReviewHunks(change)", chat)
 
@@ -305,7 +423,35 @@ assert.deepEqual(helpers.pendingReviewHunks(partial).map((item) => item.id), ['p
 assert.equal(helpers.needsReview(partial), true);
 assert.equal(helpers.needsReview({{status:'accepted', hunks:[{{status:'accepted'}}]}}), false);
 assert.equal(helpers.needsReview({{status:'rejected', hunks:[{{status:'rejected'}}]}}), false);
-assert.equal(helpers.needsReview({{status:'conflict', hunks:[]}}), true);
+assert.equal(helpers.needsReview({{status:'conflict', hunks:[]}}), false);
+"""
+        result = subprocess.run(
+            ["node", "-e", script], cwd=ROOT, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_changes_tab_never_mixes_review_transactions_between_sessions(self):
+        chat = (EXTENSION / "media" / "chat.js").read_text(encoding="utf-8")
+        start = chat.index("  function activeReviewTransactionId")
+        end = chat.index("  function postBackendReviewSnapshot", start)
+        helper_source = chat[start:end]
+        script = f"""
+const assert = require('node:assert/strict');
+const build = new Function('state', {json.dumps(helper_source)} + '\\nreturn {{ activeReviewTransactionId, backendChangesForActiveReview }};');
+const state = {{
+  changeTransactionId: 'run-current', running: false, waitingForInput: false,
+  backendChanges: [
+    {{id:'stale-conflict', transaction_id:'run-old', status:'conflict', hunks:[{{status:'rejected'}}]}},
+    {{id:'current', transaction_id:'run-current', status:'pending', hunks:[{{status:'pending'}}]}},
+  ],
+}};
+const helpers = build(state);
+assert.equal(helpers.activeReviewTransactionId(), 'run-current');
+assert.deepEqual(helpers.backendChangesForActiveReview().map((item) => item.id), ['current']);
+state.changeTransactionId = '';
+assert.equal(helpers.activeReviewTransactionId(), '');
+assert.deepEqual(helpers.backendChangesForActiveReview(), []);
 """
         result = subprocess.run(
             ["node", "-e", script], cwd=ROOT, capture_output=True, text=True,
@@ -350,6 +496,9 @@ assert.equal(reconstruct('head\\nold\\ntail\\n', rejected, () => 1), 'head\\nold
         chat = (EXTENSION / "media" / "chat.js").read_text(encoding="utf-8")
         self.assertIn("activeBackendTransactionId", extension)
         self.assertIn("activeBackendChanges()", extension)
+        self.assertIn("const scopedChanges = this.activeBackendTransactionId ? this.activeBackendChanges() : []", extension)
+        self.assertIn("for (const change of this.activeBackendChanges())", extension)
+        self.assertIn("reviewManager.selectBackendTransaction(transactionId)", extension)
         self.assertIn("selectBackendTransaction(transactionId)", extension)
         self.assertIn("latestPendingReviewTransaction(changes)", extension)
         self.assertIn("execution.change_transaction_id", extension)
@@ -414,10 +563,107 @@ assert.equal(adopt('selected-run', {{running:false, waiting_for_input:false}}), 
         self.assertIn(".markdown-body", css)
         self.assertIn("state.runId = String(result.run_id", chat)
         self.assertIn("/api/execution/state' + runQuery()", chat)
-        self.assertIn("runBody({ text: requestText + contextBlock })", chat)
+        self.assertIn("const DEFAULT_CODE_HARNESS = 'code_agent_auto'", chat)
+        self.assertIn("const DEFAULT_CODE_IDENTITY = 'adaptive_deepseek_coder'", chat)
+
+    def test_chat_has_no_duplicate_run_tab_and_keeps_compact_stop_control(self):
+        extension = (EXTENSION / "extension-v21.js").read_text(encoding="utf-8")
+        chat = (EXTENSION / "media" / "chat.js").read_text(encoding="utf-8")
+        self.assertNotIn('data-tab="run"', extension)
+        self.assertNotIn('id="runTab"', extension)
+        self.assertIn('id="stopCurrentRun"', extension)
+        self.assertIn("stop.hidden = !state.running", chat)
+        self.assertIn("['chat', 'changes', 'context'].includes(name)", chat)
+
+    def test_unified_launcher_supervises_a_crashed_backend(self):
+        launcher = (ROOT / "start-all.py").read_text(encoding="utf-8")
+        self.assertIn("def _supervise_backend(process_holder, stop_event):", launcher)
+        self.assertIn("start_backend_supervisor(backend_process)", launcher)
+        self.assertIn("stop_backend_supervisor(backend_supervisor)", launcher)
+
+    def test_default_agent_configuration_is_the_flagship_code_stack(self):
+        chat = (EXTENSION / "media" / "chat.js").read_text(encoding="utf-8")
+        extension = (EXTENSION / "extension-v21.js").read_text(encoding="utf-8")
+        create_dialog = (ROOT / "harness_editor" / "src" / "components" / "SessionCreateDialog.tsx").read_text(encoding="utf-8")
+        background_runs = (ROOT / "harness_editor" / "src" / "components" / "BackgroundRuns.tsx").read_text(encoding="utf-8")
+        harness = json.loads((ROOT / "harness" / "adaptive_code_agent" / "config.json").read_text(encoding="utf-8"))
+        self.assertIn("state.mode = nextConfig.mode", chat)
+        self.assertIn("Never silently escalate Chat/Plan into Agent mode", chat)
+        self.assertIn("useState('code_agent_auto')", create_dialog)
+        self.assertIn("useState('adaptive_deepseek_coder')", create_dialog)
+        self.assertIn('harness: "code_agent_auto", identity: "adaptive_deepseek_coder"', background_runs)
+        self.assertEqual(harness["slots"]["agent"]["identity"], "deepseek_operator")
+        self.assertEqual(harness["slots"]["governor"]["identity"], "deepseek_operator")
+        self.assertIn("initialInput: submittedText", chat)
         self.assertIn("Number(error?.status) !== 404", chat)
-        self.assertIn("function detachFromExecutionSelection()", chat)
-        self.assertGreaterEqual(chat.count("detachFromExecutionSelection();"), 4)
+        self.assertIn("function markConfigurationChange()", chat)
+        self.assertGreaterEqual(chat.count("markConfigurationChange();"), 4)
+        self.assertIn("下一条消息会在当前 Session 中使用新配置", chat)
+        self.assertIn("resume_session: resumeSession", chat)
+        self.assertIn("initial_input: String(initialInput || '')", chat)
+        self.assertIn("configuration: resolvedConfiguration", chat)
+        self.assertIn("function agentConfigSnapshot()", chat)
+        self.assertIn("sessionConfigs: saved.sessionConfigs", chat)
+        self.assertIn("rememberCurrentAgentConfig();", chat)
+        self.assertIn("const savedConfig = state.sessionConfigs[sessionConfigKey(runId)]", chat)
+        self.assertIn("同一 Session 可逐轮切换", extension)
+        self.assertIn("String(event.result || '').trim().includes(errorText)", chat)
+        self.assertIn("state.bindings = {};", chat)
+        self.assertIn("if (slots.length === 1) state.bindings[slots[0]] = state.identity", chat)
+        self.assertIn("const singleSlot = Object.keys(slots).length === 1", chat)
+
+    def test_builder_and_chat_runs_are_explicitly_isolated_and_sessions_can_be_observed(self):
+        app = (ROOT / "harness_editor" / "src" / "App.tsx").read_text(encoding="utf-8")
+        client = (ROOT / "harness_editor" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        chat = (EXTENSION / "media" / "chat.js").read_text(encoding="utf-8")
+        extension = (EXTENSION / "extension-v21.js").read_text(encoding="utf-8")
+        self.assertIn("surface: 'builder'", client)
+        self.assertIn("surface: 'chat'", chat)
+        self.assertIn("listExecutionRuns", client)
+        self.assertIn("type BuilderMode = 'build' | 'locked' | 'linked'", app)
+        self.assertIn("LINKED TO SESSION", app)
+        self.assertIn("toggleBuilderLock", app)
+        self.assertIn("退出观察模式并编辑这个 Flow？", app)
+        self.assertIn("setLeaveLinkedDialogOpen(true)", app)
+        self.assertIn("正在运行的 Session 仍使用启动时的 Flow 快照", app)
+        self.assertNotIn("window.confirm(`退出与", app)
+        self.assertNotIn("Chat 改配置会创建新的 Session", app)
+        self.assertIn("<FlowRunViewer rootId={linkedRunId}", app)
+        self.assertIn("readFlowObservation", client)
+        self.assertIn("useState<BuilderMode>('build')", app)
+        self.assertIn("if (!state?.harness) throw new Error('Session 没有记录 Harness')", app)
+        self.assertIn("const target = String(runId || '').trim()", app)
+        self.assertNotIn("refreshExecutionRuns", app)
+        self.assertIn("String(run.harness || '').trim()", chat)
+        self.assertIn("session-pill draft active", chat)
+        self.assertIn("nodesDraggable={builderMode === 'build'}", app)
+        self.assertIn("运行控制在原 Chat Session 中", app)
+        self.assertIn("runtimeEventBelongsToRoot", app)
+        self.assertIn("incomingRunId !== targetRunId", app)
+        self.assertIn("reduceRuntimeRunEvent", app)
+        self.assertIn('id="linkSessionWorkbench"', extension)
+        self.assertIn("type: 'link-session'", extension)
+        self.assertIn("linkRunId: targetRunId", chat)
+        self.assertIn("await startExecution(true)", chat)
+        self.assertIn("后端已恢复这个 Session", chat)
+        self.assertIn("beginSessionRename", chat)
+        self.assertIn("data-session-more", chat)
+        self.assertIn("重命名、Fork、观察或删除", chat)
+        self.assertIn("/api/projects/session/update", chat)
+        self.assertIn("/api/execution/dismiss", chat)
+        self.assertIn("deleteSession", chat)
+        self.assertIn("showBuilderPalette", app)
+        self.assertIn("showBuilderInspector", app)
+        self.assertIn("toggleBuilderPanel", app)
+
+    def test_native_chat_uses_bounded_offline_reconnect_backoff(self):
+        chat = (EXTENSION / "media" / "chat.js").read_text(encoding="utf-8")
+        self.assertIn("scheduleWebSocketReconnect", chat)
+        self.assertIn("Math.min(30000, 1000 * (2 ** Math.min(state.wsRetryAttempt, 5)))", chat)
+        self.assertIn("document.addEventListener('visibilitychange'", chat)
+        self.assertIn("if (document.hidden) return;", chat)
+        self.assertNotIn("setTimeout(connectWebSocket, 1800)", chat)
+        self.assertNotIn("setTimeout(connectWebSocket, 2200)", chat)
 
     def test_review_decisions_use_ctrl_z_without_visible_undo_buttons(self):
         manifest = json.loads((EXTENSION / "package.json").read_text(encoding="utf-8"))
@@ -439,7 +685,8 @@ assert.equal(adopt('selected-run', {{running:false, waiting_for_input:false}}), 
 
     def test_subflow_agent_clones_are_renamed_to_the_child_slot(self):
         engine = (ROOT / "pipeline_engine.py").read_text(encoding="utf-8")
-        self.assertGreaterEqual(engine.count("cloned_agent.name = slot_name"), 2)
+        self.assertGreaterEqual(engine.count("_clone_agent_for_slot("), 3)
+        self.assertIn("cloned.name = str(slot_name)", engine)
 
     def test_embedded_workbench_and_sessions_remain_operable_when_narrow(self):
         session_explorer = (ROOT / "harness_editor" / "src" / "components" / "SessionExplorer.tsx").read_text(encoding="utf-8")

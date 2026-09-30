@@ -26,7 +26,8 @@
                 "properties": {
                   "content": { "type": "string" },
                   "content_base64": { "type": "string" },
-                  "binary": { "type": "boolean" }
+                  "binary": { "type": "boolean" },
+                  "executable": { "type": "boolean" }
                 }
               }
             ]

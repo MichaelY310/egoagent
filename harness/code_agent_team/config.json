@@ -1,0 +1,62 @@
+{
+  "name": "code_agent_team",
+  "display_name": "Code Agent · Team",
+  "description": "Specialized coding Agent for two or more substantial disjoint scopes. It combines capability search, durable memory, passive compaction and tool pruning with cost-gated isolated sub-Agents. Evolution and periodic curation remain off so the run pays only for task decomposition and isolation.",
+  "tags": ["product", "code", "parallel", "delegation", "user-facing"],
+  "catalog": {"category": "system", "visibility": "public", "display_name": "Code Agent · Team (parallel scopes)"},
+  "component": {
+    "name": "code_agent_team",
+    "display_name": "Code Agent · Team",
+    "category": "Agent",
+    "icon": "⑂",
+    "description": "Cost-gated child-context isolation for genuinely independent code scopes.",
+    "share_session": true,
+    "inputs": {},
+    "outputs": {
+      "answer": {"path": "answer", "default": ""},
+      "profile": {"path": "profile", "default": "team"},
+      "context_stats": {"path": "context_stats", "default": {}},
+      "reviews": {"path": "reviews", "default": []}
+    }
+  },
+  "slots": {
+    "agent": {"description": "Primary adaptive software engineer", "required": true, "identity": "adaptive_deepseek_coder"},
+    "governor": {"description": "Planner and delegation governor", "required": true, "identity": "adaptive_deepseek_coder"},
+    "quality_reviewer": {"description": "Independent correctness reviewer", "required": true, "identity": "deepseek_operator"},
+    "safety_reviewer": {"description": "Independent scope and safety reviewer", "required": true, "identity": "deepseek_operator"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "run_team",
+    "max_steps": 580,
+    "max_node_steps": 3400,
+    "timeout_seconds": 7200,
+    "workspace_preview": true,
+    "interactive_max_tokens": null,
+    "budget": {"max_model_calls": 300, "max_tool_calls": 960, "max_tokens": 2000000},
+    "context": {"answer": "", "profile": "team", "context_stats": {}, "reviews": []},
+    "nodes": {
+      "run_team": {
+        "id": "run_team",
+        "op": "子流程",
+        "harness": "product_adaptive_code_agent",
+        "share_session": true,
+        "agent_map": {"agent": "agent", "governor": "governor", "quality_reviewer": "quality_reviewer", "safety_reviewer": "safety_reviewer"},
+        "component_inputs": {
+          "enable_evolution": false,
+          "enable_delegation": true,
+          "enable_memory": true,
+          "enable_curation": false,
+          "enable_compaction": true,
+          "enable_tool_pruning": true
+        },
+        "component_outputs": {"answer": "answer", "context_stats": "context_stats", "reviews": "reviews"},
+        "result_mode": "data",
+        "output_var": "team_result",
+        "edges": [{"condition": "subflow_done", "to": "done"}]
+      },
+      "done": {"id": "done", "op": "结束", "value": {"answer": "$ctx.answer", "profile": "team", "context": "$ctx.context_stats", "reviews": "$ctx.reviews"}, "edges": []}
+    }
+  }
+}

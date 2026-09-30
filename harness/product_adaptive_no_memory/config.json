@@ -1,0 +1,38 @@
+{
+  "name": "product_adaptive_no_memory",
+  "description": "Ablation Flow: the Product Adaptive Code Agent with durable workspace memory disabled while all other mechanisms remain available.",
+  "tags": ["product", "code", "ablation", "no-memory"],
+  "slots": {
+    "agent": {"required": true, "identity": "adaptive_deepseek_coder"},
+    "governor": {"required": true, "identity": "adaptive_deepseek_coder"},
+    "quality_reviewer": {"required": true, "identity": "deepseek_operator"},
+    "safety_reviewer": {"required": true, "identity": "deepseek_operator"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "run_without_memory",
+    "max_steps": 560,
+    "max_node_steps": 3200,
+    "timeout_seconds": 7200,
+    "workspace_preview": true,
+    "interactive_max_tokens": null,
+    "budget": {"max_model_calls": 280, "max_tool_calls": 920, "max_tokens": 1900000},
+    "context": {"result": {}},
+    "nodes": {
+      "run_without_memory": {
+        "id": "run_without_memory",
+        "op": "子流程",
+        "harness": "product_adaptive_code_agent",
+        "share_session": true,
+        "agent_map": {"agent": "agent", "governor": "governor", "quality_reviewer": "quality_reviewer", "safety_reviewer": "safety_reviewer"},
+        "component_inputs": {"enable_memory": false},
+        "component_outputs": {"answer": "answer", "evolved": "evolved", "context_stats": "context_stats", "reviews": "reviews"},
+        "result_mode": "data",
+        "output_var": "result",
+        "edges": [{"condition": "subflow_done", "to": "done"}]
+      },
+      "done": {"id": "done", "op": "结束", "value": {"answer": "$ctx.answer", "evolved": "$ctx.evolved", "context": "$ctx.context_stats", "reviews": "$ctx.reviews"}, "edges": []}
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "name": "code_agent_fast",
+  "display_name": "Code Agent · Fast",
+  "description": "Fast user-facing coding Agent for focused questions and small, well-scoped edits. It keeps planning, bounded edit-test retries, checkpoints and transactional review, while intentionally skipping capability discovery, durable memory, context curation, evolution and delegation.",
+  "tags": ["product", "code", "fast", "user-facing"],
+  "catalog": {"category": "system", "visibility": "public", "display_name": "Code Agent · Fast"},
+  "component": {
+    "name": "code_agent_fast",
+    "display_name": "Code Agent · Fast",
+    "category": "Agent",
+    "icon": "⚡",
+    "description": "Focused implementation profile with low orchestration overhead.",
+    "share_session": true,
+    "inputs": {},
+    "outputs": {
+      "answer": {"path": "answer", "default": ""},
+      "profile": {"path": "profile", "default": "fast"},
+      "change_review": {"path": "change_review", "default": {}}
+    }
+  },
+  "slots": {
+    "agent": {"description": "Primary software engineer", "required": true, "identity": "adaptive_deepseek_coder"},
+    "governor": {"description": "Planner and evidence judge", "required": true, "identity": "adaptive_deepseek_coder"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "run_fast",
+    "max_steps": 460,
+    "max_node_steps": 2600,
+    "timeout_seconds": 7200,
+    "workspace_preview": true,
+    "interactive_max_tokens": null,
+    "budget": {"max_model_calls": 230, "max_tool_calls": 780, "max_tokens": 1650000},
+    "context": {"answer": "", "profile": "fast", "change_review": {}},
+    "nodes": {
+      "run_fast": {
+        "id": "run_fast",
+        "op": "子流程",
+        "harness": "product_core_code_agent",
+        "share_session": true,
+        "agent_map": {"agent": "agent", "governor": "governor"},
+        "component_outputs": {"answer": "answer", "change_review": "change_review"},
+        "result_mode": "data",
+        "output_var": "core_result",
+        "edges": [{"condition": "subflow_done", "to": "done"}]
+      },
+      "done": {"id": "done", "op": "结束", "value": {"answer": "$ctx.answer", "profile": "fast", "change_review": "$ctx.change_review"}, "edges": []}
+    }
+  }
+}

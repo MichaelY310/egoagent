@@ -80,6 +80,15 @@ class SessionBranchServiceTests(unittest.TestCase):
         self.assertTrue(reader.validate()["valid"])
         self.assertIn("session.forked", [event["type"] for event in reader.read_all()])
 
+    def test_create_persists_an_empty_replayable_session(self):
+        result = self.service.create(destination_name="new-work")
+        self.assertEqual(result["operation"], "create")
+        created = Session(workspace=self.root.parent)
+        created.load(self.root / "new-work")
+        self.assertEqual(created.messages, [])
+        self.assertTrue((self.root / "new-work" / "session.json").is_file())
+        self.assertIn("session.created", [event["type"] for event in TrajectoryReader(self.root / "new-work" / "trajectory.jsonl").read_all()])
+
     def test_direct_merge_appends_only_right_branch_delta(self):
         create_session(self.root, "base", [("user", "shared request")])
         self.service.fork("base", destination_name="left")
@@ -142,6 +151,32 @@ class SessionBranchServiceTests(unittest.TestCase):
         merged.load(self.root / "dialogue")
         self.assertEqual(merged.messages[-1]["name"], "merge_synthesis")
         self.assertTrue(TrajectoryReader(self.root / "dialogue" / "trajectory.jsonl").validate()["valid"])
+
+    def test_rule_based_merge_many_deduplicates_shared_history(self):
+        create_session(self.root, "base", [("user", "shared")])
+        for name, content in (("one", "first"), ("two", "second"), ("three", "third")):
+            self.service.fork("base", destination_name=name)
+            append_to_saved(self.root, name, "assistant", content)
+
+        result = self.service.merge_many(["one", "two", "three"], mode="direct", destination_name="all")
+
+        self.assertEqual(result["parent_count"], 3)
+        merged = Session(workspace=self.root.parent)
+        merged.load(self.root / "all")
+        self.assertEqual([message["content"] for message in merged.messages], ["shared", "first", "second", "third"])
+        self.assertEqual([parent["name"] for parent in result["lineage"]["parents"]], ["one", "two", "three"])
+
+    def test_dialogue_merge_many_records_each_branch_agent(self):
+        model = FakeModel()
+        service = SessionBranchService(self.root, workspace=self.root.parent, model=model)
+        for name in ("one", "two", "three"):
+            create_session(self.root, name, [("user", name)])
+
+        result = service.merge_many(["one", "two", "three"], mode="dialogue", dialogue_rounds=1, destination_name="talk")
+
+        self.assertEqual(result["model_calls"], 4)
+        agents = [call["metadata"]["agent"] for call in TrajectoryReader(self.root / "talk" / "trajectory.jsonl").model_calls()]
+        self.assertEqual(agents, ["merge_branch_s1", "merge_branch_s2", "merge_branch_s3", "merge_synthesizer"])
 
     def test_invalid_names_and_duplicate_destinations_are_rejected(self):
         create_session(self.root, "source", [("user", "hello")])

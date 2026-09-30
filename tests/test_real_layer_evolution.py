@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,9 +76,19 @@ class RealLayerEvolutionTests(unittest.TestCase):
         self.assertEqual(candidate["kind"], "none")
 
     def test_fixture_relocates_cli_invocation_log(self):
-        task = MODULE._external_task(MODULE.FAMILIES["logq"].validation_task)
+        # Exercise the adapter without requiring an untracked benchmark clone.
+        # This is an import/relocation test, not a benchmark effectiveness claim.
+        def setup(workspace):
+            tool = workspace / "tools" / "logq"
+            tool.parent.mkdir()
+            log = repr(str((workspace / ".hb_tool_calls").resolve()))
+            tool.write_text(f"with open({log}, 'a') as log:\n    log.write('called')\n", encoding="utf-8")
+            tool.chmod(0o755)
+
+        task = SimpleNamespace(setup=setup)
         files = MODULE._embedded_files(task)
-        source = files["tools/logq"]
+        value = files["tools/logq"]
+        source = value["content"] if isinstance(value, dict) else value
         self.assertIn("with open('.hb_tool_calls'", source)
         self.assertNotIn("ego_realbench_fixture_", source)
 

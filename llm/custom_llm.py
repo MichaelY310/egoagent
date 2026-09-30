@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import hashlib
 import requests
@@ -8,7 +9,11 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlsplit
 
-from .app_dns_proxy import app_dns_proxy_for_url, ensure_app_dns_proxy, is_name_resolution_error
+from .app_dns_proxy import (
+    app_dns_proxy_for_url,
+    ensure_app_dns_proxy,
+    is_recoverable_direct_connection_error,
+)
 
 # class LLM:
 #     def __init__(self, config: Dict):
@@ -269,7 +274,7 @@ class CustomLLM:
                 )
             except (requests.Timeout, requests.ConnectionError) as error:
                 last_error = error
-                if is_name_resolution_error(error) and not self._dns_fallback_activated:
+                if is_recoverable_direct_connection_error(error) and not self._dns_fallback_activated:
                     hostname = urlsplit(url).hostname
                     if hostname:
                         self.https_proxy = ensure_app_dns_proxy(hostname)
@@ -376,6 +381,75 @@ class CustomLLM:
         with open(Path(session.save_dir) / "llm_io.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
+    @staticmethod
+    def _recover_text_tool_call(message: Dict[str, Any], tools: Optional[List[Dict[str, Any]]]):
+        """Recover one explicit, well-formed tool intent from local-model text.
+
+        Some OpenAI-compatible local servers expose tools to the chat template,
+        but older open-weight models still emit the intended call as one JSON
+        object in a fenced block.  Treating arbitrary prose as executable would
+        be unsafe, so this opt-in compatibility path accepts exactly one JSON
+        object, requires the canonical ``name``/``arguments`` shape, and checks
+        the name against the tools supplied in the same request.
+        """
+        if not tools or message.get("tool_calls"):
+            return None
+        content = str(message.get("content") or "")
+        candidates = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL | re.IGNORECASE)
+        if not candidates:
+            stripped = content.strip()
+            candidates = [stripped] if stripped.startswith("{") and stripped.endswith("}") else []
+        if len(candidates) != 1:
+            return None
+        try:
+            value = json.loads(candidates[0])
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(value, dict) or set(value) - {"name", "arguments"}:
+            return None
+        name = value.get("name")
+        arguments = value.get("arguments")
+        if not isinstance(name, str) or not isinstance(arguments, (dict, str)):
+            return None
+        allowed = {
+            str((tool.get("function") or {}).get("name", ""))
+            for tool in tools
+            if isinstance(tool, dict) and tool.get("type") == "function"
+        }
+        if name not in allowed:
+            return None
+        if isinstance(arguments, str):
+            try:
+                parsed_arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                return None
+            if not isinstance(parsed_arguments, dict):
+                return None
+            arguments = parsed_arguments
+        canonical = json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
+        call_id = "call_text_" + hashlib.sha256(
+            f"{name}\0{canonical}".encode("utf-8")
+        ).hexdigest()[:16]
+        return {
+            "id": call_id,
+            "type": "function",
+            "function": {"name": name, "arguments": canonical},
+        }
+
+    def _normalize_text_tool_call(self, result: Dict[str, Any], tools: Optional[List[Dict[str, Any]]]):
+        if not self._env_bool("EGOAGENT_LLM_TEXT_TOOL_FALLBACK", False):
+            return False
+        choices = result.get("choices") or []
+        if not choices or not isinstance(choices[0].get("message"), dict):
+            return False
+        recovered = self._recover_text_tool_call(choices[0]["message"], tools)
+        if not recovered:
+            return False
+        choices[0]["message"]["tool_calls"] = [recovered]
+        choices[0]["finish_reason"] = "tool_calls"
+        self.last_response_metadata["text_tool_fallback"] = True
+        return True
+
     def chat(
         self,
         messages: List[Dict[str, Any]],
@@ -405,6 +479,7 @@ class CustomLLM:
         if not result.get("choices"):
             raise ValueError("LLM response does not contain choices")
         self._capture_metadata(resp, result=result, attempts=attempts)
+        self._normalize_text_tool_call(result, tools)
         self.last_response_metadata["latency_ms"] = round((time.perf_counter() - started) * 1000, 2)
         self._log_to_session("output",
                              response=result["choices"][0]["message"].get("content", ""),
@@ -448,6 +523,9 @@ class CustomLLM:
         reconnects = 0
         emitted_any = False
         last_response = None
+        defer_text_tool_fallback = bool(tools) and self._env_bool(
+            "EGOAGENT_LLM_TEXT_TOOL_FALLBACK", False
+        )
 
         while True:
             headers = self._headers()
@@ -498,6 +576,13 @@ class CustomLLM:
                             reasoning_parts.append(str(delta["reasoning_content"]))
                         if delta.get("content"):
                             response_parts.append(delta["content"])
+                            if defer_text_tool_fallback:
+                                # We cannot retract streamed prose after it has
+                                # been rendered. Buffer the opt-in compatibility
+                                # path until we know whether the complete text is
+                                # one strict tool-call object.
+                                delta = dict(delta)
+                                delta.pop("content", None)
                         if delta.get("tool_calls"):
                             for tool_call in delta["tool_calls"]:
                                 self._merge_tool_call_delta(tool_call_buffer, tool_call)
@@ -538,6 +623,18 @@ class CustomLLM:
                     time.sleep(delay)
                 continue
             break
+        recovered_text_call = None
+        if defer_text_tool_fallback and not tool_call_buffer:
+            recovered_text_call = self._recover_text_tool_call(
+                {"content": "".join(response_parts)}, tools
+            )
+            if recovered_text_call:
+                stream_result["finish_reason"] = "tool_calls"
+                emitted_any = True
+                yield {"tool_calls": [recovered_text_call]}
+            elif response_parts:
+                emitted_any = True
+                yield {"content": "".join(response_parts)}
         self._capture_metadata(
             last_response,
             result=stream_result,
@@ -546,9 +643,15 @@ class CustomLLM:
             reconnects=reconnects,
             request_ids=request_ids,
         )
+        if recovered_text_call:
+            self.last_response_metadata["text_tool_fallback"] = True
         self.last_response_metadata["latency_ms"] = round((time.perf_counter() - started) * 1000, 2)
         self._log_to_session(
             "output",
             response="".join(response_parts),
-            tool_calls=self._tool_calls_from_buffer(tool_call_buffer) if tool_call_buffer else None,
+            tool_calls=(
+                self._tool_calls_from_buffer(tool_call_buffer)
+                if tool_call_buffer
+                else [recovered_text_call] if recovered_text_call else None
+            ),
         )

@@ -102,6 +102,46 @@ def _mutation_event_for_tool(name: str, arguments: Any, result: Any) -> Optional
     return None
 
 
+def _mutation_event_payload(name: str, arguments: Any, result: Any, *, agent: str = "") -> dict[str, Any]:
+    """Expose one stable mutation event contract to every runtime surface.
+
+    The full tool request/result remain available for exact replay.  The
+    normalized fields are the small interface consumed by Studio, Task Bench
+    and trajectory exporters, so those clients do not need tool-specific JSON
+    parsing.
+    """
+
+    args = copy.deepcopy(arguments if isinstance(arguments, dict) else {})
+    parsed = result
+    if isinstance(result, str) and result.lstrip().startswith("{"):
+        try:
+            parsed = json.loads(result)
+        except (TypeError, ValueError):
+            parsed = {}
+    value = parsed if isinstance(parsed, dict) else {}
+    blueprint = value.get("blueprint") if isinstance(value.get("blueprint"), dict) else {}
+    short_name = str(name or "").split(":")[-1]
+    action = args.get("action") or value.get("action")
+    if not action:
+        action = "create" if short_name == "create_agent_system" else "update"
+    raw_identity = value.get("identity")
+    identity = raw_identity.get("name") if isinstance(raw_identity, dict) else raw_identity
+    return {
+        "tool": name,
+        "agent": agent,
+        "action": str(action),
+        "harness": str(args.get("harness_name") or value.get("harness") or value.get("name") or blueprint.get("name") or ""),
+        "identity": str(identity or args.get("identity_name") or ""),
+        "revision": str(value.get("revision") or value.get("revision_after") or ""),
+        "transaction_id": str(value.get("transaction_id") or ""),
+        "operations": copy.deepcopy(args.get("operations") or value.get("operations") or []),
+        "diff": copy.deepcopy(value.get("diff")),
+        "nodes": copy.deepcopy(value.get("current_nodes") or []),
+        "arguments": _debug_value(arguments, limit=20000),
+        "result": _debug_value(result, limit=50000),
+    }
+
+
 def _tool_result_succeeded(result: Any) -> bool:
     """Conservatively decide whether a tool observation represents success."""
     value = result
@@ -792,6 +832,7 @@ class RunContext:
     on_output: Callable[[str, dict], None]
     get_input: Callable[[], Optional[str]]
     is_running: Callable[[], bool]
+    get_approval: Optional[Callable] = field(default=None, repr=False, kw_only=True)
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     data: dict[str, Any] = field(default_factory=dict)
     node_outputs: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -823,6 +864,8 @@ class RunContext:
     child_run_tree: dict[str, dict[str, Any]] = field(default_factory=dict)
     _children: dict[str, "RunContext"] = field(default_factory=dict, repr=False)
     _children_lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    flow_observer: Any = field(default=None, init=False, repr=False)
+    observation_error: Optional[str] = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.workspace = Path(self.harness.workspace or self.harness.dir).resolve()
@@ -879,6 +922,21 @@ class RunContext:
     def event_sink(self) -> Callable[[str, dict], None]:
         return self.on_output
 
+    def observe(self, event: str, data: dict) -> None:
+        if self.observation_error is not None:
+            return
+        try:
+            if self.flow_observer is None:
+                from flow_observation import FlowObserver
+                self.flow_observer = FlowObserver(self)
+            self.flow_observer.emit(event, data)
+        except Exception as error:
+            # Telemetry failure must never re-execute a tool, fail an Agent,
+            # or introduce a second control loop. Expose a bounded warning.
+            self.observation_error = type(error).__name__
+            import logging
+            logging.getLogger(__name__).warning("Flow recording unavailable for run %s (%s)", self.run_id, self.observation_error)
+
     @property
     def active_child_run_ids(self) -> tuple[str, ...]:
         with self._children_lock:
@@ -889,14 +947,22 @@ class RunContext:
         # bounded string. Preserve that event instead of trying dict(string),
         # which raises when a tool observation exceeds the preview limit.
         data = dict(payload) if isinstance(payload, dict) else ({"value": payload} if payload is not None else {})
+        # A SubFlow publishes its event through each ancestor so the root UI
+        # sees one live stream.  The child already persisted the canonical
+        # event, however; recording again at every wrapper used to duplicate
+        # a single context mutation two or three times in replay/training
+        # trajectories.  Keep this transport marker out of public payloads.
+        trajectory_recorded = bool(data.pop("_egoagent_trajectory_recorded", False))
         data.setdefault("run_id", self.run_id)
         if self.parent_run_id:
             data.setdefault("parent_run_id", self.parent_run_id)
         if self.current_node is not None:
             data.setdefault("node_id", self.current_node)
         safe_data = self.secret_view.redact_value(_redact_event_value(data))
+        if not trajectory_recorded:
+            self.observe(event, safe_data)
         recorder = getattr(self.session, "trajectory", None)
-        if recorder is not None:
+        if recorder is not None and not trajectory_recorded:
             agent_name = str(data.get("agent") or "") or None
             identity_name = None
             if agent_name:
@@ -958,7 +1024,7 @@ class RunContext:
                     model_call_id=str(data.get("model_call_id") or "") or None,
                     tool_call_id=str(data.get("tool_call_id") or "") or None,
                 )
-        if self.event_log_path is not None:
+        if self.event_log_path is not None and not trajectory_recorded:
             try:
                 _append_event_log(
                     self.event_log_path,
@@ -973,9 +1039,19 @@ class RunContext:
                 )
             except OSError as error:
                 self.data["_event_log_error"] = str(error)
-        self.on_output(event, safe_data)
+        forwarded = safe_data
+        if self.parent is not None or trajectory_recorded:
+            forwarded = {**safe_data, "_egoagent_trajectory_recorded": True}
+        # The root is the last forwarding hop; internal transport metadata
+        # must never leak into Task Bench, Chat, exports, or user callbacks.
+        if self.parent is None:
+            forwarded.pop("_egoagent_trajectory_recorded", None)
+        self.on_output(event, forwarded)
 
     def cancelled(self) -> bool:
+        from runtime_waits import deadline_cancelled
+        if deadline_cancelled():
+            return True
         if self.cancel_event.is_set():
             return True
         if self.parent is not None and self.parent.cancelled():
@@ -1059,6 +1135,7 @@ class PipelineRunner:
         *,
         on_output: Optional[Callable[[str, dict], None]] = None,
         get_input: Optional[Callable[[], Optional[str]]] = None,
+        get_approval: Optional[Callable] = None,
         is_running: Optional[Callable[[], bool]] = None,
         initial_data: Optional[dict[str, Any]] = None,
         start: Optional[str] = None,
@@ -1110,6 +1187,7 @@ class PipelineRunner:
             graph=graph,
             on_output=on_output or (lambda _event, _data: None),
             get_input=get_input or (lambda: None),
+            get_approval=get_approval,
             is_running=is_running or (lambda: True),
             data=data,
             stop_at=set(stop_at or []),
@@ -1167,53 +1245,22 @@ class PipelineRunner:
     }
 
     def _tree_revision(self, root: Path, *, harness_files_only: bool = False) -> dict[str, Any]:
+        from workspace_revisions import tree_revision
+
         root = Path(root).resolve()
-        if not root.exists():
-            return {"root": str(root), "digest": "missing", "files": {}}
-        if root.is_file():
-            candidates = [root]
-        elif harness_files_only:
+        candidates = None
+        if harness_files_only and root.is_dir():
             candidates = [root / "config.json", root / "protocol.py"]
+            candidates = [path for path in candidates if path.is_file()]
             hooks = root / "hooks"
             if hooks.is_dir():
                 candidates.extend(path for path in hooks.rglob("*") if path.is_file())
-        else:
-            candidates = [path for path in root.rglob("*") if path.is_file()]
-        files: dict[str, str] = {}
-        for path in sorted(candidates, key=lambda item: str(item).lower()):
-            try:
-                relative = path.resolve().relative_to(root).as_posix() if path != root else path.name
-            except (OSError, ValueError):
-                continue
-            if any(part in self._REVISION_IGNORES for part in Path(relative).parts):
-                continue
-            try:
-                if path.is_symlink():
-                    files[relative] = f"symlink:{path.resolve()}"
-                    continue
-                stat = path.stat()
-                marker = (int(stat.st_mtime_ns), int(stat.st_size))
-                cache_key = str(path.resolve())
-                cached = self._revision_cache.get(cache_key)
-                if cached is not None and cached[:2] == marker:
-                    digest = cached[2]
-                else:
-                    hasher = hashlib.sha256()
-                    with path.open("rb") as stream:
-                        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                            hasher.update(chunk)
-                    digest = hasher.hexdigest()
-                    self._revision_cache[cache_key] = (marker[0], marker[1], digest)
-                files[relative] = digest
-            except OSError as error:
-                files[relative] = f"unreadable:{type(error).__name__}"
-        aggregate = hashlib.sha256()
-        for name, digest in sorted(files.items()):
-            aggregate.update(name.encode("utf-8", errors="replace"))
-            aggregate.update(b"\0")
-            aggregate.update(digest.encode("ascii", errors="replace"))
-            aggregate.update(b"\0")
-        return {"root": str(root), "digest": aggregate.hexdigest(), "files": files}
+        try:
+            return tree_revision(root, ignores=self._REVISION_IGNORES,
+                                 cache=self._revision_cache, candidates=candidates,
+                                 cancelled=self.ctx.cancelled)
+        except InterruptedError as error:
+            raise PipelineCancelled(str(error)) from error
 
     def _revision_snapshot(self) -> dict[str, Any]:
         harness_config = json.dumps(self.ctx.harness.config, ensure_ascii=False, sort_keys=True, default=str)
@@ -1252,7 +1299,7 @@ class PipelineRunner:
         for resource in ("workspace", "harness"):
             before = saved.get(resource, {})
             after = current.get(resource, {})
-            if before.get("digest") != after.get("digest"):
+            if before.get("complete") is False or after.get("complete") is False or before.get("digest") != after.get("digest"):
                 conflicts.append({
                     "resource": resource,
                     "saved": before.get("digest"),
@@ -1264,7 +1311,7 @@ class PipelineRunner:
         for slot in sorted(set(before_identities) | set(after_identities)):
             before = before_identities.get(slot, {})
             after = after_identities.get(slot, {})
-            if before.get("digest") != after.get("digest"):
+            if before.get("complete") is False or after.get("complete") is False or before.get("digest") != after.get("digest"):
                 conflicts.append({
                     "resource": f"identity:{slot}",
                     "saved": before.get("digest"),
@@ -1624,6 +1671,7 @@ class PipelineRunner:
                     self.ctx.emit("runtime_resources_closed", {"resources": cleaned})
             if self.emit_done:
                 self.ctx.emit("done", {"status": status, "result": _preview_value(self.ctx.result), "stats": self.ctx.stats.as_dict()})
+            self.ctx.observe("observation_finished", {"status": status, "stats": self.ctx.stats.as_dict()})
             if self.ctx.parent is None:
                 recorder = getattr(self.ctx.session, "trajectory", None)
                 if recorder is not None:
@@ -2007,7 +2055,19 @@ class PipelineRunner:
                 raise PipelineError(
                     f"Agent node {node_id!r} requires get_tools_desc() to expose tools"
                 )
-            described_tools = describe_tools()
+            try:
+                # Real Agents can filter before applying their global prompt
+                # schema budget.  This keeps a Flow node's explicit allowlist
+                # authoritative even for large composite Identities.
+                described_tools = describe_tools(
+                    include_tools=visible_tools or None,
+                    exclude_tools=hidden_tools or None,
+                )
+            except TypeError:
+                # Test doubles and third-party Agent adapters may still expose
+                # the legacy no-argument method; retain compatibility and
+                # enforce visibility below as before.
+                described_tools = describe_tools()
             tools_desc = []
             hidden_names = []
             for description in described_tools:
@@ -2057,6 +2117,11 @@ class PipelineRunner:
                 raise PipelineCancelled("pipeline execution was cancelled")
             self.ctx.emit("token", {"agent": agent_name or getattr(agent, "name", "Agent"), "text": token})
 
+        def on_reasoning(text: str) -> None:
+            if self.ctx.cancelled():
+                raise PipelineCancelled("pipeline execution was cancelled")
+            self.ctx.emit("reasoning", {"agent": agent_name or getattr(agent, "name", "Agent"), "text": text})
+
         input_estimate = _estimate_messages_tokens(messages)
         step_kwargs = {
             "tools_desc": tools_desc if expose_tools else "",
@@ -2074,9 +2139,17 @@ class PipelineRunner:
         if node.get("max_tokens") is not None:
             if accepts_step_kwargs or "max_tokens" in step_parameters:
                 step_kwargs["max_tokens"] = max(1, int(resolve_reference(node.get("max_tokens"), self.ctx)))
+        if accepts_step_kwargs or "on_reasoning" in step_parameters:
+            step_kwargs["on_reasoning"] = on_reasoning
         if node.get("temperature") is not None:
             if accepts_step_kwargs or "temperature" in step_parameters:
                 step_kwargs["temperature"] = float(resolve_reference(node.get("temperature"), self.ctx))
+        if node.get("compact_tool_preamble_chars") is not None:
+            if accepts_step_kwargs or "compact_tool_preamble_chars" in step_parameters:
+                step_kwargs["compact_tool_preamble_chars"] = max(
+                    0,
+                    int(resolve_reference(node.get("compact_tool_preamble_chars"), self.ctx)),
+                )
         if expose_tools:
             text, tool_calls = agent.step(messages, **step_kwargs)
         else:
@@ -2476,7 +2549,7 @@ class PipelineRunner:
                     continue
                 if permission == "ask":
                     question = f"Allow tool '{name}' with arguments {call.get('function', {}).get('arguments', '{}')}? [y/N]"
-                    approval_id = str(call.get("id") or f"{self.ctx.current_node}:{name}")
+                    approval_id = f"{self.ctx.run_id}:{uuid.uuid4().hex}"
                     self.ctx.emit(
                         "approval_required",
                         {
@@ -2485,12 +2558,10 @@ class PipelineRunner:
                             "tool": name,
                             "arguments": call.get("function", {}).get("arguments", "{}"),
                             "default": "rejected",
+                            "auto_approvable": True,
                         },
                     )
-                    if getattr(self.ctx.harness, "_non_interactive", False):
-                        answer = str(node.get("ask_default", "rejected"))
-                    else:
-                        answer = self.ctx.get_input() or str(node.get("ask_default", "rejected"))
+                    answer = self._approval_answer(str(node.get("ask_default", "rejected")), approval_id=approval_id)
                     if isinstance(answer, str) and answer.lstrip().startswith("{"):
                         try:
                             answer = json.loads(answer)
@@ -2861,7 +2932,7 @@ class PipelineRunner:
                 approved = decision.allowed
                 if decision.decision.value == "ask":
                     prompt = f"Allow tool '{name}' for this call? [y/N]"
-                    approval_id = str(call.get("id") or f"{self.ctx.current_node}:{name}")
+                    approval_id = f"{self.ctx.run_id}:{uuid.uuid4().hex}"
                     self.ctx.pending_approvals[approval_id] = {
                         "id": approval_id,
                         "kind": "tool",
@@ -2888,13 +2959,10 @@ class PipelineRunner:
                             "reason": decision.reason,
                             "risk": decision.risk.public(),
                             "default": "rejected",
+                            "auto_approvable": True,
                         },
                     )
-                    answer = (
-                        str(node.get("ask_default", "rejected"))
-                        if getattr(self.ctx.harness, "_non_interactive", False)
-                        else self.ctx.get_input() or node.get("ask_default", "rejected")
-                    )
+                    answer = self._approval_answer(str(node.get("ask_default", "rejected")), approval_id=approval_id)
                     if isinstance(answer, str) and answer.lstrip().startswith("{"):
                         try:
                             answer = json.loads(answer)
@@ -2909,6 +2977,7 @@ class PipelineRunner:
                         {
                             "approval_id": approval_id,
                             "decision": "approved" if approved else "rejected",
+                            "source": answer.get("source", "manual") if isinstance(answer, dict) else "manual",
                             "tool": name,
                         },
                     )
@@ -2954,6 +3023,8 @@ class PipelineRunner:
             return f"{serialized[:max_observation_chars]}\n...[tool observation truncated; {omitted} characters omitted]"
 
         def execute_one(index_and_call):
+            if self.ctx.cancelled():
+                raise PipelineCancelled("pipeline execution was cancelled before tool execution")
             index, call = index_and_call
             if self.ctx.cancelled():
                 raise PipelineCancelled("pipeline execution was cancelled")
@@ -2974,6 +3045,13 @@ class PipelineRunner:
                     request_arguments = {}
                 if not isinstance(request_arguments, dict):
                     request_arguments = {}
+                visible_arguments = {key: "[REDACTED]" if key in node.get("sensitive_fields", []) else value
+                                     for key, value in request_arguments.items()}
+                self.ctx.emit("tool_start", {
+                    "tool_call_id": call.get("id"), "name": function.get("name", ""),
+                    "agent": getattr(agent, "name", ""),
+                    "arguments": _debug_value(visible_arguments, limit=20000),
+                })
                 executor = getattr(agent, "tool_executor", None)
                 if executor is None:
                     from tool_pipeline import AgentToolExecutor
@@ -2988,8 +3066,19 @@ class PipelineRunner:
                 ))
                 result = execution.model_observation
                 result = bound_observation(result)
+                self.ctx.emit("tool_end", {"tool_call_id": call.get("id"),
+                    "name": function.get("name", ""), "agent": getattr(agent, "name", ""),
+                    "status": "completed" if _tool_result_succeeded(result) else "error"})
             except EndSession as error:
+                self.ctx.emit("tool_end", {"tool_call_id": call.get("id"),
+                    "name": call.get("function", {}).get("name", ""),
+                    "agent": getattr(agent, "name", ""), "status": "completed"})
                 return index, call, None, error
+            except Exception:
+                self.ctx.emit("tool_end", {"tool_call_id": call.get("id"),
+                    "name": call.get("function", {}).get("name", ""),
+                    "agent": getattr(agent, "name", ""), "status": "error"})
+                raise
             return index, call, result, None
 
         if not calls:
@@ -3110,6 +3199,7 @@ class PipelineRunner:
                 "tool",
                 {
                     "name": item["name"],
+                    "tool_call_id": call.get("id"),
                     "arguments": _debug_value(arguments, limit=20000),
                     "result": _debug_value(result, limit=50000),
                     "agent": getattr(agent, "name", ""),
@@ -3120,11 +3210,10 @@ class PipelineRunner:
                 self.ctx.emit(
                     mutation_event,
                     {
-                        "tool": name,
+                        **_mutation_event_payload(
+                            name, arguments, result, agent=getattr(agent, "name", "")
+                        ),
                         "tool_call_id": call.get("id"),
-                        "arguments": _debug_value(arguments, limit=20000),
-                        "result": _debug_value(result, limit=50000),
-                        "agent": getattr(agent, "name", ""),
                     },
                 )
             self._check_run_limits()
@@ -3310,6 +3399,25 @@ class PipelineRunner:
                     return f"alternating action-observation pattern repeated for {alternating_threshold} actions"
         return None
 
+    def _approval_answer(self, default="rejected", *, approval_id=""):
+        # A SubFlow must not start its own conversation Input loop, but that
+        # does not make its safety approval unattended. Forward ONLY approval
+        # input to the owning interactive session. Headless roots still deny.
+        owner = self.ctx
+        while getattr(owner, "parent", None) is not None:
+            owner = owner.parent
+        if self.ctx.cancelled():
+            raise PipelineCancelled("pipeline execution was cancelled")
+        if getattr(owner.harness, "_non_interactive", False):
+            return default
+        from runtime_waits import human_wait
+        with human_wait():
+            waiter = getattr(owner, "get_approval", None)
+            answer = waiter(approval_id, self.ctx.cancelled) if waiter else owner.get_input()
+        if self.ctx.cancelled():
+            raise PipelineCancelled("pipeline execution was cancelled")
+        return answer or default
+
     def _require_policy_approval(self, decision, *, tool: str, arguments: dict, prompt: str) -> None:
         """Apply one typed policy decision at a non-Agent DAG boundary."""
         if decision.decision.value == "allow":
@@ -3342,11 +3450,9 @@ class PipelineRunner:
             "reason": decision.reason,
             "risk": decision.risk.public(),
             "default": "rejected",
+            "auto_approvable": True,
         })
-        if getattr(self.ctx.harness, "_non_interactive", False):
-            answer = "rejected"
-        else:
-            answer = self.ctx.get_input() or "rejected"
+        answer = self._approval_answer(approval_id=approval_id)
         if isinstance(answer, str) and answer.lstrip().startswith("{"):
             try:
                 answer = json.loads(answer)
@@ -3360,6 +3466,7 @@ class PipelineRunner:
         self.ctx.emit("approval", {
             "approval_id": approval_id,
             "decision": "approved" if approved else "rejected",
+            "source": answer.get("source", "manual") if isinstance(answer, dict) else "manual",
             "tool": tool,
         })
         if not approved:
@@ -3448,6 +3555,8 @@ class PipelineRunner:
             agent=agent,
             max_tokens=int(node.get("max_tokens", 2048)),
             temperature=float(node.get("temperature", 0.7)),
+            on_reasoning=lambda text: self.ctx.emit("reasoning", {
+                "agent": getattr(agent, "name", "Agent"), "text": text}),
         )
         self._record_model_usage(_estimate_tokens(prompt), _estimate_tokens(response))
         self._record_provider_usage(agent)
@@ -3922,6 +4031,98 @@ class PipelineRunner:
                 ),
             }
 
+        usage_summary = None
+        if bool(resolve_reference(node.get("include_usage", False), self.ctx)):
+            # Evolution and governance components need observed cost rather
+            # than a language model's guess about how expensive prior work
+            # was.  Read only compact usage fields from the durable trajectory;
+            # no message or tool payload is copied into this summary.
+            usage_summary = {
+                "source": "current_run",
+                "model_calls": int(self.ctx.stats.model_calls),
+                "tool_calls": int(self.ctx.stats.tool_calls),
+                "input_tokens_actual": int(self.ctx.stats.input_tokens_actual),
+                "cached_input_tokens_actual": int(self.ctx.stats.cached_input_tokens_actual),
+                "output_tokens_actual": int(self.ctx.stats.output_tokens_actual),
+                "tokens_actual": int(self.ctx.stats.input_tokens_actual + self.ctx.stats.output_tokens_actual),
+                "by_harness": {},
+            }
+            native_path = getattr(getattr(session, "trajectory", None), "native_path", None)
+            if native_path:
+                try:
+                    from trajectory import TrajectoryReader
+
+                    seen_calls: set[str] = set()
+                    model_calls = 0
+                    tool_calls = 0
+                    input_tokens = 0
+                    cached_tokens = 0
+                    output_tokens = 0
+                    first_timestamp = None
+                    last_timestamp = None
+                    by_harness: dict[str, dict[str, int]] = {}
+                    for event in TrajectoryReader(native_path).iter_events(strict=False) or []:
+                        timestamp = event.get("timestamp")
+                        if isinstance(timestamp, (int, float)):
+                            first_timestamp = timestamp if first_timestamp is None else min(first_timestamp, timestamp)
+                            last_timestamp = timestamp if last_timestamp is None else max(last_timestamp, timestamp)
+                        event_type = str(event.get("type") or "")
+                        if event_type == "tool.result":
+                            tool_calls += 1
+                            continue
+                        if event_type != "model.response":
+                            continue
+                        call_id = str(event.get("model_call_id") or event.get("event_id") or "")
+                        if call_id in seen_calls:
+                            continue
+                        seen_calls.add(call_id)
+                        model_calls += 1
+                        payload = event.get("data") if isinstance(event.get("data"), dict) else {}
+                        usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+                        prompt_tokens = int(usage.get("prompt_tokens", usage.get("input_tokens", 0)) or 0)
+                        completion_tokens = int(usage.get("completion_tokens", usage.get("output_tokens", 0)) or 0)
+                        details = usage.get("prompt_tokens_details", usage.get("input_tokens_details", {})) or {}
+                        cached = int(
+                            details.get(
+                                "cached_tokens",
+                                usage.get("cached_tokens", usage.get("cache_read_input_tokens", 0)),
+                            )
+                            or 0
+                        )
+                        input_tokens += max(0, prompt_tokens)
+                        output_tokens += max(0, completion_tokens)
+                        cached_tokens += min(max(0, cached), max(0, prompt_tokens))
+                        harness_name = str(event.get("harness") or "unknown")
+                        bucket = by_harness.setdefault(
+                            harness_name,
+                            {"model_calls": 0, "input_tokens": 0, "output_tokens": 0},
+                        )
+                        bucket["model_calls"] += 1
+                        bucket["input_tokens"] += max(0, prompt_tokens)
+                        bucket["output_tokens"] += max(0, completion_tokens)
+                    usage_summary = {
+                        "source": "session_trajectory",
+                        "model_calls": model_calls,
+                        "tool_calls": tool_calls,
+                        "input_tokens_actual": input_tokens,
+                        "cached_input_tokens_actual": cached_tokens,
+                        "uncached_input_tokens_actual": max(0, input_tokens - cached_tokens),
+                        "output_tokens_actual": output_tokens,
+                        "tokens_actual": input_tokens + output_tokens,
+                        "elapsed_seconds": round(max(0.0, float(last_timestamp or 0) - float(first_timestamp or 0)), 3),
+                        "by_harness": dict(
+                            sorted(
+                                by_harness.items(),
+                                key=lambda item: item[1]["input_tokens"] + item[1]["output_tokens"],
+                                reverse=True,
+                            )[:12]
+                        ),
+                    }
+                except (OSError, TypeError, ValueError):
+                    # The current-run counters remain valid when durable trace
+                    # reading is unavailable. Snapshot must stay non-mutating.
+                    pass
+
         snapshot = {
             "version": 1,
             "working_messages": working,
@@ -3935,6 +4136,7 @@ class PipelineRunner:
             "review_triggered": bool(due_turns),
             "blocks": [block.preview(max_chars=int(node.get("block_preview_chars", 3200))) for block in blocks],
             "pressure": pressure,
+            "usage": usage_summary,
             "current_task": current_task,
             "governance": copy.deepcopy(governance),
         }
@@ -3946,6 +4148,7 @@ class PipelineRunner:
                 "review_batch": snapshot["review_batch"],
                 "blocks": snapshot["blocks"],
                 "pressure": pressure,
+                "usage": usage_summary,
             },
             ensure_ascii=False,
         )
@@ -3959,6 +4162,7 @@ class PipelineRunner:
                 "turns": len(turns),
                 "review_due": len(due_turns),
                 "pressure": pressure,
+                "usage": usage_summary,
             },
         )
         tags = ["conversation_ready"]
@@ -4056,6 +4260,10 @@ class PipelineRunner:
                 target_tokens=max(1, int(raw_target)),
                 protect_recent_turns=protect_recent,
                 full_messages=full,
+                minimum_savings_tokens=max(
+                    0,
+                    int(resolve_reference(node.get("minimum_savings_tokens", 0), self.ctx) or 0),
+                ),
             )
             tags = ["conversation_applied", "block_plan_applied"]
         elif mode in {"tool_prune", "prune_tool_results"}:
@@ -4204,6 +4412,9 @@ class PipelineRunner:
                 relevance_w = float(weights.get("relevance", 3.0))
                 recency_w = float(weights.get("recency", 0.5))
                 importance_w = float(weights.get("importance", 2.0))
+                minimum_overlap = max(0, int(inputs.get("minimum_overlap", node.get("minimum_overlap", 0))))
+                minimum_relevance = max(0.0, float(inputs.get("minimum_relevance", node.get("minimum_relevance", 0.0))))
+                minimum_score = float(inputs.get("minimum_score", node.get("minimum_score", float("-inf"))))
                 half_life = max(1.0, float(node.get("recency_half_life_seconds", 86400)))
                 for item in candidates:
                     item_tokens = _memory_tokens(item.get("text", "") + " " + " ".join(item.get("keywords", [])))
@@ -4213,6 +4424,8 @@ class PipelineRunner:
                     recency = 0.5 ** (age / half_life)
                     importance = max(0.0, min(float(item.get("importance") or 0.0) / 10.0, 1.0))
                     score = relevance_w * relevance + recency_w * recency + importance_w * importance
+                    if overlap < minimum_overlap or relevance < minimum_relevance or score < minimum_score:
+                        continue
                     scored.append((score, item))
                 scored.sort(key=lambda pair: (pair[0], pair[1].get("created_at", 0)), reverse=True)
                 result = []
@@ -4260,6 +4473,332 @@ class PipelineRunner:
             set_path(self.ctx.data, output_var, copy.deepcopy(result))
         self.ctx.emit("memory", {"action": action, "namespace": namespace, "count": len(store.get("items", []))})
         return NodeOutcome({"value": result, "items": result if isinstance(result, list) else None, "path": str(path)}, tags)
+
+    @staticmethod
+    def _capability_id_from_evidence(value: Any) -> Optional[str]:
+        """Extract a successful activation ID from a Tool-node observation.
+
+        Capability discovery normally runs in an isolated SubFlow.  Its raw
+        activation observation is deliberately passed through a typed port so
+        the parent can activate the same item on its own Agent instance.  This
+        parser accepts the native Tool-node envelope but does not infer IDs
+        from arbitrary prose.
+        """
+
+        if isinstance(value, str):
+            text = value.strip()
+            if not text.startswith(("{", "[")):
+                return None
+            try:
+                return PipelineRunner._capability_id_from_evidence(json.loads(text))
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, list):
+            for item in value:
+                found = PipelineRunner._capability_id_from_evidence(item)
+                if found:
+                    return found
+            return None
+        if not isinstance(value, dict):
+            return None
+
+        tool_name = str(value.get("name") or value.get("tool") or "").split(":")[-1]
+        if tool_name == "activate_capability" and "result" in value:
+            return PipelineRunner._capability_id_from_evidence(value.get("result"))
+        if value.get("ok") is True:
+            capability_id = value.get("id") or value.get("capability_id")
+            if isinstance(capability_id, str) and capability_id.strip():
+                return capability_id.strip()
+        return None
+
+    @staticmethod
+    def _capability_path_from_mutation_evidence(value: Any) -> Optional[str]:
+        """Extract a persisted capability path from successful Tool evidence."""
+
+        if isinstance(value, str):
+            text = value.strip()
+            if not text.startswith(("{", "[")):
+                return None
+            try:
+                return PipelineRunner._capability_path_from_mutation_evidence(json.loads(text))
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, list):
+            for item in value:
+                found = PipelineRunner._capability_path_from_mutation_evidence(item)
+                if found:
+                    return found
+            return None
+        if not isinstance(value, dict):
+            return None
+
+        tool_name = str(value.get("name") or value.get("tool") or "").split(":")[-1]
+        if tool_name in {
+            "create_skill", "create_knowledge", "create_agent_system",
+            "create_harness", "manage_harness",
+        } and "result" in value:
+            return PipelineRunner._capability_path_from_mutation_evidence(value.get("result"))
+        if value.get("ok") is True:
+            path = value.get("path")
+            if isinstance(path, str) and path.strip():
+                return path.strip()
+        return None
+
+    @staticmethod
+    def _capability_search_from_evidence(value: Any) -> Optional[dict[str, Any]]:
+        """Extract an actual search_capabilities result, never model prose."""
+
+        if isinstance(value, str):
+            text = value.strip()
+            if not text.startswith(("{", "[")):
+                return None
+            try:
+                return PipelineRunner._capability_search_from_evidence(json.loads(text))
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, list):
+            for item in value:
+                found = PipelineRunner._capability_search_from_evidence(item)
+                if found:
+                    return found
+            return None
+        if not isinstance(value, dict):
+            return None
+
+        tool_name = str(value.get("name") or value.get("tool") or "").split(":")[-1]
+        if tool_name == "search_capabilities" and "result" in value:
+            return PipelineRunner._capability_search_from_evidence(value.get("result"))
+        results = value.get("results")
+        if isinstance(value.get("query"), str) and isinstance(results, list):
+            if not results or all(isinstance(item, dict) and "id" in item for item in results):
+                return value
+        if isinstance(results, list):
+            return PipelineRunner._capability_search_from_evidence(results)
+        return None
+
+    def _capability_node(self, node: dict, inputs: dict) -> NodeOutcome:
+        """Declarative capability search/activation without an LLM round trip."""
+
+        from capability_registry import CapabilityRegistry
+        from config import CONFIG
+
+        action = str(node.get("action", "search") or "search").strip().casefold().replace("-", "_")
+        agent = self._node_agent(
+            node,
+            inputs,
+            required=action not in {"search", "list", "quarantine_from_evidence", "quarantine_evidence"},
+        )
+        workspace = Path(self.ctx.harness.workspace or self.ctx.harness.dir).resolve()
+        registry = CapabilityRegistry(Path(__file__).resolve().parent, workspace=workspace)
+        registry.reindex()
+
+        if action in {"quarantine_from_evidence", "quarantine_evidence"}:
+            source = inputs.get("source", resolve_reference(node.get("source"), self.ctx))
+            mutation_path = self._capability_path_from_mutation_evidence(source)
+            if not mutation_path:
+                result = {"ok": False, "status": "not_found", "message": "No successful capability mutation evidence."}
+                output_var = node.get("output_var", "capability_result")
+                if output_var:
+                    set_path(self.ctx.data, output_var, copy.deepcopy(result))
+                return NodeOutcome({"value": result}, ["not_found"])
+
+            candidate = Path(mutation_path)
+            if not candidate.is_absolute():
+                candidate = (Path(__file__).resolve().parent / candidate).resolve()
+            else:
+                candidate = candidate.resolve()
+            identity_root = Path(CONFIG["identity_repository"]).resolve()
+            try:
+                relative = candidate.relative_to(identity_root)
+            except ValueError as error:
+                raise PipelineError("Capability quarantine path is outside the Identity repository") from error
+            parts = relative.parts
+            if len(parts) != 4 or parts[1] != "ego" or parts[2] not in {"skills", "tools", "knowledge"}:
+                raise PipelineError("Capability quarantine only accepts one persisted Identity capability directory")
+            if not candidate.is_dir():
+                result = {"ok": False, "status": "not_found", "message": "Persisted capability directory no longer exists."}
+                output_var = node.get("output_var", "capability_result")
+                if output_var:
+                    set_path(self.ctx.data, output_var, copy.deepcopy(result))
+                return NodeOutcome({"value": result}, ["not_found"])
+
+            quarantine_root = identity_root / parts[0] / "ego" / ".quarantine" / parts[2]
+            quarantine_root.mkdir(parents=True, exist_ok=True)
+            target = quarantine_root / f"{parts[3]}.{int(time.time())}.{uuid.uuid4().hex[:8]}"
+            os.replace(candidate, target)
+            registry.reindex()
+            result = {
+                "ok": True,
+                "status": "quarantined",
+                "original_path": str(candidate),
+                "quarantine_path": str(target),
+                "reason": str(inputs.get("reason", resolve_reference(node.get("reason", "verification failed"), self.ctx))),
+            }
+            output_var = node.get("output_var", "capability_result")
+            if output_var:
+                set_path(self.ctx.data, output_var, copy.deepcopy(result))
+            self.ctx.emit(
+                "capability_quarantined",
+                {"original_path": str(candidate), "quarantine_path": str(target), "reason": result["reason"]},
+            )
+            return NodeOutcome({"value": result, "quarantine": result}, ["quarantined"])
+
+        ranked_evidence_actions = {"activate_best_from_search_evidence", "activate_search_evidence"}
+        if action in {"search", "list", "search_and_activate", "search_activate_best"} | ranked_evidence_actions:
+            if action in ranked_evidence_actions:
+                source = inputs.get("source", resolve_reference(node.get("source"), self.ctx))
+                search_result = self._capability_search_from_evidence(source)
+                if search_result is None:
+                    result = {"ok": False, "status": "not_found", "message": "No structured capability-search evidence."}
+                    output_var = node.get("output_var", "capability_result")
+                    if output_var:
+                        set_path(self.ctx.data, output_var, copy.deepcopy(result))
+                    return NodeOutcome({"value": result, "results": [], "activation": result}, ["not_found"])
+                query = str(search_result.get("query") or "")
+            else:
+                query = str(inputs.get("query", resolve_reference(node.get("query", ""), self.ctx)) or "")
+                kinds = inputs.get("kinds", resolve_reference(node.get("kinds", []), self.ctx))
+                if not isinstance(kinds, list):
+                    kinds = [kinds] if kinds else []
+                search_result = registry.search(
+                    query,
+                    kinds=[str(kind) for kind in kinds],
+                    limit=max(1, int(inputs.get("top_k", node.get("top_k", 8)))),
+                    record_impressions=bool(node.get("record_impressions", True)),
+                    mode=str(node.get("mode", "auto")),
+                )
+            results = search_result.get("results", []) if isinstance(search_result, dict) else []
+
+            if action in {"search_and_activate", "search_activate_best"} | ranked_evidence_actions:
+                top = results[0] if results else {}
+                second = results[1] if len(results) > 1 else {}
+                score = float(top.get("score") or 0)
+                second_score = float(second.get("score") or 0)
+                lexical = float(top.get("lexical_score") or 0)
+                semantic = float(top.get("semantic_score") or 0)
+                coverage = float(top.get("query_coverage") or 0)
+                second_semantic = float(second.get("semantic_score") or 0)
+                second_coverage = float(second.get("query_coverage") or 0)
+                min_score = float(node.get("min_score", 2.5))
+                min_margin = float(node.get("min_margin", 0.7))
+                min_coverage = float(node.get("min_query_coverage", 0.6))
+                min_lexical = float(node.get("min_lexical_score", 6.0))
+                min_semantic = float(node.get("min_semantic_score", 0.55))
+                strong_semantic = float(node.get("strong_semantic_score", 0.68))
+                contrastive_match = (
+                    semantic - second_semantic >= float(node.get("min_semantic_margin", 0.12))
+                    and coverage - second_coverage >= float(node.get("min_coverage_margin", 0.2))
+                    and coverage >= min_coverage
+                    and lexical >= min_lexical
+                )
+                unambiguous = bool(top) and score >= min_score and (
+                    score - second_score >= min_margin or contrastive_match
+                )
+                # Coverage is diluted by long natural-language task prompts.
+                # A strong dense match plus strong lexical evidence may
+                # override it, but semantic similarity alone never activates
+                # executable code.
+                relevant = (
+                    coverage >= min_coverage and lexical >= min_lexical and semantic >= min_semantic
+                ) or (
+                    semantic >= strong_semantic and lexical >= min_lexical
+                )
+                if unambiguous and relevant:
+                    capability_id = str(top.get("id") or "")
+                    activation = agent.activate_capability(capability_id, registry=registry)
+                    if activation.get("ok"):
+                        registry.record_event(capability_id, "activate")
+                    result = {
+                        **activation,
+                        "selection": {
+                            "method": "deterministic_high_confidence",
+                            "score": score,
+                            "margin": round(score - second_score, 6),
+                            "query_coverage": coverage,
+                            "lexical_score": lexical,
+                            "semantic_score": semantic,
+                            "semantic_margin": round(semantic - second_semantic, 6),
+                            "query_coverage_margin": round(coverage - second_coverage, 6),
+                            "strong_semantic_score": strong_semantic,
+                        },
+                        "search": search_result,
+                    }
+                    output_var = node.get("output_var", "capability_result")
+                    if output_var:
+                        set_path(self.ctx.data, output_var, copy.deepcopy(result))
+                    event = "capability_activated" if activation.get("ok") else "capability_activation_error"
+                    self.ctx.emit(event, {"agent": getattr(agent, "name", ""), "capability_id": capability_id, "selection": result["selection"]})
+                    return NodeOutcome(
+                        {"value": result, "results": results, "activation": result},
+                        ["activated" if activation.get("ok") else "error"],
+                    )
+                result = {
+                    "ok": False,
+                    "status": "not_found",
+                    "message": "No unambiguous high-confidence catalog match; model selection is required.",
+                    "selection": {
+                        "score": score,
+                        "margin": round(score - second_score, 6),
+                        "query_coverage": coverage,
+                        "lexical_score": lexical,
+                        "semantic_score": semantic,
+                        "semantic_margin": round(semantic - second_semantic, 6),
+                        "query_coverage_margin": round(coverage - second_coverage, 6),
+                    },
+                    "search": search_result,
+                }
+                output_var = node.get("output_var", "capability_result")
+                if output_var:
+                    set_path(self.ctx.data, output_var, copy.deepcopy(result))
+                self.ctx.emit("capability_match_ambiguous", {"query": query, "selection": result["selection"]})
+                return NodeOutcome({"value": result, "results": results, "activation": result}, ["not_found"])
+
+            result = search_result
+            output_var = node.get("output_var", "capability_result")
+            if output_var:
+                set_path(self.ctx.data, output_var, copy.deepcopy(result))
+            self.ctx.emit("capability_search", {"query": query, "count": len(results)})
+            return NodeOutcome({"value": result, "results": results}, ["found" if results else "not_found"])
+
+        if action in {"activate_from_evidence", "activate_evidence"}:
+            source = inputs.get("source", resolve_reference(node.get("source"), self.ctx))
+            capability_id = self._capability_id_from_evidence(source)
+            if not capability_id:
+                mutation_path = self._capability_path_from_mutation_evidence(source)
+                if mutation_path:
+                    item = registry.find_by_path(mutation_path)
+                    capability_id = str((item or {}).get("id") or "").strip() or None
+        elif action == "activate":
+            capability_id = inputs.get(
+                "capability_id",
+                resolve_reference(node.get("capability_id", node.get("id", "")), self.ctx),
+            )
+            capability_id = str(capability_id or "").strip() or None
+        else:
+            raise PipelineError(f"unknown Capability action: {action}")
+
+        if not capability_id:
+            result = {"ok": False, "status": "not_found", "message": "No successful capability activation evidence."}
+            output_var = node.get("output_var", "capability_result")
+            if output_var:
+                set_path(self.ctx.data, output_var, copy.deepcopy(result))
+            self.ctx.emit("capability_activation_skipped", {"agent": getattr(agent, "name", "")})
+            return NodeOutcome({"value": result, "activation": result}, ["not_found"])
+
+        result = agent.activate_capability(capability_id, registry=registry)
+        if result.get("ok"):
+            registry.record_event(capability_id, "activate")
+        output_var = node.get("output_var", "capability_result")
+        if output_var:
+            set_path(self.ctx.data, output_var, copy.deepcopy(result))
+        self.ctx.emit(
+            "capability_activated" if result.get("ok") else "capability_activation_error",
+            {"agent": getattr(agent, "name", ""), "capability_id": capability_id, "result": _preview_value(result)},
+        )
+        return NodeOutcome(
+            {"value": result, "activation": result},
+            ["activated" if result.get("ok") else "error"],
+        )
 
     def _load_memory(self, path: Path) -> dict:
         if not path.exists():
@@ -5236,7 +5775,7 @@ class PipelineRunner:
     def _workspace_node(self, node: dict, inputs: dict) -> NodeOutcome:
         """Manage recoverable workspace artifacts without arbitrary scripts."""
         action = str(node.get("action", "mkdir"))
-        read_actions = {"read", "read_text", "read_json", "read_binary", "list", "changes"}
+        read_actions = {"read", "read_text", "read_json", "read_binary", "list", "measure", "changes"}
         permission_class = PermissionClass.READ if action in read_actions else PermissionClass.WRITE
         if self.ctx.permission_policy is not None:
             try:
@@ -5356,6 +5895,53 @@ class PipelineRunner:
                 "target": self._workspace_relative(target),
             }
             tags = ["workspace_copied" if action == "copy" else "workspace_published"]
+        elif action == "measure":
+            raw_paths = inputs.get("paths", resolve_reference(node.get("paths", []), self.ctx))
+            if isinstance(raw_paths, (str, Path)):
+                raw_paths = [raw_paths]
+            if not isinstance(raw_paths, (list, tuple)):
+                raise PipelineError("Workspace measure paths must be a list")
+            max_files = max(1, int(node.get("max_files", 500)))
+            max_total_bytes = max(1, int(node.get("max_total_bytes", 20_000_000)))
+            excluded = set(node.get("exclude_dirs", [".git", ".egoagent", "__pycache__", "node_modules"]))
+            measured_paths = []
+            file_count = 0
+            total_bytes = 0
+            truncated = False
+            seen = set()
+            for raw_path in raw_paths:
+                target = self._safe_runtime_path(str(raw_path or "."))
+                measured_paths.append(self._workspace_relative(target))
+                candidates = [target] if target.is_file() else (target.rglob("*") if target.is_dir() else [])
+                for path in candidates:
+                    try:
+                        if not path.is_file() or path.is_symlink():
+                            continue
+                        relative = path.relative_to(self.ctx.workspace)
+                        if any(part in excluded for part in relative.parts):
+                            continue
+                        resolved = path.resolve()
+                        if resolved in seen:
+                            continue
+                        seen.add(resolved)
+                        size = max(0, int(path.stat().st_size))
+                    except (OSError, ValueError):
+                        continue
+                    file_count += 1
+                    total_bytes += size
+                    if file_count >= max_files or total_bytes >= max_total_bytes:
+                        truncated = True
+                        break
+                if truncated:
+                    break
+            result = {
+                "action": action,
+                "paths": measured_paths,
+                "files": file_count,
+                "bytes": min(total_bytes, max_total_bytes),
+                "truncated": truncated,
+            }
+            tags = ["scope_measured" if file_count else "scope_empty"]
         elif action == "list":
             raw_base = inputs.get("path", resolve_reference(node.get("path", "."), self.ctx))
             base = self._safe_runtime_path(str(raw_base or "."))
@@ -6164,12 +6750,7 @@ class PipelineRunner:
                 "default": default,
             },
         )
-        if getattr(self.ctx.harness, "_non_interactive", False):
-            answer = str(default)
-        else:
-            answer = self.ctx.get_input()
-            if answer is None or not str(answer).strip():
-                answer = str(default)
+        answer = self._approval_answer(str(default), approval_id=approval_id)
         if isinstance(answer, str) and answer.lstrip().startswith("{"):
             try:
                 answer = json.loads(answer)
@@ -6314,13 +6895,12 @@ class PipelineRunner:
         for slot_name, slot_def in sub_harness.slots.items():
             parent_slot = resolve_reference(agent_map.get(slot_name), self.ctx)
             if parent_slot in self.ctx.harness.agents:
-                cloned_agent = copy.copy(self.ctx.harness.agents[parent_slot])
+                cloned_agent = _clone_agent_for_slot(self.ctx.harness.agents[parent_slot], slot_name)
                 # The child flow addresses tools by its own slot name.  A
                 # shallow clone previously kept the parent's public name (for
                 # example governor), so a child request for `searcher` was
                 # rejected by the executor that still believed it owned
                 # `governor`.
-                cloned_agent.name = slot_name
                 agents[slot_name] = cloned_agent
                 continue
             identity_name = identity_map.get(slot_name, slot_def.get("identity"))
@@ -6332,8 +6912,7 @@ class PipelineRunner:
                     workspace=self.ctx.workspace,
                 )
             elif slot_name in self.ctx.harness.agents:
-                cloned_agent = copy.copy(self.ctx.harness.agents[slot_name])
-                cloned_agent.name = slot_name
+                cloned_agent = _clone_agent_for_slot(self.ctx.harness.agents[slot_name], slot_name)
                 agents[slot_name] = cloned_agent
         sub_harness.set_agents(agents)
         share_session = bool(node.get("share_session", component.get("share_session", False)))
@@ -7169,6 +7748,13 @@ class PipelineRunner:
             "revisions": self._revision_snapshot(),
         }
         payload = self.ctx.secret_view.redact_value(_redact_event_value(payload))
+        incomplete = [name for name in ("workspace", "harness")
+                      if payload["revisions"][name].get("complete") is False]
+        if incomplete:
+            self.ctx.emit("checkpoint_progress", {
+                "message": "检查点已保存运行状态；大项目文件校验达到扫描预算，恢复时须显式确认，不能保证完整文件一致性。",
+                "incomplete": incomplete,
+            })
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         temporary.replace(path)
@@ -7213,7 +7799,11 @@ def _call_with_timeout(call: Callable[[], NodeOutcome], timeout: float) -> NodeO
     if timeout <= 0:
         return call()
     results: queue.Queue = queue.Queue(maxsize=1)
+    from runtime_waits import ActiveDeadline, active_deadlines
+    deadline = ActiveDeadline(timeout)
+    token = active_deadlines.set((*active_deadlines.get(), deadline))
     copied_context = contextvars.copy_context()
+    active_deadlines.reset(token)
 
     def target() -> None:
         try:
@@ -7223,10 +7813,16 @@ def _call_with_timeout(call: Callable[[], NodeOutcome], timeout: float) -> NodeO
 
     worker = threading.Thread(target=target, name="dag-node-timeout", daemon=True)
     worker.start()
-    try:
-        success, value = results.get(timeout=timeout)
-    except queue.Empty as error:
-        raise NodeTimeout(f"node exceeded timeout ({timeout}s)") from error
+    while True:
+        remaining = deadline.remaining()
+        if remaining <= 0:
+            deadline.cancelled.set()
+            raise NodeTimeout(f"node exceeded active execution timeout ({timeout}s; approval wait excluded)")
+        try:
+            success, value = results.get(timeout=min(0.05, remaining))
+            break
+        except queue.Empty:
+            continue
     if success:
         return value
     raise value
@@ -7264,6 +7860,7 @@ def _standalone_llm_call(
     max_tokens=2048,
     temperature=0.7,
     purpose="model_node",
+    on_reasoning=None,
 ):
     agent = agent or _get_main_agent(harness)
     if agent is None or not hasattr(agent, "llm"):
@@ -7298,6 +7895,12 @@ def _standalone_llm_call(
         raise
     content = result["choices"][0]["message"].get("content", "")
     response_message = result["choices"][0].get("message", {})
+    reasoning = str(response_message.get("reasoning_content") or "")
+    filter_output = getattr(agent, "_apply_superego_output_policy", None)
+    if callable(filter_output):
+        reasoning, _ = filter_output(reasoning)
+    if on_reasoning and reasoning:
+        on_reasoning(reasoning)
     metadata = dict(getattr(agent.llm, "last_response_metadata", {}) or {})
     harness.session.finish_model_call(
         model_call_id,
@@ -7676,10 +8279,31 @@ class _FormatValues(dict):
 
 
 def _format_prompt(template: str, values: dict) -> str:
-    try:
-        return template.format_map(_FormatValues(values))
-    except (ValueError, AttributeError):
-        return template
+    """Interpolate named prompt slots without treating JSON examples as slots.
+
+    ``str.format_map`` rejects the very common combination of ``{request}``
+    and a literal JSON example such as ``{"complete": true}``.  The old
+    fallback then returned the *entire* prompt unchanged, so model judges saw
+    the literal words ``{request}`` and ``{agent_answer}``.  Flow prompts only
+    need simple named/path slots; replace those deliberately and leave all
+    other braces alone.  Existing doubled braces remain supported.
+    """
+    text = str(template)
+    left = "\u0000EGO_LEFT_BRACE\u0000"
+    right = "\u0000EGO_RIGHT_BRACE\u0000"
+    text = text.replace("{{", left).replace("}}", right)
+
+    def replace(match):
+        key = match.group(1)
+        if key not in values:
+            return match.group(0)
+        value = values[key]
+        if isinstance(value, (dict, list, tuple)):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
+
+    text = re.sub(r"\{([A-Za-z_][A-Za-z0-9_.-]*)\}", replace, text)
+    return text.replace(left, "{").replace(right, "}")
 
 
 def _resolve_template(template: str, context: dict) -> str:
@@ -7705,6 +8329,33 @@ _AGENT_COLORS = {
     "coder": "\033[96m",
 }
 _RESET = "\033[0m"
+
+
+def _clone_agent_for_slot(agent, slot_name: str):
+    """Clone an Agent while rebinding adapters owned by its public slot.
+
+    Subflows intentionally share the parent's model, activated capabilities
+    and command state. A plain shallow copy also shared ``tool_executor``,
+    whose owner check still referenced the parent slot. The child could be
+    displayed as ``searcher`` while every tool call was rejected as targeting
+    ``governor``. Recreate only slot-owned adapters and runtime identity.
+    """
+    cloned = copy.copy(agent)
+    cloned.name = str(slot_name)
+    runtime_context = getattr(agent, "_runtime_context", None)
+    if isinstance(runtime_context, dict):
+        cloned._runtime_context = dict(runtime_context)
+        cloned._runtime_context["agent_name"] = cloned.name
+        cloned._runtime_context["agent"] = cloned
+    if callable(getattr(cloned, "execute_tool_call", None)):
+        from tool_pipeline import AgentToolExecutor
+
+        cloned.tool_executor = AgentToolExecutor(cloned)
+        if getattr(cloned, "llm", None) is not None:
+            from runtime_contracts import RuntimeServices
+
+            cloned.runtime_services = RuntimeServices(model=cloned.llm, tools=cloned.tool_executor)
+    return cloned
 
 
 def _agent_label(agent):
@@ -7766,12 +8417,14 @@ def run_pipeline_stream(
     on_node_error=None,
     permission_policy=None,
     initial_data=None,
+    get_approval=None,
 ):
     """Run the exact same engine with streaming callbacks."""
     return PipelineRunner(
         harness,
         on_output=on_output,
         get_input=get_input,
+        get_approval=get_approval,
         is_running=is_running,
         resume_from=resume_from,
         before_node=before_node,

@@ -128,6 +128,10 @@ class CustomLLMResilienceTests(unittest.TestCase):
         agent = object.__new__(Agent)
         agent.name = "agent"
         agent.llm = TruncatedLLM()
+        # This streaming fixture bypasses __init__; model a valid Identity with
+        # no output redaction policy rather than weakening the production guard.
+        from types import SimpleNamespace
+        agent.identity = SimpleNamespace(SEGO=None)
         agent.hooks = {"pre_llm_hook": None, "post_llm_hook": None}
         agent.build_system_prompt = lambda has_tools=False: ""
         streamed = []

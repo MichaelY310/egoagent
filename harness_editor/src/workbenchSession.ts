@@ -2,7 +2,7 @@ import type { HarnessConfig } from './types';
 import { WORKSPACE, canonicalWorkspace } from './api/runtime';
 import { postToIde, type IdeContextItem } from './ideBridge';
 
-export type WorkbenchRoute = 'home' | 'harness' | 'ir' | 'tasks' | 'research' | 'background' | 'library' | 'packages' | 'changes' | 'checkpoints' | 'identity' | 'environment' | 'sessions' | 'settings' | 'evolution' | 'coc' | 'flow';
+export type WorkbenchRoute = 'home' | 'observe' | 'harness' | 'ir' | 'tasks' | 'research' | 'background' | 'library' | 'packages' | 'changes' | 'checkpoints' | 'identity' | 'environment' | 'sessions' | 'settings' | 'evolution' | 'coc' | 'flow' | 'more';
 
 export interface BuilderDraft {
   config: HarnessConfig;
@@ -15,7 +15,9 @@ export interface BuilderDraft {
 
 export interface EvaluationSelection {
   taskId?: string;
+  runner?: 'ego_flow' | 'codex_cli';
   harness?: string;
+  harnessVersion?: string;
   identity?: string;
   environments?: string[];
   slotBindings?: Record<string, string>;

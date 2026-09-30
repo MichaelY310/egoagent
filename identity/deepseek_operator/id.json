@@ -20,6 +20,7 @@
     "browser",
     "ask_human"
   ],
+  "max_prompt_tools": 24,
   "personality": {
     "traits": ["persistent", "evidence-driven", "resourceful", "careful"],
     "tone": "concise and factual",

@@ -1,0 +1,77 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_recurring_fictional_bundle",
+  "title": "Recurring fictional bundle normalization",
+  "description": "Seven resumed, entirely fictional build-bundle normalizations expose a repeated deterministic contract without personal or customer data.",
+  "category": "code-product-acceptance",
+  "difficulty": "medium",
+  "tags": ["multi-step", "recurring-work", "skill-search", "evolution", "json", "synthetic"],
+  "prompt": "Normalize each requested fictional build bundle according to BUNDLE_FORMAT.md. New bundle files arrive every build, so begin with ordinary evidence-driven work and let observed session cost determine whether a reusable capability becomes worthwhile.",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Fictional build-bundle workspace rules\n\n- All data in this fixture is synthetic and contains no people or customer records.\n- Work offline and read only the requested input plus BUNDLE_FORMAT.md.\n- Never change raw inputs or BUNDLE_FORMAT.md.\n- Write only the requested canonical JSON artifact.\n- Do not add ad-hoc project scripts before repeated evidence justifies automation; durable reusable automation belongs in the governed capability system.\n- Another similarly shaped fictional bundle arrives after every build.\n",
+      "BUNDLE_FORMAT.md": "# Canonical fictional bundle format v3\n\nFor each raw object, write a JSON object with this exact shape:\n\n- `schema_version`: integer `3`\n- `bundle.slug`: trim `package`, lowercase it, and replace every run of whitespace with one hyphen\n- `bundle.version`: trim `version` and remove one leading `v` or `V` when present\n- `target`: trimmed uppercase `target`\n- `enabled`: true only when trimmed case-insensitive `ship` is one of `yes`, `true`, or `1`\n- `features`: split the semicolon-delimited string, trim and lowercase each non-empty item, remove duplicates, then sort alphabetically\n\nDo not preserve any other fields.\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "product_adaptive_code_agent",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["product_adaptive_code_agent", "product_adaptive_no_evolution", "product_core_code_agent"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 5400},
+  "evolution": {"allowed": true, "targets": ["skill", "knowledge", "agent", "harness"]},
+  "evaluation": {"pass_score": 1.0, "checks": []},
+  "steps": [
+    {
+      "id": "bundle_01",
+      "prompt": "Normalize raw/bundle_01.json into canonical/bundle_01.json and verify every field against BUNDLE_FORMAT.md.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/bundle_01.json": "{\"package\":\" API Gateway \",\"version\":\"v1.2.0\",\"target\":\" linux-x64 \",\"ship\":\"YES\",\"features\":\"HTTP; Cache ;http;Metrics\",\"build_host\":\"fictional-01\",\"legacy_rank\":9}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/bundle_01.json", "pointer": "", "expected": {"schema_version":3,"bundle":{"slug":"api-gateway","version":"1.2.0"},"target":"LINUX-X64","enabled":true,"features":["cache","http","metrics"]}, "weight": 1}]}
+    },
+    {
+      "id": "bundle_02",
+      "prompt": "Process the next fictional build artifact: raw/bundle_02.json to canonical/bundle_02.json under the same contract.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/bundle_02.json": "{\"package\":\" Worker Pool \",\"version\":\" V2.0.1 \",\"target\":\" win-arm64\",\"ship\":\" no \",\"features\":\"Queue; Async;queue; Retry \",\"obsolete\":true,\"build_host\":\"fictional-02\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/bundle_02.json", "pointer": "", "expected": {"schema_version":3,"bundle":{"slug":"worker-pool","version":"2.0.1"},"target":"WIN-ARM64","enabled":false,"features":["async","queue","retry"]}, "weight": 1}]}
+    },
+    {
+      "id": "bundle_03",
+      "prompt": "Normalize raw/bundle_03.json into its matching canonical path and validate the exact shape.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/bundle_03.json": "{\"package\":\" Search   Index \",\"version\":\"3.4.5\",\"target\":\" wasm32 \",\"ship\":\"1\",\"features\":\"Disk; Search ;disk;Snapshot\",\"note\":\"synthetic\",\"attempt\":3}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/bundle_03.json", "pointer": "", "expected": {"schema_version":3,"bundle":{"slug":"search-index","version":"3.4.5"},"target":"WASM32","enabled":true,"features":["disk","search","snapshot"]}, "weight": 1}]}
+    },
+    {
+      "id": "bundle_04",
+      "prompt": "A fourth fictional bundle arrived. Normalize raw/bundle_04.json to canonical/bundle_04.json using the established format.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/bundle_04.json": "{\"package\":\" Billing Core \",\"version\":\"v0.9.8\",\"target\":\" linux-arm64 \",\"ship\":\"TRUE\",\"features\":\"Ledger; Audit ;ledger;Safety\",\"legacy_rank\":1,\"unused\":\"drop\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/bundle_04.json", "pointer": "", "expected": {"schema_version":3,"bundle":{"slug":"billing-core","version":"0.9.8"},"target":"LINUX-ARM64","enabled":true,"features":["audit","ledger","safety"]}, "weight": 1}]}
+    },
+    {
+      "id": "bundle_05",
+      "prompt": "Normalize raw/bundle_05.json to canonical/bundle_05.json exactly as before.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/bundle_05.json": "{\"package\":\" Mail Relay \",\"version\":\" V5.1 \",\"target\":\" darwin-x64 \",\"ship\":\"off\",\"features\":\"SMTP; Queue ;smtp;TLS\",\"noise_a\":17,\"noise_b\":false}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/bundle_05.json", "pointer": "", "expected": {"schema_version":3,"bundle":{"slug":"mail-relay","version":"5.1"},"target":"DARWIN-X64","enabled":false,"features":["queue","smtp","tls"]}, "weight": 1}]}
+    },
+    {
+      "id": "bundle_06",
+      "prompt": "Process raw/bundle_06.json into canonical/bundle_06.json while preserving the same observable contract.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/bundle_06.json": "{\"package\":\" Metrics Exporter \",\"version\":\"v7.0.0\",\"target\":\" linux-riscv64 \",\"ship\":\" yes \",\"features\":\"OTLP; Metrics ;otlp;Compression\",\"fictional_build\":6006,\"discard\":\"x\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/bundle_06.json", "pointer": "", "expected": {"schema_version":3,"bundle":{"slug":"metrics-exporter","version":"7.0.0"},"target":"LINUX-RISCV64","enabled":true,"features":["compression","metrics","otlp"]}, "weight": 1}]}
+    },
+    {
+      "id": "bundle_07",
+      "prompt": "Normalize raw/bundle_07.json to canonical/bundle_07.json. Prefer a verified reusable catalog capability if this session naturally produced an exact match; otherwise use the cheapest correct method.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/bundle_07.json": "{\"package\":\" Feature Flags \",\"version\":\"V4.2.3\",\"target\":\" freebsd-x64 \",\"ship\":\"True\",\"features\":\"Config; Safety ;config;Runtime\",\"old_checksum\":\"ignore\",\"fixture\":true}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "canonical/bundle_07.json", "pointer": "", "expected": {"schema_version":3,"bundle":{"slug":"feature-flags","version":"4.2.3"},"target":"FREEBSD-X64","enabled":true,"features":["config","runtime","safety"]}, "weight": 1}]}
+    }
+  ]
+}

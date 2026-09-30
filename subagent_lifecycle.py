@@ -18,6 +18,22 @@ def _identity_bindings(harness: Any) -> dict[str, str]:
     return bindings
 
 
+def _emit_live_event(event: str, data: dict[str, Any]) -> None:
+    """Project lifecycle events to the active UI without coupling to Studio.
+
+    The trajectory remains authoritative. The active RunContext is only a live
+    transport so Build/Task surfaces can show a child before its first model
+    token arrives.
+    """
+    try:
+        from harness import get_current_run_context
+        context = get_current_run_context()
+        if context is not None and callable(getattr(context, "emit", None)):
+            context.emit(event, copy.deepcopy(data))
+    except (ImportError, RuntimeError):
+        return
+
+
 def link_subagent(
     parent: Any,
     child: Any,
@@ -45,19 +61,18 @@ def link_subagent(
     if not share_session and getattr(parent, "session", None) is not None and getattr(child, "session", None) is not None:
         child.session.attach_trajectory(parent.session.trajectory)
     setattr(child, "_subagent_invocation", invocation)
-    parent.session.trace(
-        "subagent.spawned",
-        {
-            "invocation_id": invocation.invocation_id,
-            "child_harness": invocation.harness,
-            "child_session_id": getattr(child.session, "session_id", None),
-            "share_session": invocation.share_session,
-            "purpose": invocation.purpose,
-            "agent_bindings": copy.deepcopy(dict(invocation.agent_bindings)),
-            "identity_bindings": copy.deepcopy(dict(invocation.identity_bindings)),
-            "workspace": str(invocation.workspace) if invocation.workspace else None,
-        },
-    )
+    event_data = {
+        "invocation_id": invocation.invocation_id,
+        "child_harness": invocation.harness,
+        "child_session_id": getattr(child.session, "session_id", None),
+        "share_session": invocation.share_session,
+        "purpose": invocation.purpose,
+        "agent_bindings": copy.deepcopy(dict(invocation.agent_bindings)),
+        "identity_bindings": copy.deepcopy(dict(invocation.identity_bindings)),
+        "workspace": str(invocation.workspace) if invocation.workspace else None,
+    }
+    parent.session.trace("subagent.spawned", event_data)
+    _emit_live_event("subagent_spawned", event_data)
     return invocation
 
 
@@ -82,17 +97,19 @@ def finish_subagent(child: Any, *, status: str, result: Any = None, error: Optio
         error=str(error) if error is not None else None,
     )
     target_session = getattr(parent, "session", None) or getattr(child, "session", None)
+    event_data = {
+        "invocation_id": invocation.invocation_id,
+        "child_harness": invocation.harness,
+        "child_session_id": outcome.child_session_id,
+        "status": outcome.status,
+        "result": copy.deepcopy(result),
+        "error": outcome.error,
+    }
     if target_session is not None:
         target_session.trace(
             "subagent.completed" if status == "completed" else "subagent.failed",
-            {
-                "invocation_id": invocation.invocation_id,
-                "child_harness": invocation.harness,
-                "child_session_id": outcome.child_session_id,
-                "status": outcome.status,
-                "result": copy.deepcopy(result),
-                "error": outcome.error,
-            },
+            event_data,
         )
+    _emit_live_event("subagent_completed" if status == "completed" else "subagent_failed", event_data)
     setattr(child, "_subagent_result", outcome)
     return outcome

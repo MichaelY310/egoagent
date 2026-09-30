@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import unittest
+import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from harness_editor import server as server_module
 
@@ -38,6 +39,24 @@ class InteractiveOutputProjectionTests(unittest.TestCase):
         self.emit("model_response", {"agent": "agent", "text": "直接回答", "tool_calls": []})
         self.assertEqual(self.handle.outputs[0]["text"], "直接回答")
         self.assertTrue(self.handle.outputs[0]["sealed"])
+
+    def test_stream_scope_matches_versioned_http_replay_configuration(self):
+        self.handle.state.update(harness="adaptive_code_agent", harness_version="v123",
+                                 surface="chat", mode="chat", agents={"agent": "coder"})
+        socket = Mock()
+        with patch.object(server_module, "ws_clients", {socket}):
+            self.emit("token", {"agent": "agent", "text": "hello"})
+        message = json.loads(socket.send.call_args.args[0])
+        for field in ("run_id", "harness", "harness_version", "surface", "workspace", "mode", "agents"):
+            self.assertEqual(message["scope"][field], self.handle.state[field], field)
+        self.assertEqual(message["scope"], self.handle.outputs[0]["configuration"])
+
+    def test_builder_streams_keep_their_surface(self):
+        self.handle.state["surface"] = "builder"
+        socket = Mock()
+        with patch.object(server_module, "ws_clients", {socket}):
+            self.emit("token", {"agent": "agent", "text": "not a chat reply"})
+        self.assertEqual(json.loads(socket.send.call_args.args[0])["scope"]["surface"], "builder")
 
     def test_pipeline_run_identity_is_exposed_for_change_review(self):
         self.emit("run_started", {

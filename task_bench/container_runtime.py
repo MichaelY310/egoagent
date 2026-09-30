@@ -72,7 +72,9 @@ class TaskContainer:
         dockerfile = _inside(self.workspace, dockerfile_relative)
         if not context.is_dir() or not dockerfile.is_file():
             raise TaskBenchError(f"Container build files missing: {context_relative}, {dockerfile_relative}")
-        dockerfile_arg = str(dockerfile.relative_to(context)) if context in dockerfile.parents else str(dockerfile)
+        # Docker resolves -f relative to the CLI cwd, not build context. The
+        # server cwd is not the task workspace, so always pass the checked path.
+        dockerfile_arg = str(dockerfile)
         build_args = ["build", "--tag", self.image, "--file", dockerfile_arg, str(context)]
         self._docker(build_args, timeout=float(self.config.get("build_timeout_seconds") or 900))
 

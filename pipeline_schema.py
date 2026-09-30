@@ -399,6 +399,47 @@ def validate_pipeline(graph: dict) -> list[str]:
         target = graph.get(field)
         if target is not None and target not in nodes:
             errors.append(f"pipeline.{field} points to missing node: {target!r}")
+    data_links = graph.get("data_links", [])
+    if not isinstance(data_links, list):
+        errors.append("pipeline.data_links must be an array")
+        data_links = []
+    occupied_inputs: set[tuple[str, str]] = set()
+    for index, link in enumerate(data_links):
+        path = f"pipeline.data_links[{index}]"
+        if not isinstance(link, dict):
+            errors.append(f"{path} must be an object")
+            continue
+        source = link.get("source")
+        target = link.get("target")
+        source_port = link.get("source_port")
+        target_port = link.get("target_port")
+        if source not in nodes:
+            errors.append(f"{path}.source points to missing node {source!r}")
+        if target not in nodes:
+            errors.append(f"{path}.target points to missing node {target!r}")
+        if not isinstance(source_port, str) or not source_port:
+            errors.append(f"{path}.source_port must be a non-empty string")
+        if not isinstance(target_port, str) or not target_port:
+            errors.append(f"{path}.target_port must be a non-empty string")
+        if isinstance(target, str) and isinstance(target_port, str):
+            key = (target, target_port)
+            if key in occupied_inputs:
+                errors.append(f"{path} duplicates single input socket {target}.{target_port}")
+            occupied_inputs.add(key)
+        reroutes = link.get("reroutes", [])
+        if not isinstance(reroutes, list):
+            errors.append(f"{path}.reroutes must be an array")
+        else:
+            for route_index, reroute in enumerate(reroutes):
+                if not isinstance(reroute, dict) or not all(isinstance(reroute.get(axis), (int, float)) for axis in ("x", "y")):
+                    errors.append(f"{path}.reroutes[{route_index}] must contain numeric x/y")
+                    continue
+                for spline_field in ("angle", "in_length", "out_length"):
+                    if spline_field in reroute and not isinstance(reroute[spline_field], (int, float)):
+                        errors.append(f"{path}.reroutes[{route_index}].{spline_field} must be numeric")
+        for handle_field in ("source_handle", "target_handle"):
+            if handle_field in link and not isinstance(link[handle_field], (int, float)):
+                errors.append(f"{path}.{handle_field} must be numeric")
     for node_id, node in nodes.items():
         if not isinstance(node, dict):
             errors.append(f"node {node_id!r} must be an object")
@@ -410,6 +451,12 @@ def validate_pipeline(graph: dict) -> list[str]:
             errors.append(f"node {node_id!r}.inputs must be an object")
         if "outputs" in node and not isinstance(node["outputs"], dict):
             errors.append(f"node {node_id!r}.outputs must be an object")
+        editor_position = node.get("editor_position")
+        if editor_position is not None and (
+            not isinstance(editor_position, dict)
+            or not all(isinstance(editor_position.get(axis), (int, float)) for axis in ("x", "y"))
+        ):
+            errors.append(f"node {node_id!r}.editor_position must contain numeric x/y")
         for field in (
             "error_to",
             "empty_response_to",
@@ -426,6 +473,24 @@ def validate_pipeline(graph: dict) -> list[str]:
                 errors.append(f"node {node_id!r} contains an invalid edge")
             elif edge["to"] is not None and edge["to"] not in nodes:
                 errors.append(f"node {node_id!r} points to missing node {edge['to']!r}")
+            if isinstance(edge, dict):
+                for port_field in ("source_port", "target_port"):
+                    if port_field in edge and (not isinstance(edge[port_field], str) or not edge[port_field]):
+                        errors.append(f"node {node_id!r} edge {port_field} must be a non-empty string")
+                reroutes = edge.get("reroutes", [])
+                if not isinstance(reroutes, list):
+                    errors.append(f"node {node_id!r} edge reroutes must be an array")
+                else:
+                    for route_index, reroute in enumerate(reroutes):
+                        if not isinstance(reroute, dict) or not all(isinstance(reroute.get(axis), (int, float)) for axis in ("x", "y")):
+                            errors.append(f"node {node_id!r} edge reroutes[{route_index}] must contain numeric x/y")
+                            continue
+                        for spline_field in ("angle", "in_length", "out_length"):
+                            if spline_field in reroute and not isinstance(reroute[spline_field], (int, float)):
+                                errors.append(f"node {node_id!r} edge reroutes[{route_index}].{spline_field} must be numeric")
+                for handle_field in ("source_handle", "target_handle"):
+                    if handle_field in edge and not isinstance(edge[handle_field], (int, float)):
+                        errors.append(f"node {node_id!r} edge {handle_field} must be numeric")
         if op == "并行":
             for branch in node.get("branches", []):
                 branch_start = branch.get("start") if isinstance(branch, dict) else branch

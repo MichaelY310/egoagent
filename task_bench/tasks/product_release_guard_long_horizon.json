@@ -1,0 +1,85 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_release_guard_long_horizon",
+  "title": "Release Guard 长程维护",
+  "description": "在同一 Python 发布检查工具上连续处理配置、脱敏、事件汇总、无关插曲、并行回归与供应商格式扩展。",
+  "category": "code-product-acceptance",
+  "difficulty": "hard",
+  "tags": ["python", "multi-step", "delegation", "memory", "curation", "evolution"],
+  "prompt": "维护 release_guard 项目；严格遵守 AGENTS.md，每轮只处理当前需求并运行测试。",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Release Guard rules\n\n- Keep public function signatures stable.\n- The repository is offline; do not browse.\n- Prefer the smallest patch and run `python -m unittest discover -v`.\n- Never print or persist secret values.\n- `docs/formats.md` is authoritative.\n",
+      "README.md": "# release_guard\n\nA dependency-free Python utility that parses release configuration, redacts logs and summarizes deploy events.\n",
+      "docs/formats.md": "Configuration uses KEY=VALUE, ignores blank/comment lines, preserves '=' inside values and reports malformed line numbers. Duplicate keys use the last value.\n\nSecrets are values assigned to API_KEY, TOKEN or PASSWORD (case-insensitive), and bearer credentials. Keep field names and replace only values with <redacted>.\n\nEvents are `ISO8601 LEVEL service: message`. Times ending in Z are UTC. A report contains counts by level and service plus the latest timestamp.\n\nVendor release records may be `component|version|status`, CSV with header component,version,status, or JSON Lines with those keys. Only status=ready belongs in a release manifest.\n",
+      "release_guard/__init__.py": "from .config import parse_config\nfrom .redact import redact_secrets\nfrom .events import parse_event\nfrom .report import build_report\n\n__all__ = ['parse_config', 'redact_secrets', 'parse_event', 'build_report']\n",
+      "release_guard/config.py": "def parse_config(text: str) -> dict[str, str]:\n    result = {}\n    for line in text.splitlines():\n        key, value = line.split('=')\n        result[key] = value\n    return result\n",
+      "release_guard/redact.py": "import re\n\n\ndef redact_secrets(text: str) -> str:\n    return re.sub(r'(API_KEY=)[^\\s]+', r'\\1<redacted>', text)\n",
+      "release_guard/events.py": "from datetime import datetime\n\n\ndef parse_event(line: str) -> dict:\n    timestamp, level, rest = line.split(' ', 2)\n    service, message = rest.split(':', 1)\n    return {'timestamp': datetime.fromisoformat(timestamp), 'level': level, 'service': service, 'message': message.strip()}\n",
+      "release_guard/report.py": "def build_report(events: list[dict]) -> dict:\n    return {'total': len(events)}\n",
+      "release_guard/vendors.py": "import json\n\n\ndef ready_components(text: str, format_name: str) -> list[str]:\n    if format_name == 'jsonl':\n        rows = [json.loads(line) for line in text.splitlines() if line.strip()]\n    else:\n        rows = []\n    return [f\"{row['component']}=={row['version']}\" for row in rows if row.get('status') == 'ready']\n",
+      "release_guard/diagnostics.py": "def checksum_lines(lines: list[str]) -> str:\n    return ''.join(lines)\n\n\ndef retention_days(policy: str) -> int:\n    return int(policy)\n",
+      ".agents/skills/release_forensics/SKILL.md": "# Release forensics\n\nUse local release evidence efficiently: inspect docs/formats.md, reproduce with the narrowest unittest, group independent failures by module, and report only decisive error signatures. Never expose secret values.\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "product_adaptive_code_agent",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["code_agent_auto", "code_agent_fast", "code_agent_long", "product_core_code_agent", "product_adaptive_no_evolution", "product_adaptive_code_agent", "product_adaptive_pressure_lab", "product_adaptive_pressure_no_context", "product_adaptive_no_context_governance"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 5400},
+  "evolution": {"allowed": true, "targets": ["harness", "identity", "skill", "knowledge", "agent"]},
+  "evaluation": {"pass_score": 1.0, "checks": []},
+  "steps": [
+    {
+      "id": "config_parser",
+      "title": "Robust configuration parser",
+      "prompt": "修复 parse_config。它必须遵守 docs/formats.md，并对第一个 malformed 非注释行抛出包含 1-based 行号的 ValueError。不要改公开签名，运行测试。",
+      "resume_trajectory": true,
+      "workspace": {"files": {"test_01_config.py": "import unittest\nfrom release_guard.config import parse_config\n\nclass T(unittest.TestCase):\n    def test_comments_whitespace_equals_and_duplicate(self):\n        text = '# note\\n A = first \\nURL=https://x.test?a=1\\nA=last\\n\\n'\n        self.assertEqual(parse_config(text), {'A': 'last', 'URL': 'https://x.test?a=1'})\n    def test_malformed_line_number(self):\n        with self.assertRaisesRegex(ValueError, 'line 2'):\n            parse_config('OK=1\\nbroken')\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "command", "command": ["python", "-m", "unittest", "discover", "-v"], "weight": 1}]}
+    },
+    {
+      "id": "secret_redaction",
+      "title": "Secret-safe log redaction",
+      "prompt": "扩展 redact_secrets，使它覆盖本地格式文档列出的赋值型 secret 和 bearer credential；不得改变非 secret 文本，也不得在回复里打印测试中的 secret。运行测试。",
+      "resume_trajectory": true,
+      "workspace": {"files": {"test_02_redact.py": "import unittest\nfrom release_guard.redact import redact_secrets\n\nclass T(unittest.TestCase):\n    def test_assignment_and_bearer(self):\n        raw = 'api_key=alpha TOKEN : beta PASSWORD = gamma Authorization: Bearer delta user=ok'\n        cleaned = redact_secrets(raw)\n        for secret in ('alpha','beta','gamma','delta'):\n            self.assertNotIn(secret, cleaned)\n        self.assertIn('user=ok', cleaned)\n        self.assertEqual(cleaned.count('<redacted>'), 4)\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "command", "command": ["python", "-m", "unittest", "discover", "-v"], "weight": 4}, {"type": "file_not_contains", "path": "release_guard/redact.py", "value": "alpha", "weight": 1}]}
+    },
+    {
+      "id": "event_report",
+      "title": "Event parsing and report aggregation",
+      "prompt": "实现可靠的 parse_event 与 build_report。接受 Z 时区，规范化 level 为大写，拒绝不合法行；report 返回 total、by_level、by_service、latest（ISO 字符串）。先读文档，运行测试。",
+      "resume_trajectory": true,
+      "workspace": {"files": {"test_03_events.py": "import unittest\nfrom release_guard.events import parse_event\nfrom release_guard.report import build_report\n\nclass T(unittest.TestCase):\n    def test_report(self):\n        rows = [parse_event('2026-09-01T10:00:00Z info api: start'), parse_event('2026-09-01T10:02:00+00:00 ERROR worker: failed'), parse_event('2026-09-01T10:01:00Z INFO api: ready')]\n        self.assertEqual(build_report(rows), {'total': 3, 'by_level': {'ERROR': 1, 'INFO': 2}, 'by_service': {'api': 2, 'worker': 1}, 'latest': '2026-09-01T10:02:00+00:00'})\n    def test_bad_event(self):\n        with self.assertRaises(ValueError): parse_event('not an event')\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "command", "command": ["python", "-m", "unittest", "discover", "-v"], "weight": 5}]}
+    },
+    {
+      "id": "unrelated_interruption",
+      "title": "Unrelated interruption",
+      "prompt": "临时问一句：2+2 等于多少？只回答一个数字，不读取或修改文件。",
+      "resume_trajectory": true,
+      "workspace": {"files": {"test_04_noop.py": "import unittest\nclass T(unittest.TestCase):\n    def test_unchanged(self): self.assertTrue(True)\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "4", "weight": 1}]}
+    },
+    {
+      "id": "independent_regressions",
+      "title": "Two independent diagnostics regressions",
+      "prompt": "现在有两个彼此独立的回归：checksum_lines 应返回输入行以换行连接后的 sha256 十六进制摘要；retention_days 应解析 `30d`/`12h` 并向上换算为天，拒绝负数和未知单位。修复并运行完整测试。你自行决定是否值得把某个独立调查隔离出去。",
+      "resume_trajectory": true,
+      "workspace": {"files": {"test_05_diagnostics.py": "import hashlib\nimport unittest\nfrom release_guard.diagnostics import checksum_lines, retention_days\n\nclass T(unittest.TestCase):\n    def test_checksum(self): self.assertEqual(checksum_lines(['a','b']), hashlib.sha256(b'a\\nb').hexdigest())\n    def test_retention(self):\n        self.assertEqual(retention_days('30d'), 30)\n        self.assertEqual(retention_days('25h'), 2)\n        for bad in ('-1d','4w','x'):\n            with self.assertRaises(ValueError): retention_days(bad)\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "command", "command": ["python", "-m", "unittest", "discover", "-v"], "weight": 5}]}
+    },
+    {
+      "id": "vendor_formats",
+      "title": "Recurring vendor release formats",
+      "prompt": "供应商日志今后会反复以 pipe、csv、jsonl 三种格式到达。完成 ready_components：严格按 docs/formats.md，只返回 ready 组件，结果稳定排序并去重；未知格式抛 ValueError。先复用已有能力（若确实相关），不要为单题硬编码样例。运行测试。",
+      "resume_trajectory": true,
+      "workspace": {"files": {"test_06_vendors.py": "import unittest\nfrom release_guard.vendors import ready_components\n\nclass T(unittest.TestCase):\n    def test_formats(self):\n        expected = ['api==1.2.0','worker==2.0.0']\n        pipe='worker|2.0.0|ready\\napi|1.2.0|ready\\nold|0.1|blocked\\napi|1.2.0|ready'\n        csv='component,version,status\\nworker,2.0.0,ready\\nold,0.1,blocked\\napi,1.2.0,ready\\n'\n        jsonl='{\"component\":\"api\",\"version\":\"1.2.0\",\"status\":\"ready\"}\\n{\"component\":\"worker\",\"version\":\"2.0.0\",\"status\":\"ready\"}'\n        self.assertEqual(ready_components(pipe,'pipe'), expected)\n        self.assertEqual(ready_components(csv,'csv'), expected)\n        self.assertEqual(ready_components(jsonl,'jsonl'), expected)\n        with self.assertRaises(ValueError): ready_components('', 'xml')\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "command", "command": ["python", "-m", "unittest", "discover", "-v"], "weight": 5}, {"type": "node_visited", "node": "evolve", "minimum": 1, "weight": 0}]}
+    }
+  ]
+}

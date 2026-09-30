@@ -7,6 +7,21 @@ from interactive_runs import InteractiveRunManager
 
 
 class InteractiveRunManagerTests(unittest.TestCase):
+    def test_chat_snapshots_skip_trace_copy_but_keep_detached_outputs(self):
+        class ExpensiveTrace:
+            def __deepcopy__(self, memo):
+                raise AssertionError("Chat should not copy node traces")
+
+        manager = InteractiveRunManager()
+        handle = manager.create(Path(__file__).resolve().parent)
+        handle.state["node_traces"] = ExpensiveTrace()
+        handle.outputs.append({"text": "reply"})
+        snapshot = handle.snapshot(include_outputs=True, include_traces=False)
+        self.assertNotIn("node_traces", snapshot)
+        snapshot["outputs"][0]["text"] = "changed"
+        self.assertEqual(handle.outputs[0]["text"], "reply")
+        self.assertNotIn("node_traces", manager.list(include_traces=False)[0])
+
     def test_run_state_queues_and_debug_controls_are_isolated(self):
         with tempfile.TemporaryDirectory() as first_dir, tempfile.TemporaryDirectory() as second_dir:
             manager = InteractiveRunManager()

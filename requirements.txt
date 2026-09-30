@@ -1,4 +1,5 @@
 pyyaml
 requests
 websocket-client
+tomli>=2; python_version < "3.11"
 fastembed>=0.7,<1

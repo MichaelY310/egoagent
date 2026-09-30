@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { ComponentPortSpec, HarnessConfig, PipelinePermissions } from '../types';
 
-export type DagPortSpec = { type?: string; description?: string };
+export type DagPortSpec = { type?: string; description?: string; required?: boolean; multiple?: boolean };
 export type DagNodeContract = {
   description?: string;
   inputs?: Record<string, DagPortSpec>;

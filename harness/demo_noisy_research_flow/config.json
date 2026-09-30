@@ -1,0 +1,30 @@
+{
+  "name": "demo_noisy_research_flow",
+  "description": "Deliberately noisy video fixture: the main Agent repeatedly performs capability discovery in its own visible context instead of delegating result-only search to a reusable SubFlow.",
+  "slots": {
+    "worker": {"description": "Research worker", "required": true, "identity": "dante"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 18,
+    "budget": {"max_model_calls": 6, "max_tool_calls": 10, "max_tokens": 28000},
+    "context": {"request": "", "answer": ""},
+    "nodes": {
+      "input": {
+        "id": "input", "op": "输入", "outputs": {"text": "request"},
+        "edges": [{"condition": "input", "to": "worker"}]
+      },
+      "worker": {
+        "id": "worker", "op": "Agent", "agent": "worker", "tools": "all",
+        "visible_tools": ["search_capabilities", "read_file", "search_files", "web_search"],
+        "instructions": "Solve this request: ${ctx.request}. Search the capability catalog before doing work, even if the search trace is long.",
+        "outputs": {"text": "answer"},
+        "edges": [{"condition": "has_tool_calls", "to": "tools"}, {"condition": "has_text", "to": "done"}]
+      },
+      "tools": {"id": "tools", "op": "工具", "agent": "worker", "edges": [{"condition": "default", "to": "worker"}]},
+      "done": {"id": "done", "op": "结束", "value": "$ctx.answer", "record": true, "edges": []}
+    }
+  }
+}

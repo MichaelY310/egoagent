@@ -48,6 +48,23 @@ class IdentityCompositionTests(unittest.TestCase):
         self.assertLess(system.index(agent.identity.ID["description"]), system.index("[dag_instruction]"))
         self.assertEqual(request[1]["content"], "perform the task")
 
+    def test_node_tool_allowlist_is_applied_before_global_prompt_budget(self):
+        agent = Agent(ROOT / "identity" / "adaptive_deepseek_coder", workspace=ROOT)
+        requested = {
+            "activate_capability",
+            "create_knowledge",
+            "create_skill",
+            "create_agent_system",
+            "manage_harness",
+        }
+
+        visible = {
+            item["function"]["name"]
+            for item in agent.get_tools_desc(include_tools=sorted(requested))
+        }
+
+        self.assertTrue(requested.issubset(visible))
+
 
 if __name__ == "__main__":
     unittest.main()

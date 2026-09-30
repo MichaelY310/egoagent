@@ -2,8 +2,8 @@
   "name": "adaptive_code_agent",
   "description": "Flagship code Agent with workspace editing, public web research, evidence-grounded browser automation, capability discovery, context curation/compaction and periodic reusable-skill evolution.",
   "slots": {
-    "agent": {"description": "Primary coding + web + browser Identity", "required": true, "identity": "openmanus"},
-    "governor": {"description": "Context and evolution governor", "required": true, "identity": "dante"}
+    "agent": {"description": "Primary coding + web + browser Identity", "required": true, "identity": "deepseek_operator"},
+    "governor": {"description": "Context and evolution governor", "required": true, "identity": "deepseek_operator"}
   },
   "prompts": {},
   "return_mode": "last",

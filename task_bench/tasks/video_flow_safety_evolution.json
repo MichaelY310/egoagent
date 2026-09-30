@@ -1,0 +1,31 @@
+{
+  "version": "ego.task.v1",
+  "id": "video_flow_safety_evolution",
+  "title": "录屏：运行证据驱动 Flow 结构进化",
+  "description": "Agent 检查一个有结构性安全缺陷的 Flow，提出最小修复，等待人工审批，原子更新并验证 revision。",
+  "category": "self-evolution",
+  "difficulty": "demo",
+  "tags": ["video", "flow-mutation", "approval", "revision", "live-diff"],
+  "prompt": "target_harness=demo_fragile_release_flow。真实运行证据表明：过去 6 次发布任务里，plan 一产生文本就直接进入 execute；其中 2 次用户在计划生成后想取消，但不可逆命令已经开始。请先检查这个 Flow 和 revision，判断这是 prompt、Identity 还是控制流问题；提出最小、通用、可回滚的结构修复。要求不可逆 executor 前必须有可视化人工审批边界，批准时继续、拒绝时安全结束或返回输入；不要把具体发布命令硬编码进 Flow。任何写入都必须先让我审批，然后用新 revision 验证。",
+  "workspace": {"files": {"evidence/release_runs.json": "{\"runs\":6,\"cancel_requested_after_plan\":2,\"execution_started_before_cancel\":2}"}},
+  "selection": {
+    "recommended_harness": "flow_evolution_showcase",
+    "recommended_identity": "dante",
+    "compatible_harnesses": ["flow_evolution_showcase"],
+    "compatible_identities": ["dante"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 600, "interactive": true},
+  "evolution": {"allowed": true, "targets": ["harness"]},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"type": "node_visited", "node": "inspect", "weight": 1},
+      {"type": "node_visited", "node": "approve", "weight": 1},
+      {"type": "event_emitted", "event": "approval_required", "weight": 1},
+      {"type": "tool_called", "name": "manage_harness", "minimum": 3, "weight": 1},
+      {"type": "harness_modified", "name": "demo_fragile_release_flow", "weight": 2},
+      {"type": "event_emitted", "event": "harness_mutation", "weight": 2}
+    ]
+  }
+}

@@ -921,7 +921,7 @@ def _verify_materialized(entry):
     if current != expected:
         conflict = {
             "code": "revision_conflict",
-            "message": "The file was changed outside this review transaction",
+            "message": "文件在本次 Agent 改动后又被其他操作修改；为保护较新的内容，本次审阅不会自动覆盖文件",
             "file_path": entry["file_path"],
             "expected_revision": _content_revision(expected),
             "current_revision": _content_revision(current),
@@ -1059,7 +1059,7 @@ def _verify_move(entry):
         return True
     conflict = {
         "code": "revision_conflict",
-        "message": "The moved file or either move path changed outside this review transaction",
+        "message": "移动操作完成后源路径或目标路径又发生了变化；为保护较新的内容，本次审阅不会自动覆盖文件",
         "file_path": entry["file_path"],
         "source_path": entry["source_path"],
         "expected_side": expected_side,

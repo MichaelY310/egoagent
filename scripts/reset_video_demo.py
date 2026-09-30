@@ -35,8 +35,14 @@ RECORDING_CREATED_ARTIFACTS = (
     TARGET / "VIDEO_TEMP_NOTE.md",
     ROOT / "identity" / "video_coder",
     ROOT / "harness" / "video_basic_agent",
+    ROOT / "identity" / "video_incident_triage_agent",
+    ROOT / "harness" / "video_incident_triage_agent",
     ROOT / ".environment" / "tools" / "workspace_policy_lookup",
 )
+FLOW_DEMO_BASELINES = {
+    "demo_fragile_release_flow": ROOT / "tutorial_assets" / "evolution_demo_baselines" / "demo_fragile_release_flow.json",
+    "demo_noisy_research_flow": ROOT / "tutorial_assets" / "evolution_demo_baselines" / "demo_noisy_research_flow.json",
+}
 
 
 def load_files() -> dict[str, str]:
@@ -51,6 +57,20 @@ def changed_files() -> list[str]:
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         if current != expected:
             changed.append(relative)
+    return changed
+
+
+def changed_flow_demos() -> list[str]:
+    changed = []
+    for name, baseline in FLOW_DEMO_BASELINES.items():
+        target = ROOT / "harness" / name / "config.json"
+        expected = json.loads(baseline.read_text(encoding="utf-8"))
+        try:
+            current = json.loads(target.read_text(encoding="utf-8")) if target.is_file() else None
+        except (OSError, ValueError):
+            current = None
+        if current != expected:
+            changed.append(name)
     return changed
 
 
@@ -124,9 +144,10 @@ def main() -> int:
     )
     args = parser.parse_args()
     drift = changed_files()
+    flow_drift = changed_flow_demos()
     if args.check:
-        if drift:
-            print("Fixture needs reset: " + ", ".join(drift))
+        if drift or flow_drift:
+            print("Fixture needs reset: " + ", ".join(drift + flow_drift))
             return 1
         print(f"Fixture ready: {TARGET}")
         return 0
@@ -135,11 +156,19 @@ def main() -> int:
         path = TARGET / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8", newline="")
+    for name, baseline in FLOW_DEMO_BASELINES.items():
+        target = ROOT / "harness" / name / "config.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(baseline.read_text(encoding="utf-8"), encoding="utf-8", newline="")
     print(f"Reset {len(load_files())} known files in {TARGET}")
     if drift:
         print("Restored: " + ", ".join(drift))
     else:
         print("No drift was present.")
+    print(
+        "Restored Flow evolution fixtures: "
+        + (", ".join(flow_drift) if flow_drift else "already canonical")
+    )
     removed_transactions = clear_running_backend_transactions()
     removed_transactions += purge_recording_change_transactions()
     print(f"Removed {removed_transactions} stale review transaction(s) for the recording fixture.")

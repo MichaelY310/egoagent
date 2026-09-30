@@ -150,7 +150,7 @@ resume_trajectory = true
                 "evaluation": {"pass_score": 1, "checks": []},
                 "steps": [
                     {"id": "one", "prompt": "one", "workspace": {"files": {"seed.txt": "one"}}, "evaluation": {"pass_score": 1, "checks": [{"type": "file_contains", "path": "shared.txt", "value": "done"}]}},
-                    {"id": "two", "prompt": "two", "workspace": {"files": {}}, "evaluation": {"pass_score": 1, "checks": [{"type": "file_contains", "path": "seed.txt", "value": "one"}]}},
+                    {"id": "two", "prompt": "two", "resume_trajectory": True, "workspace": {"files": {}}, "evaluation": {"pass_score": 1, "checks": [{"type": "file_contains", "path": "seed.txt", "value": "one"}]}},
                 ],
             }
             write_json(task_dir / "multi.json", spec)

@@ -1,0 +1,31 @@
+{
+  "version": "ego.task.v1",
+  "id": "video_subflow_extraction_evolution",
+  "title": "录屏：把重复搜索进化成隔离 SubFlow",
+  "description": "Agent 根据上下文污染证据，把重复能力检索抽成可复用、result-only、隔离 Session 的 SubFlow。",
+  "category": "self-evolution",
+  "difficulty": "demo",
+  "tags": ["video", "subflow", "context-efficiency", "flow-mutation", "live-topology"],
+  "prompt": "target_harness=demo_noisy_research_flow。真实轨迹显示连续 10 个任务都在主 Agent 上下文中重复 search_capabilities，平均每次注入 7,800 字符工具过程，而主 Agent 真正只使用最终前 3 个候选；这些失败检索还干扰后续回答。请检查这个 Flow 和 revision，选择最小结构改进。若现有 component_capability_discovery 能复用，优先把它作为 share_session=false 的隔离 SubFlow 放到主 worker 之前，只把紧凑结果传回主流程；不要复制其内部节点，也不要手写新的搜索器。保持用户输入仍能到达 worker。任何变更先让我审批，应用后重新 inspect 验证新 revision 和连接关系。",
+  "workspace": {"files": {"evidence/context_pressure.json": "{\"runs\":10,\"mean_search_trace_chars\":7800,\"used_candidates\":3,\"failed_searches_visible_to_main\":true}"}},
+  "selection": {
+    "recommended_harness": "flow_evolution_showcase",
+    "recommended_identity": "dante",
+    "compatible_harnesses": ["flow_evolution_showcase"],
+    "compatible_identities": ["dante"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 600, "interactive": true},
+  "evolution": {"allowed": true, "targets": ["harness"]},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"type": "node_visited", "node": "inspect", "weight": 1},
+      {"type": "node_visited", "node": "approve", "weight": 1},
+      {"type": "event_emitted", "event": "approval_required", "weight": 1},
+      {"type": "tool_called", "name": "manage_harness", "minimum": 3, "weight": 1},
+      {"type": "harness_modified", "name": "demo_noisy_research_flow", "weight": 2},
+      {"type": "event_emitted", "event": "harness_mutation", "weight": 2}
+    ]
+  }
+}

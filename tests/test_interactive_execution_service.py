@@ -1,5 +1,7 @@
 import json
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -26,6 +28,27 @@ class InteractiveExecutionServiceTests(unittest.TestCase):
         handle.state.update({"running": True, "status": "running"})
         return handle
 
+    def test_start_records_the_control_surface(self):
+        def worker():
+            return None
+
+        handle = self.service.start(
+            workspace=self.root,
+            harness="demo",
+            agents={"agent": "identity/coder"},
+            debug_mode="auto",
+            mode="agent",
+            surface="builder",
+            mutation_targets=[],
+            security={},
+            sandbox={},
+            worker_target=worker,
+            worker_args=(),
+        )
+        if handle.thread:
+            handle.thread.join(timeout=1)
+        self.assertEqual(handle.state["surface"], "builder")
+
     def test_debug_directive_is_scoped_to_the_addressed_run(self):
         first = self._running()
         second = self._running()
@@ -51,7 +74,8 @@ class InteractiveExecutionServiceTests(unittest.TestCase):
             "decision": "approved",
         })
         self.assertEqual(result["decision"], "approved")
-        self.assertEqual(json.loads(handle.input_queue.get_nowait())["decision"], "approved")
+        self.assertEqual(handle.wait_for_approval("approve-1", lambda: False)["decision"], "approved")
+        self.assertTrue(handle.input_queue.empty())
         with self.assertRaises(InteractiveExecutionError) as raised:
             self.service.approval({
                 "run_id": handle.run_id,
@@ -71,6 +95,49 @@ class InteractiveExecutionServiceTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertFalse(handle.state["running"])
         self.assertIsNone(handle.input_queue.get_nowait())
+
+    def test_stop_can_wait_for_a_reconfigured_worker_to_finalize(self):
+        released = threading.Event()
+
+        def worker(handle):
+            while handle.state.get("running"):
+                time.sleep(0.005)
+            released.set()
+
+        handle = self.service.start(
+            workspace=self.root,
+            harness="demo",
+            agents={"agent": "identity/coder"},
+            debug_mode="auto",
+            mode="agent",
+            surface="chat",
+            mutation_targets=[],
+            security={},
+            sandbox={},
+            worker_target=worker,
+            worker_args=lambda created: (created,),
+            session_name="logical_session",
+        )
+        result = self.service.stop({"run_id": handle.run_id, "wait": True, "timeout": 1})
+        self.assertTrue(released.is_set())
+        self.assertEqual(result["session_name"], "logical_session")
+
+    def test_completed_run_can_be_renamed_and_dismissed(self):
+        handle = self.manager.create(self.root)
+        handle.state.update({"running": False, "session_name": "demo_session"})
+
+        self.service.rename_session("demo_session", "教学项目修复")
+        self.assertEqual(handle.state["session_title"], "教学项目修复")
+        result = self.service.dismiss({"run_id": handle.run_id})
+
+        self.assertTrue(result["dismissed"])
+        self.assertIsNone(self.manager.get(handle.run_id))
+
+    def test_running_run_must_be_stopped_before_dismiss(self):
+        handle = self._running()
+        with self.assertRaises(InteractiveExecutionError) as raised:
+            self.service.dismiss({"run_id": handle.run_id})
+        self.assertEqual(raised.exception.status, 409)
 
 
 if __name__ == "__main__":

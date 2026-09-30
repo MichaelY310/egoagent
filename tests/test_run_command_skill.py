@@ -24,6 +24,16 @@ def load_run_command_module():
 
 
 class RunCommandSkillTests(unittest.TestCase):
+    def test_blacklist_matches_command_tokens_without_blocking_code_identifiers(self):
+        module = load_run_command_module()
+        module.CONFIG["command_blacklist"] = ["format", "shutdown", "rm -rf /"]
+
+        self.assertIsNone(module._check_blacklist("python -c \"print(datetime.fromisoformat(value))\""))
+        self.assertIsNone(module._check_blacklist("python -m unittest test_report_format"))
+        self.assertIn("format", module._check_blacklist("format C:"))
+        self.assertIn("shutdown", module._check_blacklist("shutdown /s"))
+        self.assertIn("rm -rf /", module._check_blacklist("rm -rf /"))
+
     def test_real_multiline_python_command_preserves_output_and_exit_code(self):
         module = load_run_command_module()
         code = "print('line-one')\nprint('line-two')"
@@ -35,6 +45,16 @@ class RunCommandSkillTests(unittest.TestCase):
         self.assertEqual(result["exit_code"], 0)
         self.assertIn("line-one", result["output"])
         self.assertIn("line-two", result["output"])
+
+    def test_unbuffered_multiline_python_command_preserves_output(self):
+        module = load_run_command_module()
+        command = f'"{sys.executable}" -u -c "print(\'ready\')\nprint(\'done\')"'
+
+        result = json.loads(module.run_command(command))
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(result["output"].splitlines(), ["ready", "done"])
 
     def test_empty_none_stream_is_returned_as_empty_output(self):
         module = load_run_command_module()

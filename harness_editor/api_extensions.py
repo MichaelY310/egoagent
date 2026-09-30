@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 from task_bench import TaskBenchError, TaskBenchManager
+from task_bench.datasets import DatasetError, DatasetStore
 from task_bench.container_runtime import TaskContainer
 from task_bench.harbor_adapter import detect_task_format, export_harbor_task, import_external_task
 from product_runtime import (
@@ -42,6 +43,8 @@ from harness_conformance import ConformanceError, load_manifest as load_conforma
 from harness_translation_benchmark import build_dataset as build_translation_dataset, score_translation, vocabulary_report
 from science_loop import ScienceLoopError, ScienceRepository
 from capability_registry import CapabilityRegistry
+from governance import GovernanceError, inspect_governance
+from harness_catalog import classify_harness
 
 # Project paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -51,6 +54,7 @@ ENVIRONMENT_DIR = PROJECT_ROOT / "environment"
 EXPERIMENTS_DIR = PROJECT_ROOT / "experiments"
 
 _TASK_BENCH = TaskBenchManager(PROJECT_ROOT)
+_TASK_DATASETS = DatasetStore(PROJECT_ROOT, task_dir=_TASK_BENCH.task_dir)
 _EGO_IR = EgoIRService(PROJECT_ROOT)
 _PROOF_EVOLUTION = ProofEvolutionController(PROJECT_ROOT)
 _SCIENCE = ScienceRepository(PROJECT_ROOT)
@@ -309,8 +313,8 @@ def list_experiment_scenarios() -> List[Dict]:
         "name": "Custom Evolution Experiment",
         "description": "Run V2 structural evolution on a custom harness with custom data",
         "params": {
-            "harness": {"type": "select", "options": [], "default": "react_single"},
-            "identity": {"type": "select", "options": [], "default": "dante"},
+            "harness": {"type": "select", "options": [], "default": "adaptive_code_agent"},
+            "identity": {"type": "select", "options": [], "default": "deepseek_operator"},
             "data_path": {"type": "string", "default": ""},
             "max_iterations": {"type": "int", "default": 5, "min": 1, "max": 20},
             "mode": {"type": "select", "options": ["v2_structural", "prompt_only", "full"], "default": "v2_structural"},
@@ -549,6 +553,7 @@ def list_harnesses_with_details() -> List[Dict]:
                 pipeline = config.get("pipeline", {})
                 nodes = pipeline.get("nodes", {})
                 slots = config.get("slots", {})
+                catalog = classify_harness(h_dir.name, config)
                 
                 harnesses.append({
                     "id": h_dir.name,
@@ -560,6 +565,7 @@ def list_harnesses_with_details() -> List[Dict]:
                     "start_node": pipeline.get("start", ""),
                     "has_scripts": (h_dir / "scripts").exists(),
                     "has_protocol": (h_dir / "protocol.py").exists(),
+                    **catalog,
                 })
             except:
                 pass
@@ -574,6 +580,24 @@ def handle_api_request(method: str, path: str, body: Dict = None) -> tuple:
     Returns (None, None) if the path is not handled by this module.
     """
     body = body or {}
+
+    if path.startswith("/api/observations/"):
+        from flow_observation import observation_store
+        try:
+            store = observation_store()
+            if method == "GET" and path == "/api/observations/runs":
+                return store.list_runs(), 200
+            if method == "GET" and path == "/api/observations/album":
+                return store.recordings(), 200
+            if method == "POST" and path == "/api/observations/read":
+                return store.read(str(body.get("root_id", "")), int(body.get("after", 0)),
+                                  int(body.get("limit", 500)), str(body.get("recording_id", ""))), 200
+            if method == "POST" and path == "/api/observations/record":
+                return store.record(str(body.get("root_id", "")), str(body.get("action", "start")),
+                                    str(body.get("title", "")), str(body.get("recording_id", ""))), 200
+            return {"error": "Unknown observation endpoint"}, 404
+        except (ValueError, TypeError, OSError) as error:
+            return {"error": str(error)}, 400
 
     # Capability Library: a local, progressive-disclosure catalog.  The UI and
     # Agent use the same ranking and counters, so Workbench behavior is
@@ -782,6 +806,30 @@ def handle_api_request(method: str, path: str, body: Dict = None) -> tuple:
     # pause gate and input queue, so a benchmark cannot corrupt the editor's
     # legacy global execution session.
     try:
+        if method == "POST" and path == "/api/governance/inspect":
+            return inspect_governance(
+                PROJECT_ROOT,
+                str(body.get("harness", "")),
+                str(body.get("identity", "")),
+                str(body.get("mode", "agent")),
+            ), 200
+
+        if method == "GET" and path == "/api/task-bench/datasets":
+            return _TASK_DATASETS.list(), 200
+
+        if method == "GET" and path.startswith("/api/task-bench/datasets/"):
+            dataset_id = path.split("/api/task-bench/datasets/", 1)[1].strip("/")
+            return _TASK_DATASETS.get(dataset_id), 200
+
+        if method == "POST" and path == "/api/task-bench/datasets/preview":
+            return _TASK_DATASETS.preview(body), 200
+
+        if method == "POST" and path == "/api/task-bench/datasets":
+            return _TASK_DATASETS.create(body), 201
+
+        if method == "POST" and path == "/api/task-bench/compare":
+            return _TASK_BENCH.compare_runs(body.get("run_ids", [])), 200
+
         if method == "GET" and path == "/api/task-bench/tasks":
             tasks = []
             for spec in _TASK_BENCH.tasks():
@@ -837,10 +885,14 @@ def handle_api_request(method: str, path: str, body: Dict = None) -> tuple:
             run_id = path.split("/api/task-bench/runs/", 1)[1].rsplit("/control", 1)[0].strip("/")
             return _TASK_BENCH.control(run_id, str(body.get("action", ""))), 200
 
+        if method == "POST" and path.startswith("/api/task-bench/runs/") and path.endswith("/recover"):
+            run_id = path.split("/api/task-bench/runs/", 1)[1].rsplit("/recover", 1)[0].strip("/")
+            return _TASK_BENCH.recover(run_id, debug_mode=str(body.get("debug_mode", "auto"))), 202
+
         if method == "POST" and path.startswith("/api/task-bench/runs/") and path.endswith("/input"):
             run_id = path.split("/api/task-bench/runs/", 1)[1].rsplit("/input", 1)[0].strip("/")
             return _TASK_BENCH.input(run_id, str(body.get("text", ""))), 200
-    except TaskBenchError as error:
+    except (TaskBenchError, DatasetError, GovernanceError) as error:
         return {"error": str(error)}, 404 if "not found" in str(error).lower() else 400
     except (OSError, ValueError, json.JSONDecodeError) as error:
         return {"error": str(error)}, 400

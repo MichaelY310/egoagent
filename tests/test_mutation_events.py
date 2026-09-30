@@ -1,6 +1,6 @@
 import unittest
 
-from pipeline_engine import _mutation_event_for_tool
+from pipeline_engine import _mutation_event_for_tool, _mutation_event_payload
 
 
 class MutationEventClassificationTests(unittest.TestCase):
@@ -32,6 +32,24 @@ class MutationEventClassificationTests(unittest.TestCase):
             _mutation_event_for_tool("manage_harness", {"action": "patch"}, {"ok": True}),
             "harness_mutation",
         )
+
+    def test_harness_event_has_a_stable_structural_contract(self):
+        payload = _mutation_event_payload(
+            "manage_harness",
+            {
+                "action": "patch",
+                "harness_name": "demo_flow",
+                "operations": [{"op": "add_step", "step": {"id": "approval", "type": "人工审批"}}],
+            },
+            '{"ok":true,"transaction_id":"tx-7","revision":"rev-2","current_nodes":["input","approval"]}',
+            agent="architect",
+        )
+        self.assertEqual(payload["harness"], "demo_flow")
+        self.assertEqual(payload["action"], "patch")
+        self.assertEqual(payload["transaction_id"], "tx-7")
+        self.assertEqual(payload["revision"], "rev-2")
+        self.assertEqual(payload["nodes"], ["input", "approval"])
+        self.assertEqual(payload["operations"][0]["step"]["id"], "approval")
 
 
 if __name__ == "__main__":

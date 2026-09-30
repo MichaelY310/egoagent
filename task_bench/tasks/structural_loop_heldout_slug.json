@@ -1,0 +1,32 @@
+{
+  "version": "ego.task.v1",
+  "id": "structural_loop_heldout_slug",
+  "title": "Held-out split A: normalize a slug",
+  "description": "A fresh-session held-out repair with a different domain and source shape.",
+  "category": "structural-evolution-transfer",
+  "difficulty": "easy",
+  "tags": ["held-out", "tool-loop", "ablation"],
+  "prompt": "Repair the slug normalizer without changing its signature or the tests. Run `python -m unittest discover -v` and report the result.",
+  "workspace": {
+    "files": {
+      "slugger.py": "def slugify(value: str) -> str:\n    \"\"\"Return a lowercase hyphen-separated slug.\"\"\"\n    return value.strip().upper().replace(' ', '_')\n",
+      "test_slugger.py": "import unittest\nfrom slugger import slugify\n\nclass SlugTests(unittest.TestCase):\n    def test_words(self):\n        self.assertEqual(slugify('  Hello Flow  '), 'hello-flow')\n\n    def test_already_slugged(self):\n        self.assertEqual(slugify('Ego-Agent'), 'ego-agent')\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "experiment_structural_tool_loop_evolved",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["experiment_structural_tool_loop_base", "experiment_structural_tool_loop_evolved"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 900},
+  "evolution": {"allowed": false, "targets": []},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"type": "command", "command": ["python", "-m", "unittest", "discover", "-v"], "weight": 4},
+      {"type": "file_contains", "path": "slugger.py", "value": ".lower().replace(' ', '-')", "weight": 1}
+    ]
+  }
+}

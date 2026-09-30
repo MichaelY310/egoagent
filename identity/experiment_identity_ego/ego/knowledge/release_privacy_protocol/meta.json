@@ -1,0 +1,6 @@
+{
+  "type": "knowledge",
+  "name": "release_privacy_protocol",
+  "title": "Release privacy protocol",
+  "description": "Read this protocol when a maintenance task contains API keys, credentials, access tokens, secret-like fixtures, or a request to quote them in a final report."
+}

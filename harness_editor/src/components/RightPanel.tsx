@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, type DragEvent } from 'react';
-import type { HarnessConfig, PipelineNode, SlotDef, PromptDef, EdgeCondition, OpType } from '../types';
+import type { HarnessConfig, PipelineNode, SlotDef, PromptDef, EdgeCondition, OpType, BezierKnot } from '../types';
 import type { HarnessCatalogItem } from '../api/client';
 import {
   ComponentPortsEditor,
@@ -24,14 +24,13 @@ const MODEL_OPS: OpType[] = ['模型', 'llm_call'];
 interface Props {
   config: HarnessConfig;
   selectedNode: PipelineNode | null;
-  selectedEdge: { id: string; condition: EdgeCondition; source: string; target: string } | null;
+  selectedEdge: { id: string; condition: EdgeCondition; kind: 'control' | 'data'; sourcePort: string; targetPort: string; source: string; target: string; route: string; reroutes: BezierKnot[]; channelOffset: number; curvature: number; labelOffset: number } | null;
   onConfigChange: (config: HarnessConfig) => void;
   onNodeUpdate: (nodeId: string, updates: Partial<PipelineNode>) => void;
-  onEdgeUpdate: (edgeId: string, condition: EdgeCondition) => void;
+  onEdgeUpdate: (edgeId: string, updates: { condition?: EdgeCondition; route?: string; reroutes?: BezierKnot[]; channelOffset?: number; curvature?: number; labelOffset?: number }) => void;
   onDeleteNode: (nodeId: string) => void;
   onDeleteEdge: (edgeId: string) => void;
   onSave: () => void;
-  onLoad: (name: string) => void;
   harnessList: string[];
   componentList: HarnessCatalogItem[];
   identityList: string[];
@@ -43,14 +42,13 @@ export default function RightPanel({
   config, selectedNode, selectedEdge,
   onConfigChange, onNodeUpdate, onEdgeUpdate,
   onDeleteNode, onDeleteEdge,
-  onSave, onLoad, harnessList, componentList, identityList, dagContracts,
+  onSave, harnessList, componentList, identityList, dagContracts,
   onRefreshIdentities,
 }: Props) {
   const [newSlotName, setNewSlotName] = useState('');
   const [newSlotDesc, setNewSlotDesc] = useState('');
   const [newPromptName, setNewPromptName] = useState('');
   const [newPromptDefault, setNewPromptDefault] = useState('');
-  const [loadName, setLoadName] = useState('');
   const [identityQuery, setIdentityQuery] = useState('');
   const [showAllIdentities, setShowAllIdentities] = useState(false);
   const filteredIdentities = useMemo(() => {
@@ -812,33 +810,43 @@ export default function RightPanel({
         <div className="panel-section">
           <h3>连线配置</h3>
           <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 10 }}>
-            {selectedEdge.source} → {selectedEdge.target}
+            {selectedEdge.source}.{selectedEdge.sourcePort} → {selectedEdge.target}.{selectedEdge.targetPort}
           </p>
-          <label>条件</label>
-          <input
-            list="edge-conditions"
-            value={selectedEdge.condition}
-            onChange={(e) => onEdgeUpdate(selectedEdge.id, e.target.value as EdgeCondition)}
-            placeholder="default 或 expr: ctx.score > 0.8"
-          />
-          <datalist id="edge-conditions">
-            <option value="default" />
-            <option value="input" />
-            <option value="true" />
-            <option value="false" />
-            <option value="has_tool_calls" />
-            <option value="no_tool_calls" />
-            <option value="has_text" />
-            <option value="loop_continue" />
-            <option value="loop_done" />
-            <option value="approved" />
-            <option value="rejected" />
-            <option value="error" />
-            <option value="timeout" />
-            <option value="retry_exhausted" />
-            <option value="parallel_done" />
-          </datalist>
-          <p style={{ fontSize: 10, color: '#888' }}>高级条件可写 expr: ctx.score &gt;= 0.8，运行时使用安全表达式，不执行 Python。</p>
+          <div className={`edge-kind-badge ${selectedEdge.kind}`}>{selectedEdge.kind === 'data' ? '数据连接 · 自动写入目标 inputs' : '控制连接 · 根据事件选择下一节点'}</div>
+          {selectedEdge.kind === 'control' && <>
+            <label>事件 / 条件</label>
+            <input
+              list="edge-conditions"
+              value={selectedEdge.condition}
+              onChange={(e) => onEdgeUpdate(selectedEdge.id, { condition: e.target.value as EdgeCondition })}
+              placeholder="default 或 expr: ctx.score > 0.8"
+            />
+            <datalist id="edge-conditions">
+              <option value="default" /><option value="input" /><option value="true" /><option value="false" />
+              <option value="has_tool_calls" /><option value="no_tool_calls" /><option value="has_text" />
+              <option value="loop_continue" /><option value="loop_done" /><option value="approved" />
+              <option value="rejected" /><option value="error" /><option value="timeout" />
+              <option value="retry_exhausted" /><option value="parallel_done" />
+            </datalist>
+          </>}
+          <label>连线路径</label>
+          <select value={selectedEdge.route} onChange={(e) => onEdgeUpdate(selectedEdge.id, { route: e.target.value })}>
+            <option value="bezier">平滑贝塞尔（推荐）</option>
+            <option value="straight">直线</option>
+          </select>
+          <p className="edge-routing-help">
+            端点固定在命名 socket 上。选中连线后使用画布上的“＋转接点”，再拖动小菱形绕开节点；这与 Blender 的 Reroute 节点一致，不支持双击任意修改曲线。选中转接点按 Delete 删除。
+          </p>
+          <label>曲线弧度</label>
+          <input type="range" min="0.2" max="1.2" step="0.05" value={selectedEdge.curvature} onChange={(e) => onEdgeUpdate(selectedEdge.id, { curvature: Number(e.target.value) })} />
+          <div className="edge-route-summary">
+            <span>{selectedEdge.reroutes.length ? `${selectedEdge.reroutes.length} 个 Bezier 控制点` : '直接 Bezier 连线'}</span>
+            {selectedEdge.reroutes.length > 0 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEdgeUpdate(selectedEdge.id, { reroutes: [], channelOffset: 0 })}>清除控制点</button>}
+          </div>
+          <p className="edge-routing-help">双击或右键连线可在鼠标位置精确插入控制点。拖动圆点会平滑调整整条线；Shift+拖动只改当前点；Alt+拖动让控制点沿原曲线滑动。拖动方形手柄旋转切线，Shift 可禁止其他控制点联动。</p>
+          <label>条件标签偏移</label>
+          <input type="range" min="-120" max="120" step="5" value={selectedEdge.labelOffset} onChange={(e) => onEdgeUpdate(selectedEdge.id, { labelOffset: Number(e.target.value) })} />
+          {selectedEdge.kind === 'control' && <p style={{ fontSize: 10, color: '#888' }}>高级条件可写 expr: ctx.score &gt;= 0.8，运行时使用安全表达式，不执行 Python。</p>}
           <div className="btn-row">
             <button className="btn btn-danger btn-sm" onClick={() => onDeleteEdge(selectedEdge.id)}>
               删除连线
@@ -857,6 +865,7 @@ export default function RightPanel({
 
         <label>名称</label>
         <input
+          aria-label="Flow 名称"
           value={config.name}
           onChange={(e) => onConfigChange({ ...config, name: e.target.value })}
         />
@@ -886,7 +895,7 @@ export default function RightPanel({
           <option value="evolve">Evolve：允许受控自进化</option>
         </select>
 
-        <details className="panel-disclosure" style={{ margin: '8px 0' }} open>
+        <details className="panel-disclosure" style={{ margin: '8px 0' }}>
           <summary><span>初始上下文</span><small>{Object.keys(config.pipeline.context || {}).length}</small></summary>
           <MappingEditor value={config.pipeline.context || {}} onChange={(context) => onConfigChange({ ...config, pipeline: { ...config.pipeline, context } })} mode="context" suggestions={variableSuggestions} title="启动时写入 $ctx" />
           <p className="dag-editor-help">后续节点可直接选择 <code>$ctx.变量名</code>；端口下拉会自动收集这些变量。</p>
@@ -1022,8 +1031,8 @@ export default function RightPanel({
       </div>
 
       {/* Slots */}
-      <div className="panel-section">
-        <h3>Slots</h3>
+      <details className="panel-section panel-disclosure">
+        <summary><span>Agent Slots</span><small>{Object.keys(config.slots).length}</small></summary>
         {Object.entries(config.slots).map(([name, def]) => (
           <div
             key={name}
@@ -1068,10 +1077,10 @@ export default function RightPanel({
             setNewSlotDesc('');
           }}>+</button>
         </div>
-      </div>
+      </details>
 
       {/* Identity 拖放区 */}
-      <details className="panel-section panel-disclosure" open>
+      <details className="panel-section panel-disclosure">
         <summary><span>Identity 绑定</span><small>{identityList.length}</small></summary>
         <p style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
           从 Identity 管理页拖放 identity 到上方 slot 即可绑定
@@ -1157,32 +1166,6 @@ export default function RightPanel({
           }}>+</button>
         </div>
       </details>
-
-      {/* Load / New */}
-      <div className="panel-section">
-        <h3>加载 / 新建</h3>
-        <select value={loadName} onChange={(e) => setLoadName(e.target.value)} style={{ marginBottom: 8 }}>
-          <option value="">-- 选择 harness --</option>
-          {harnessList.map((h) => (
-            <option key={h} value={h}>{h}</option>
-          ))}
-        </select>
-        <div className="btn-row">
-          <button className="btn btn-secondary btn-sm" onClick={() => {
-            if (loadName) onLoad(loadName);
-          }}>加载</button>
-          <button className="btn btn-secondary btn-sm" onClick={() => {
-            onConfigChange({
-              name: 'new_harness',
-              description: '',
-              slots: {},
-              prompts: {},
-              return_mode: 'all',
-              pipeline: { start: '', max_steps: 100, workspace_preview: false, nodes: {} }
-            });
-          }}>新建</button>
-        </div>
-      </div>
     </div>
   );
 }

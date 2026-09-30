@@ -145,8 +145,9 @@ class LocalAPISecurityTests(unittest.TestCase):
             payload = json.dumps({"run_id": handle.run_id, "approval_id": "approval-current", "decision": "approved"})
             status, _, _ = self.request("POST", "/api/execution/approval", headers=headers, body=payload)
             self.assertEqual(status, 200)
-            queued = json.loads(approval_queue.get_nowait())
+            queued = handle.wait_for_approval("approval-current", lambda: False)
             self.assertEqual(queued["decision"], "approved")
+            self.assertTrue(approval_queue.empty())
 
             status, _, _ = self.request("POST", "/api/execution/approval", headers=headers, body=payload)
             self.assertEqual(status, 409)
@@ -154,6 +155,28 @@ class LocalAPISecurityTests(unittest.TestCase):
         finally:
             handle.state["running"] = False
             server_module.interactive_runs.remove(handle.run_id)
+
+    def test_approval_mode_route_requires_confirmation_and_preserves_other_sessions(self):
+        handle = server_module.interactive_runs.create(ROOT)
+        other = server_module.interactive_runs.create(ROOT)
+        try:
+            headers = {"Origin": "http://127.0.0.1:8880", "Content-Type": "application/json"}
+            data = {"run_id": handle.run_id, "approval_mode": "auto"}
+            status, _, _ = self.request("POST", "/api/execution/approval-mode", headers=headers, body=json.dumps(data))
+            self.assertEqual(status, 400)
+            self.assertEqual(handle.state["approval_mode"], "manual")
+            data["confirmed"] = True
+            status, _, _ = self.request("POST", "/api/execution/approval-mode", headers=headers, body=json.dumps(data))
+            self.assertEqual(status, 200)
+            self.assertEqual(handle.state["approval_mode"], "auto")
+            self.assertEqual(other.state["approval_mode"], "manual")
+            data["approval_mode"] = "manual"
+            status, _, _ = self.request("POST", "/api/execution/approval-mode", headers=headers, body=json.dumps(data))
+            self.assertEqual(status, 200)
+            self.assertEqual(handle.state["approval_mode"], "manual")
+        finally:
+            server_module.interactive_runs.remove(handle.run_id)
+            server_module.interactive_runs.remove(other.run_id)
 
     def test_resource_management_routes_confine_every_path_to_its_catalog(self):
         (ROOT / "tmp").mkdir(exist_ok=True)

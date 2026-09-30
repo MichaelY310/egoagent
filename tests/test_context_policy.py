@@ -241,6 +241,41 @@ class ContextPolicyTests(unittest.TestCase):
         restored_payload = json.loads(restored_tool["content"].split("<tool_response>", 1)[1].split("</tool_response>", 1)[0])
         self.assertEqual(restored_payload["content"], raw_tool)
 
+    def test_pressure_compaction_rejects_a_plan_that_grows_working_context(self):
+        messages = [
+            {"role": "system", "content": "Keep project rules."},
+            user("short old requirement"),
+            assistant("short old answer"),
+            user("continue"),
+        ]
+        old_block = next(
+            block for block in context_blocks(messages, protect_recent_turns=1)
+            if block.kind == "user_requirement" and not block.protected
+        )
+        plan = {
+            "blocks": [{
+                "block_id": old_block.id,
+                "action": "summarize",
+                "reason": "bad verbose summary",
+                "summary": "expanded " * 1000,
+            }],
+            "continuation_summary": "still expanded " * 1000,
+        }
+        result = apply_pressure_compaction(
+            messages,
+            plan,
+            target_tokens=100,
+            protect_recent_turns=1,
+            minimum_savings_tokens=64,
+        )
+        self.assertTrue(result["stats"]["compaction_rejected"])
+        self.assertEqual(result["stats"]["saved_tokens_estimated"], 0)
+        self.assertEqual(
+            json.dumps(result["messages"], ensure_ascii=False),
+            json.dumps(result["full_messages"], ensure_ascii=False),
+        )
+        self.assertNotIn("pressure_summary", json.dumps(result, ensure_ascii=False))
+
 
 if __name__ == "__main__":
     unittest.main()

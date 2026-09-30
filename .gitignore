@@ -91,8 +91,11 @@ void-web.tar.gz
 .runtime/
 .egoagent/
 .egoagent_checkpoints/
+# Immutable Flow snapshots are runtime/session data, not source definitions.
+harness/*/.versions/
 
 # === Temporary/test files ===
+.pytest_cache/
 tmp/
 _delete_test.txt
 _patch_*.py
@@ -100,6 +103,12 @@ pas_output/
 experiments/**/_runs/
 experiments/external/
 experiments/archive/*.zip
+# Local experiment outputs can contain prompts, trajectories and private paths.
+# Publish reviewed reports explicitly; never sweep raw runs into a release.
+experiments/product_code_agent_acceptance/results/
+experiments/evocert_real_pilot/results/
+# Generated installation connection details may include a remote access token.
+void_extension/egoagent-dag-chat/connection-runtime.js
 
 # === Misc ===
 *.bak

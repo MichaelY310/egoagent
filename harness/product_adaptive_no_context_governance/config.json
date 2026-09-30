@@ -1,0 +1,38 @@
+{
+  "name": "product_adaptive_no_context_governance",
+  "description": "Matched ablation of the Product Adaptive Code Agent with periodic curation and passive compaction disabled; discovery, memory, delegation and evolution remain available.",
+  "tags": ["experiment", "code", "ablation", "no-context-governance"],
+  "slots": {
+    "agent": {"description": "Primary adaptive software engineer", "required": true, "identity": "adaptive_deepseek_coder"},
+    "governor": {"description": "Planner and evolver", "required": true, "identity": "adaptive_deepseek_coder"},
+    "quality_reviewer": {"description": "Independent correctness reviewer", "required": true, "identity": "deepseek_operator"},
+    "safety_reviewer": {"description": "Independent scope and safety reviewer", "required": true, "identity": "deepseek_operator"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "run_without_context_governance",
+    "max_steps": 560,
+    "max_node_steps": 3200,
+    "timeout_seconds": 7200,
+    "workspace_preview": true,
+    "interactive_max_tokens": null,
+    "budget": {"max_model_calls": 280, "max_tool_calls": 920, "max_tokens": 1900000},
+    "context": {"result": {}},
+    "nodes": {
+      "run_without_context_governance": {
+        "id": "run_without_context_governance",
+        "op": "子流程",
+        "harness": "product_adaptive_code_agent",
+        "share_session": true,
+        "agent_map": {"agent": "agent", "governor": "governor", "quality_reviewer": "quality_reviewer", "safety_reviewer": "safety_reviewer"},
+        "component_inputs": {"enable_curation": false, "enable_compaction": false},
+        "component_outputs": {"answer": "answer", "evolved": "evolved", "context_stats": "context_stats", "reviews": "reviews"},
+        "result_mode": "data",
+        "output_var": "result",
+        "edges": [{"condition": "subflow_done", "to": "done"}]
+      },
+      "done": {"id": "done", "op": "结束", "value": {"answer": "$ctx.answer", "evolved": "$ctx.evolved", "context": "$ctx.context_stats", "reviews": "$ctx.reviews"}, "edges": []}
+    }
+  }
+}

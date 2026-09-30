@@ -7,7 +7,9 @@ declare global {
       workspace?: string;
       apiBase?: string;
       wsBase?: string;
+      runtimeLabel?: string;
       tab?: string;
+      linkRunId?: string;
     };
   }
 }
@@ -17,6 +19,7 @@ function trimTrailingSlash(value: string): string {
 }
 
 export const WORKSPACE = bootstrap.workspace || query.get('workspace') || '';
+export const RUNTIME_LABEL = bootstrap.runtimeLabel || 'Local runtime';
 export const API_BASE = trimTrailingSlash(
   bootstrap.apiBase || query.get('apiBase') || `http://${window.location.hostname}:8765`,
 );
@@ -24,6 +27,7 @@ export const WS_BASE = trimTrailingSlash(
   bootstrap.wsBase || query.get('wsBase') || API_BASE.replace(/^http/i, 'ws').replace(/:8765$/, ':8766'),
 );
 export const INITIAL_TAB = bootstrap.tab || query.get('tab') || '';
+export const INITIAL_LINK_RUN_ID = bootstrap.linkRunId || query.get('link_run') || '';
 export const EMBEDDED_IN_IDE = Boolean(window.__EGOAGENT_WORKBENCH__) || query.get('embed') === '1';
 
 export function canonicalWorkspace(value: unknown): string {

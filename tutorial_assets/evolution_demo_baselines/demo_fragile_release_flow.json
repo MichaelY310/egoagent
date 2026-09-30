@@ -1,0 +1,32 @@
+{
+  "name": "demo_fragile_release_flow",
+  "description": "Deliberately incomplete video fixture: a planner can reach an irreversible executor without an approval/checkpoint boundary.",
+  "slots": {"worker": {"description": "Release engineer", "required": true, "identity": "dante"}},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 18,
+    "budget": {"max_model_calls": 6, "max_tool_calls": 8, "max_tokens": 24000},
+    "context": {"request": "", "plan": "", "result": ""},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "plan"}]},
+      "plan": {
+        "id": "plan", "op": "Agent", "agent": "worker", "tools": "all",
+        "visible_tools": ["read_file", "list_files", "search_files"],
+        "instructions": "Inspect the workspace and produce a concrete release plan for: ${ctx.request}. Do not change files in this node.",
+        "outputs": {"text": "plan"},
+        "edges": [{"condition": "has_tool_calls", "to": "plan_tools"}, {"condition": "has_text", "to": "execute"}]
+      },
+      "plan_tools": {"id": "plan_tools", "op": "工具", "agent": "worker", "edges": [{"condition": "default", "to": "plan"}]},
+      "execute": {
+        "id": "execute", "op": "Agent", "agent": "worker", "tools": "all",
+        "instructions": "Execute the previously prepared release plan. Request=${ctx.request}\nPlan=${ctx.plan}",
+        "outputs": {"text": "result"},
+        "edges": [{"condition": "has_tool_calls", "to": "execute_tools"}, {"condition": "has_text", "to": "done"}]
+      },
+      "execute_tools": {"id": "execute_tools", "op": "工具", "agent": "worker", "edges": [{"condition": "default", "to": "execute"}]},
+      "done": {"id": "done", "op": "结束", "value": {"plan": "$ctx.plan", "result": "$ctx.result"}, "record": true, "edges": []}
+    }
+  }
+}

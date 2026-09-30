@@ -1,0 +1,1148 @@
+{
+  "name": "experiment_context_m1_p1_c0_r0",
+  "description": "Internal matched context factorial fixture: memory=True, tool_pruning=True, passive_compaction=False, repeat_guard=False.",
+  "tags": [
+    "experiment",
+    "context-factorial",
+    "do-not-recommend"
+  ],
+  "catalog": {
+    "category": "experiment",
+    "visibility": "internal",
+    "display_name": "Context M1 P1 C0 R0"
+  },
+  "component": {
+    "name": "product_adaptive_code_agent",
+    "display_name": "Product Adaptive Code Agent",
+    "category": "Agent",
+    "icon": "</>",
+    "description": "Reusable complete coding loop; evolution can be disabled without duplicating the remaining graph.",
+    "share_session": true,
+    "inputs": {
+      "enable_evolution": {
+        "description": "Run the governed evolution component on its declared cadence",
+        "default": true,
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "enable_delegation": {
+        "description": "Allow cost-gated isolated child-Agent execution",
+        "default": true,
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "enable_memory": {
+        "description": "Retrieve and persist durable workspace memory",
+        "default": true,
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "enable_curation": {
+        "description": "Allow periodic model-authored conversation curation",
+        "default": true,
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "enable_compaction": {
+        "description": "Allow passive token-pressure context compaction",
+        "default": true,
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "enable_tool_pruning": {
+        "description": "Prune oversized tool observations only in the model-facing context while preserving the lossless trajectory",
+        "default": true,
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "curation_interval": {
+        "description": "Completed user turns between relevance reviews",
+        "default": 4,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "curation_minimum_tokens": {
+        "description": "Minimum estimated working-context size before periodic model-authored curation may run",
+        "default": 12000,
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "evolution_interval": {
+        "description": "Completed user turns between governed evolution reviews",
+        "default": 6,
+        "schema": {
+          "type": "integer",
+          "minimum": 2
+        }
+      },
+      "context_limit_tokens": {
+        "description": "Declared provider context window used by passive compaction",
+        "default": 32768,
+        "schema": {
+          "type": "integer",
+          "minimum": 1024
+        }
+      },
+      "context_high_watermark": {
+        "description": "Fraction of the declared window that triggers compaction",
+        "default": 0.72,
+        "schema": {
+          "type": "number",
+          "minimum": 0.2,
+          "maximum": 0.98
+        }
+      },
+      "context_target_ratio": {
+        "description": "Target fraction after model-authored compaction",
+        "default": 0.48,
+        "schema": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 0.9
+        }
+      },
+      "context_minimum_savings_tokens": {
+        "description": "Reject compaction plans whose estimated net saving is smaller than this",
+        "default": 256,
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "outputs": {
+      "answer": {
+        "path": "agent_answer",
+        "default": ""
+      },
+      "evolved": {
+        "path": "evolved",
+        "default": false
+      },
+      "context_stats": {
+        "path": "pressure_stats",
+        "default": {}
+      },
+      "reviews": {
+        "path": "reviews",
+        "default": []
+      }
+    }
+  },
+  "slots": {
+    "agent": {
+      "description": "Primary adaptive software engineer",
+      "required": true,
+      "identity": "adaptive_deepseek_coder"
+    },
+    "governor": {
+      "description": "Planner, context governor and evolver",
+      "required": true,
+      "identity": "adaptive_deepseek_coder"
+    },
+    "quality_reviewer": {
+      "description": "Independent correctness reviewer",
+      "required": true,
+      "identity": "deepseek_operator"
+    },
+    "safety_reviewer": {
+      "description": "Independent scope and safety reviewer",
+      "required": true,
+      "identity": "deepseek_operator"
+    }
+  },
+  "prompts": {
+    "plan": {
+      "default": "Plan the smallest safe implementation for the current request. Use retrieved memory and capability discovery only when relevant. A capability activation object with ok=true means that capability is already loaded on the primary Agent; do not plan another activation. Decide whether one bounded investigation should run in an isolated child Agent. Set use=true only when the CHILD SCOPE BY ITSELF is independent and is reasonably expected to require at least twelve tool calls or more than 12000 context characters; never add the parent estimate to meet this threshold. Delegation is for genuine context isolation, not decoration. For use=true: set harness exactly to product_bounded_code_worker; child_paths and parent_paths must be non-empty and disjoint; task may mention only child_paths; parent_task may mention only parent_paths and MUST NOT repeat the child objective. If clean disjoint scopes cannot be written, set use=false. When use=false, parent_task covers the full request and parent_paths may cover all relevant paths.\nRequest: {request}\nCapability discovery: {capability_discovery}\nCapability already applied to primary Agent: {capability_activation}\nMemory: {retrieved_memory}\nReturn ONLY JSON: {\"summary\":\"...\",\"parent_task\":\"exact remaining objective for the primary Agent\",\"parent_paths\":[\"path/or/prefix\"],\"files_to_inspect\":[\"...\"],\"verification\":[\"...\"],\"delegation_candidate\":{\"use\":true|false,\"reason\":\"...\",\"estimated_child_tool_calls\":0,\"estimated_child_context_chars\":0,\"child_paths\":[\"path/or/prefix\"],\"task\":\"bounded child-only objective or empty\",\"harness\":\"product_bounded_code_worker\"},\"risks\":[\"...\"]}"
+    },
+    "judge": {
+      "default": "Judge from concrete evidence whether the current coding request is complete. Do not assume unreported tests passed.\nRequest: {request}\nPlan: {implementation_plan}\nAnswer: {agent_answer}\nReturn ONLY JSON: {\"complete\":true,\"missing\":\"short actionable gap or empty\"}"
+    },
+    "quality_review": {
+      "default": "Independently review correctness, tests, regressions and requirement coverage. Be concise.\nRequest: {request}\nPlan: {implementation_plan}\nAnswer: {agent_answer}"
+    },
+    "safety_review": {
+      "default": "Independently review scope, destructive actions, permission boundaries, secret exposure and unsupported claims. Be concise.\nRequest: {request}\nAnswer: {agent_answer}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 520,
+    "max_node_steps": 3000,
+    "timeout_seconds": 7200,
+    "workspace_preview": true,
+    "interactive_max_tokens": null,
+    "checkpoint_dir": ".egoagent/checkpoints",
+    "budget": {
+      "max_model_calls": 260,
+      "max_tool_calls": 900,
+      "max_tokens": 1800000
+    },
+    "context": {
+      "request": "",
+      "turn_count": 0,
+      "curation_interval": 4,
+      "curation_minimum_tokens": 12000,
+      "evolution_interval": 6,
+      "enable_evolution": false,
+      "enable_delegation": false,
+      "enable_memory": true,
+      "enable_curation": false,
+      "enable_compaction": false,
+      "enable_tool_pruning": true,
+      "context_limit_tokens": 32768,
+      "context_high_watermark": 0.72,
+      "context_target_ratio": 0.48,
+      "context_minimum_savings_tokens": 256,
+      "attempts": [
+        1,
+        2,
+        3
+      ],
+      "goal_complete": false,
+      "agent_answer": "",
+      "feedback": "",
+      "capability_discovery": "",
+      "capability_activation_candidate": [],
+      "capability_activation": {},
+      "retrieved_memory": [],
+      "implementation_plan": {},
+      "reviews": [],
+      "delegation_result": "",
+      "delegation_scope": {},
+      "context_stats": {},
+      "pressure_stats": {},
+      "repeat_guard": {},
+      "prune_stats": {},
+      "evolved": false,
+      "evolution_mutation_evidence": [],
+      "evolution_repair_evidence": [],
+      "evolution_verification_decision": {
+        "verified": false
+      },
+      "evolved_capability_activation": {},
+      "_trajectory": []
+    },
+    "nodes": {
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "outputs": {
+          "text": "request"
+        },
+        "edges": [
+          {
+            "condition": "input",
+            "to": "reset_goal"
+          }
+        ]
+      },
+      "reset_goal": {
+        "id": "reset_goal",
+        "op": "数据",
+        "action": "set",
+        "key": "goal_complete",
+        "value": false,
+        "edges": [
+          {
+            "condition": "default",
+            "to": "reset_answer"
+          }
+        ]
+      },
+      "reset_answer": {
+        "id": "reset_answer",
+        "op": "数据",
+        "action": "set",
+        "key": "agent_answer",
+        "value": "",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "reset_feedback"
+          }
+        ]
+      },
+      "reset_feedback": {
+        "id": "reset_feedback",
+        "op": "数据",
+        "action": "set",
+        "key": "feedback",
+        "value": "",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "reset_delegation_result"
+          }
+        ]
+      },
+      "reset_delegation_result": {
+        "id": "reset_delegation_result",
+        "op": "数据",
+        "action": "set",
+        "key": "delegation_result",
+        "value": "",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "count_turn"
+          }
+        ]
+      },
+      "count_turn": {
+        "id": "count_turn",
+        "op": "数据",
+        "action": "increment",
+        "scope": "session",
+        "key": "product_adaptive.turn_count",
+        "default": 0,
+        "delta": 1,
+        "output_var": "turn_count",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "discover"
+          }
+        ]
+      },
+      "reset_repeat_guard": {
+        "id": "reset_repeat_guard",
+        "op": "子流程",
+        "harness": "component_repeat_tool_guard",
+        "share_session": true,
+        "component_inputs": {
+          "action": "reset",
+          "trajectory": "$ctx._trajectory",
+          "thresholds": [
+            2,
+            3,
+            5
+          ],
+          "namespace": "product_adaptive"
+        },
+        "component_outputs": {
+          "state": "repeat_guard"
+        },
+        "result_mode": "data",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "discover"
+          }
+        ]
+      },
+      "discover": {
+        "id": "discover",
+        "op": "子流程",
+        "harness": "component_capability_discovery",
+        "share_session": false,
+        "agent_map": {
+          "searcher": "governor"
+        },
+        "component_inputs": {
+          "query": "${ctx.request}",
+          "max_tool_rounds": 3
+        },
+        "component_outputs": {
+          "result": "capability_discovery",
+          "searched": "capability_searched",
+          "activation": "capability_activation_candidate"
+        },
+        "result_mode": "data",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "activate_discovered"
+          }
+        ]
+      },
+      "activate_discovered": {
+        "id": "activate_discovered",
+        "op": "能力",
+        "action": "activate_from_evidence",
+        "agent": "agent",
+        "inputs": {
+          "source": "$ctx.capability_activation_candidate"
+        },
+        "output_var": "capability_activation",
+        "edges": [
+          {
+            "condition": "activated",
+            "to": "curation_probe"
+          },
+          {
+            "condition": "not_found",
+            "to": "curation_probe"
+          },
+          {
+            "condition": "error",
+            "to": "curation_probe"
+          }
+        ]
+      },
+      "curation_probe": {
+        "id": "curation_probe",
+        "op": "上下文",
+        "action": "snapshot",
+        "review_interval": "$ctx.curation_interval",
+        "protect_recent_turns": 2,
+        "output_var": "curation_probe",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "curation_due"
+          }
+        ]
+      },
+      "curation_due": {
+        "id": "curation_due",
+        "op": "条件",
+        "condition": "ctx.enable_curation == true and ctx.turn_count % ctx.curation_interval == 0 and ctx.curation_probe.review_triggered == true and ctx.curation_probe.pressure.message_tokens_estimated >= ctx.curation_minimum_tokens",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "curate"
+          },
+          {
+            "condition": "false",
+            "to": "compaction_policy"
+          }
+        ]
+      },
+      "curate": {
+        "id": "curate",
+        "op": "子流程",
+        "harness": "component_context_curator",
+        "share_session": true,
+        "agent_map": {
+          "curator": "governor"
+        },
+        "component_inputs": {
+          "review_interval": "$ctx.curation_interval",
+          "protect_recent_turns": 2,
+          "max_tool_chars": 1600
+        },
+        "component_outputs": {
+          "applied": "context_curated",
+          "stats": "context_stats"
+        },
+        "result_mode": "data",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "compaction_policy"
+          }
+        ]
+      },
+      "compaction_policy": {
+        "id": "compaction_policy",
+        "op": "条件",
+        "condition": "ctx.enable_compaction == true",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "compact"
+          },
+          {
+            "condition": "false",
+            "to": "evolution_due"
+          }
+        ]
+      },
+      "compact": {
+        "id": "compact",
+        "op": "子流程",
+        "harness": "component_context_compactor",
+        "share_session": true,
+        "agent_map": {
+          "compactor": "governor"
+        },
+        "component_inputs": {
+          "context_limit_tokens": "$ctx.context_limit_tokens",
+          "high_watermark": "$ctx.context_high_watermark",
+          "target_ratio": "$ctx.context_target_ratio",
+          "reserved_output_tokens": 4096,
+          "protect_recent_turns": 2,
+          "minimum_savings_tokens": "$ctx.context_minimum_savings_tokens"
+        },
+        "component_outputs": {
+          "compacted": "context_compacted",
+          "stats": "pressure_stats",
+          "pressure": "context_pressure"
+        },
+        "result_mode": "data",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "evolution_due"
+          }
+        ]
+      },
+      "evolution_due": {
+        "id": "evolution_due",
+        "op": "条件",
+        "condition": "ctx.enable_evolution == true and ctx.turn_count % ctx.evolution_interval == 0",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "evolve"
+          },
+          {
+            "condition": "false",
+            "to": "memory_policy"
+          }
+        ]
+      },
+      "evolve": {
+        "id": "evolve",
+        "op": "子流程",
+        "harness": "component_capability_evolver",
+        "share_session": true,
+        "agent_map": {
+          "evolver": "governor"
+        },
+        "component_inputs": {
+          "require_approval": false,
+          "protect_recent_turns": 2
+        },
+        "component_outputs": {
+          "decision": "evolution_review",
+          "result": "evolution_result",
+          "evolved": "evolved",
+          "mutation": "evolution_mutation_evidence",
+          "repair": "evolution_repair_evidence",
+          "verification_decision": "evolution_verification_decision"
+        },
+        "result_mode": "data",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "evolved_ready"
+          }
+        ]
+      },
+      "evolved_ready": {
+        "id": "evolved_ready",
+        "op": "条件",
+        "condition": "ctx.evolved == true and ctx.evolution_verification_decision.verified == true",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "activate_evolved_primary"
+          },
+          {
+            "condition": "false",
+            "to": "memory_policy"
+          }
+        ]
+      },
+      "activate_evolved_primary": {
+        "id": "activate_evolved_primary",
+        "op": "能力",
+        "action": "activate_from_evidence",
+        "agent": "agent",
+        "inputs": {
+          "source": "$ctx.evolution_mutation_evidence"
+        },
+        "output_var": "evolved_capability_activation",
+        "edges": [
+          {
+            "condition": "activated",
+            "to": "memory_policy"
+          },
+          {
+            "condition": "not_found",
+            "to": "activate_evolved_repair"
+          },
+          {
+            "condition": "error",
+            "to": "activate_evolved_repair"
+          }
+        ]
+      },
+      "activate_evolved_repair": {
+        "id": "activate_evolved_repair",
+        "op": "能力",
+        "action": "activate_from_evidence",
+        "agent": "agent",
+        "inputs": {
+          "source": "$ctx.evolution_repair_evidence"
+        },
+        "output_var": "evolved_capability_activation",
+        "edges": [
+          {
+            "condition": "activated",
+            "to": "memory_policy"
+          },
+          {
+            "condition": "not_found",
+            "to": "memory_policy"
+          },
+          {
+            "condition": "error",
+            "to": "memory_policy"
+          }
+        ]
+      },
+      "memory_policy": {
+        "id": "memory_policy",
+        "op": "条件",
+        "condition": "ctx.enable_memory == true",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "recall"
+          },
+          {
+            "condition": "false",
+            "to": "clear_retrieved_memory"
+          }
+        ]
+      },
+      "clear_retrieved_memory": {
+        "id": "clear_retrieved_memory",
+        "op": "数据",
+        "action": "set",
+        "key": "retrieved_memory",
+        "value": [],
+        "edges": [
+          {
+            "condition": "default",
+            "to": "plan"
+          }
+        ]
+      },
+      "recall": {
+        "id": "recall",
+        "op": "记忆",
+        "action": "search",
+        "namespace": "product_adaptive_code",
+        "query": "$ctx.request",
+        "top_k": 5,
+        "minimum_overlap": 1,
+        "weights": {
+          "recency": 1,
+          "relevance": 3,
+          "importance": 1
+        },
+        "output_var": "retrieved_memory",
+        "edges": [
+          {
+            "condition": "memory_found",
+            "to": "plan"
+          },
+          {
+            "condition": "memory_empty",
+            "to": "plan"
+          }
+        ]
+      },
+      "plan": {
+        "id": "plan",
+        "op": "模型",
+        "agent": "governor",
+        "prompt": "plan",
+        "parse_as": "json_object",
+        "json_fallback": {
+          "summary": "Inspect, implement minimally, and test.",
+          "parent_task": "Complete the full user request.",
+          "parent_paths": [],
+          "files_to_inspect": [],
+          "verification": [],
+          "delegation_candidate": {
+            "use": false,
+            "reason": "Fallback plan",
+            "estimated_child_tool_calls": 0,
+            "estimated_child_context_chars": 0,
+            "child_paths": [],
+            "task": "",
+            "harness": "product_bounded_code_worker"
+          },
+          "risks": []
+        },
+        "temperature": 0.1,
+        "max_tokens": 1600,
+        "outputs": {
+          "structured": "implementation_plan"
+        },
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "measure_delegation"
+          },
+          {
+            "condition": "json_fallback",
+            "to": "measure_delegation"
+          }
+        ]
+      },
+      "measure_delegation": {
+        "id": "measure_delegation",
+        "op": "工作区",
+        "action": "measure",
+        "paths": "$ctx.implementation_plan.delegation_candidate.child_paths",
+        "max_files": 500,
+        "max_total_bytes": 20000000,
+        "output_var": "delegation_scope",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "delegation_due"
+          }
+        ]
+      },
+      "delegation_due": {
+        "id": "delegation_due",
+        "op": "条件",
+        "condition": "ctx.enable_delegation == true and ctx.implementation_plan.delegation_candidate.use == true and ctx.implementation_plan.delegation_candidate.task != '' and (ctx.delegation_scope.files >= 12 or ctx.delegation_scope.bytes >= 12000)",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "delegate"
+          },
+          {
+            "condition": "false",
+            "to": "restore_full_parent_task"
+          }
+        ]
+      },
+      "restore_full_parent_task": {
+        "id": "restore_full_parent_task",
+        "op": "数据",
+        "action": "set",
+        "key": "implementation_plan.parent_task",
+        "value": "$ctx.request",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "restore_full_parent_paths"
+          }
+        ]
+      },
+      "restore_full_parent_paths": {
+        "id": "restore_full_parent_paths",
+        "op": "数据",
+        "action": "set",
+        "key": "implementation_plan.parent_paths",
+        "value": [],
+        "edges": [
+          {
+            "condition": "default",
+            "to": "checkpoint_before"
+          }
+        ]
+      },
+      "delegate": {
+        "id": "delegate",
+        "op": "子流程",
+        "harness": "$ctx.implementation_plan.delegation_candidate.harness",
+        "share_session": false,
+        "agent_map": {
+          "agent": "agent"
+        },
+        "initial_message": "$ctx.implementation_plan.delegation_candidate.task",
+        "result_mode": "text",
+        "output_var": "delegation_result",
+        "max_depth": 4,
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "checkpoint_before"
+          }
+        ]
+      },
+      "checkpoint_before": {
+        "id": "checkpoint_before",
+        "op": "检查点",
+        "action": "save",
+        "label": "product-before-change",
+        "edges": [
+          {
+            "condition": "checkpoint_saved",
+            "to": "begin_transaction"
+          }
+        ]
+      },
+      "begin_transaction": {
+        "id": "begin_transaction",
+        "op": "工作区",
+        "action": "begin_transaction",
+        "output_var": "edit_transaction",
+        "edges": [
+          {
+            "condition": "transaction_started",
+            "to": "work_loop"
+          }
+        ]
+      },
+      "work_loop": {
+        "id": "work_loop",
+        "op": "循环",
+        "list_var": "attempts",
+        "item_var": "attempt",
+        "counter_var": "attempt_index",
+        "body_start": "infer",
+        "break_when": "ctx.goal_complete",
+        "result_var": "attempt_reports",
+        "max_count": 3,
+        "edges": [
+          {
+            "condition": "loop_break",
+            "to": "review_parallel"
+          },
+          {
+            "condition": "loop_done",
+            "to": "review_parallel"
+          }
+        ]
+      },
+      "infer": {
+        "id": "infer",
+        "op": "Agent",
+        "agent": "agent",
+        "tools": "all",
+        "hidden_tools": [
+          "terminate",
+          "end_session",
+          "submit_result",
+          "finish",
+          "done"
+        ],
+        "max_tool_rounds": 48,
+        "compact_tool_preamble_chars": 320,
+        "reject_identical_tool_call": false,
+        "duplicate_threshold": 1,
+        "stuck_to": "judge",
+        "instructions": "Original request (for final verification only): ${ctx.request}\nYour exact implementation scope: ${ctx.implementation_plan.parent_task}\nYour allowed primary paths: ${ctx.implementation_plan.parent_paths}\nPlan: ${ctx.implementation_plan}\nIsolated child result (empty when no delegation was selected): ${ctx.delegation_result}\nReusable capability discovery: ${ctx.capability_discovery}\nPreviously discovered capability already applied to this Agent: ${ctx.capability_activation}\nNewly evolved and verified capability already applied to this Agent: ${ctx.evolved_capability_activation}\nRetrieved durable memory: ${ctx.retrieved_memory}\nPrevious judge feedback: ${ctx.feedback}\nYour first response must call an inspection or verification tool; before tool calls use at most one short sentence. Implement only your exact scope and primary paths. A non-empty isolated child result means the Flow already executed the complementary child scope: consume that evidence, do not inspect, rewrite, or narrate child_paths unless the final verification fails and points to them. If delegation_result is empty, the candidate was rejected by the deterministic cost gate and you must complete the original request normally. If either capability activation object has ok=true and its documented contract exactly matches this request, your first tool call MUST invoke that loaded capability directly with the request paths; do not re-read its source, contract, or input first. When it returns explicit PASS and the requested artifact exists, return the compact result immediately without an equivalent read or command. Do not call activate_capability again. Otherwise make minimal transactional edits and run focused verification. When the deterministic test command passes and every explicit requirement is covered across parent plus child, return a compact final answer immediately; never draft code or long reasoning in prose, create temporary verification scripts, or rerun equivalent checks. Never delegate a trivial file merely to demonstrate delegation. If repeated session evidence justifies a reusable artifact, rely on the governed evolution stage rather than claiming evolution in prose. Completion tools are intentionally hidden so checkpoints, review and memory nodes cannot be bypassed. Do not repeat earlier prose after tool calls.",
+        "outputs": {
+          "text": "agent_answer"
+        },
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "tools"
+          },
+          {
+            "condition": "output_truncated",
+            "to": "infer"
+          },
+          {
+            "condition": "has_text",
+            "to": "judge"
+          }
+        ]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "agent",
+        "parallel": true,
+        "max_workers": 6,
+        "timeout_seconds": 300,
+        "checkpoint": true,
+        "checkpoint_label": "product-tool-round",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "tool_pruning_policy"
+          }
+        ]
+      },
+      "repeat_guard": {
+        "id": "repeat_guard",
+        "op": "子流程",
+        "harness": "component_repeat_tool_guard",
+        "share_session": true,
+        "component_inputs": {
+          "action": "observe",
+          "trajectory": "$ctx._trajectory",
+          "thresholds": [
+            2,
+            3,
+            5
+          ],
+          "arguments_preview_chars": 500,
+          "inject_message": true,
+          "namespace": "product_adaptive"
+        },
+        "component_outputs": {
+          "state": "repeat_guard"
+        },
+        "result_mode": "data",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "tool_pruning_policy"
+          }
+        ]
+      },
+      "tool_pruning_policy": {
+        "id": "tool_pruning_policy",
+        "op": "条件",
+        "condition": "ctx.enable_tool_pruning == true",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "prune_tools"
+          },
+          {
+            "condition": "false",
+            "to": "post_tool_compaction_policy"
+          }
+        ]
+      },
+      "prune_tools": {
+        "id": "prune_tools",
+        "op": "子流程",
+        "harness": "component_tool_result_pruner",
+        "share_session": true,
+        "component_inputs": {
+          "threshold_chars": 8192,
+          "head_chars": 4096,
+          "tail_chars": 1024
+        },
+        "component_outputs": {
+          "stats": "prune_stats",
+          "pruned": "tool_results_pruned"
+        },
+        "result_mode": "data",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "post_tool_compaction_policy"
+          }
+        ]
+      },
+      "post_tool_compaction_policy": {
+        "id": "post_tool_compaction_policy",
+        "op": "条件",
+        "condition": "ctx.enable_compaction == true",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "post_tool_compact"
+          },
+          {
+            "condition": "false",
+            "to": "infer"
+          }
+        ]
+      },
+      "post_tool_compact": {
+        "id": "post_tool_compact",
+        "op": "子流程",
+        "harness": "component_context_compactor",
+        "share_session": true,
+        "agent_map": {
+          "compactor": "governor"
+        },
+        "component_inputs": {
+          "context_limit_tokens": "$ctx.context_limit_tokens",
+          "high_watermark": "$ctx.context_high_watermark",
+          "target_ratio": "$ctx.context_target_ratio",
+          "reserved_output_tokens": 4096,
+          "protect_recent_turns": 2,
+          "minimum_savings_tokens": "$ctx.context_minimum_savings_tokens"
+        },
+        "component_outputs": {
+          "compacted": "context_compacted",
+          "stats": "pressure_stats"
+        },
+        "result_mode": "data",
+        "edges": [
+          {
+            "condition": "subflow_done",
+            "to": "infer"
+          }
+        ]
+      },
+      "judge": {
+        "id": "judge",
+        "op": "模型",
+        "agent": "governor",
+        "prompt": "judge",
+        "parse_as": "json_object",
+        "json_fallback": {
+          "complete": false,
+          "missing": "No parseable completion evidence."
+        },
+        "temperature": 0.1,
+        "max_tokens": 700,
+        "outputs": {
+          "structured": "judge_result",
+          "structured.complete": "goal_complete",
+          "structured.missing": "feedback"
+        },
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "work_loop"
+          },
+          {
+            "condition": "json_fallback",
+            "to": "work_loop"
+          }
+        ]
+      },
+      "review_parallel": {
+        "id": "review_parallel",
+        "op": "并行",
+        "branches": [
+          {
+            "name": "quality",
+            "start": "quality_review"
+          },
+          {
+            "name": "safety",
+            "start": "safety_review"
+          }
+        ],
+        "join": "review_join",
+        "max_workers": 2,
+        "fail_fast": false,
+        "output_var": "review_branches",
+        "edges": []
+      },
+      "quality_review": {
+        "id": "quality_review",
+        "op": "模型",
+        "agent": "quality_reviewer",
+        "prompt": "quality_review",
+        "temperature": 0.1,
+        "max_tokens": 800,
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "review_join"
+          }
+        ]
+      },
+      "safety_review": {
+        "id": "safety_review",
+        "op": "模型",
+        "agent": "safety_reviewer",
+        "prompt": "safety_review",
+        "temperature": 0.1,
+        "max_tokens": 800,
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "review_join"
+          }
+        ]
+      },
+      "review_join": {
+        "id": "review_join",
+        "op": "合并",
+        "source": "$ctx.review_branches",
+        "strategy": "values",
+        "output_var": "reviews",
+        "edges": [
+          {
+            "condition": "joined",
+            "to": "remember_policy"
+          }
+        ]
+      },
+      "remember_policy": {
+        "id": "remember_policy",
+        "op": "条件",
+        "condition": "ctx.enable_memory == true",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "remember"
+          },
+          {
+            "condition": "false",
+            "to": "checkpoint_after"
+          }
+        ]
+      },
+      "remember": {
+        "id": "remember",
+        "op": "记忆",
+        "action": "add",
+        "namespace": "product_adaptive_code",
+        "inputs": {
+          "memory": {
+            "text": "Request: ${ctx.request}\nAnswer: ${ctx.agent_answer}\nReviews: ${ctx.reviews}",
+            "type": "event",
+            "importance": 5,
+            "keywords": [
+              "code",
+              "verification",
+              "review"
+            ]
+          }
+        },
+        "edges": [
+          {
+            "condition": "memory_added",
+            "to": "checkpoint_after"
+          }
+        ]
+      },
+      "checkpoint_after": {
+        "id": "checkpoint_after",
+        "op": "检查点",
+        "action": "save",
+        "label": "product-after-change",
+        "edges": [
+          {
+            "condition": "checkpoint_saved",
+            "to": "review_changes"
+          }
+        ]
+      },
+      "review_changes": {
+        "id": "review_changes",
+        "op": "工作区",
+        "action": "review_transaction",
+        "pending_policy": "accept",
+        "output_var": "change_review",
+        "edges": [
+          {
+            "condition": "changes_accepted",
+            "to": "done"
+          },
+          {
+            "condition": "changes_resolved",
+            "to": "done"
+          },
+          {
+            "condition": "changes_partial",
+            "to": "done"
+          }
+        ]
+      },
+      "done": {
+        "id": "done",
+        "op": "结束",
+        "value": {
+          "answer": "$ctx.agent_answer",
+          "reviews": "$ctx.reviews",
+          "change_review": "$ctx.change_review",
+          "evolution": "$ctx.evolution_result",
+          "context": {
+            "curation": "$ctx.context_stats",
+            "compaction": "$ctx.pressure_stats",
+            "tool_pruning": "$ctx.prune_stats"
+          }
+        },
+        "edges": []
+      }
+    }
+  }
+}

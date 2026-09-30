@@ -5,6 +5,19 @@ from harness_editor.ai_service import AIServiceError, _completion, _next_edit
 
 
 class AICompletionServiceTests(unittest.TestCase):
+    @patch("harness_editor.ai_service.DEFAULT_MODEL_GATEWAY.create")
+    @patch("harness_editor.ai_service._runtime_config")
+    def test_autocomplete_has_independent_latency_budget(self, config, create):
+        from types import SimpleNamespace
+        from harness_editor.ai_service import _require_client
+        config.return_value = {"base_url": "http://localhost", "model": "test"}
+        create.return_value = SimpleNamespace(timeout=120, max_retries=2, enable_thinking=True)
+        client = _require_client("autocomplete")
+        self.assertEqual((client.timeout, client.max_retries, client.enable_thinking), (12, 0, False))
+        create.return_value = SimpleNamespace(timeout=120, max_retries=2, enable_thinking=True)
+        client = _require_client("chat")
+        self.assertEqual((client.timeout, client.max_retries, client.enable_thinking), (120, 2, True))
+
     @patch("harness_editor.ai_service._call_json")
     def test_completion_passes_fim_and_typed_editor_context(self, call_json):
         call_json.return_value = (
@@ -41,6 +54,28 @@ class AICompletionServiceTests(unittest.TestCase):
                 "path": "x.py",
                 "open_files": [{"path": "huge.py", "excerpt": "x" * 25000}],
             })
+
+    @patch("harness_editor.ai_service._call_json")
+    def test_completion_preserves_empty_answer_and_rejects_structures(self, call_json):
+        call_json.return_value = ({"completion": ""}, {})
+        self.assertEqual(_completion({})["completion"], "")
+        call_json.return_value = ({"completion": {"code": "not text"}}, {})
+        with self.assertRaisesRegex(AIServiceError, "non-text"):
+            _completion({})
+        # Failure must release the capacity slot.
+        call_json.return_value = ({"completion": "ok"}, {})
+        self.assertEqual(_completion({})["completion"], "ok")
+
+    def test_completion_bounds_concurrent_provider_work(self):
+        from harness_editor.ai_service import _completion_slots
+        _completion_slots.acquire()
+        _completion_slots.acquire()
+        try:
+            with self.assertRaisesRegex(AIServiceError, "busy"):
+                _completion({})
+        finally:
+            _completion_slots.release()
+            _completion_slots.release()
 
     @patch("harness_editor.ai_service._call_json")
     def test_next_edit_is_confined_to_supplied_candidates(self, call_json):

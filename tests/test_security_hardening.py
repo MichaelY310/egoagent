@@ -358,6 +358,8 @@ class SecurityHardeningTests(unittest.TestCase):
             "max node steps exceeded": "step_budget",
             "request timed out": "timeout",
             "getaddrinfo failed": "dns",
+            "Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions": "network_access",
+            "Failed to establish a new connection: connection refused": "network_connection",
             "429 rate limit": "rate_limit",
         }
         for message, code in cases.items():

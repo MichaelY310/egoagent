@@ -1,0 +1,77 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_recurring_telemetry_envelope",
+  "title": "Recurring synthetic telemetry envelope normalization",
+  "description": "Seven resumed, entirely synthetic telemetry normalizations exercise governed capability evolution and same-session hot loading.",
+  "category": "code-product-acceptance",
+  "difficulty": "medium",
+  "tags": ["multi-step", "recurring-work", "skill-search", "evolution", "json", "synthetic"],
+  "prompt": "Normalize each requested synthetic telemetry input according to TELEMETRY_FORMAT.md. Similar event files arrive over time; use evidence from the resumed session to choose the cheapest correct method.",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Synthetic telemetry workspace rules\n\n- All fixture data is fictional and contains no personal, production, or customer information.\n- Work offline and read only the requested input plus TELEMETRY_FORMAT.md.\n- Never modify raw inputs or the format contract.\n- Write only the requested normalized JSON artifact.\n- Do not add project-local helper scripts merely for one example; durable automation, if justified by repeated measured work, belongs in the governed capability system.\n",
+      "TELEMETRY_FORMAT.md": "# Normalized telemetry envelope v4\n\nWrite a JSON object with exactly this nested shape (the literal key `service.id` is invalid):\n\n```json\n{\n  \"schema_revision\": 4,\n  \"service\": {\"id\": \"...\"},\n  \"observed_at\": \"...\",\n  \"severity\": \"...\",\n  \"labels\": [],\n  \"retry_budget\": 0,\n  \"sampled\": false\n}\n```\n\nTransformation rules:\n\n- `service.id`: trim input `service`, lowercase it, and replace each run of whitespace with one underscore\n- `observed_at`: trimmed `event_time`\n- `severity`: `urgent` for trimmed case-insensitive `critical` or `high`; `warning` for `warn` or `warning`; otherwise `info`\n- `labels`: split comma-delimited `tags`, trim and lowercase non-empty values, remove duplicates, then sort alphabetically\n- `retry_budget`: parse `retries` as an integer and clamp it to the inclusive range 0 through 5\n- `sampled`: true only when trimmed case-insensitive `sample` is one of `on`, `yes`, `true`, or `1`\n\nDrop every other input field.\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "product_adaptive_code_agent",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["product_adaptive_code_agent", "product_adaptive_no_evolution", "product_core_code_agent"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 5400},
+  "evolution": {"allowed": true, "targets": ["skill", "knowledge", "agent", "harness"]},
+  "evaluation": {"pass_score": 1.0, "checks": []},
+  "steps": [
+    {
+      "id": "event_01",
+      "prompt": "Normalize raw/event_01.json into normalized/event_01.json and verify every field against TELEMETRY_FORMAT.md.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/event_01.json": "{\"service\":\" API Gateway \",\"event_time\":\" 2031-01-02T03:04:05Z \",\"level\":\"HIGH\",\"tags\":\"HTTP, Edge ,http,Latency\",\"retries\":\"9\",\"sample\":\"yes\",\"host\":\"fictional-a\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/event_01.json", "pointer": "", "expected": {"schema_revision": 4, "service": {"id": "api_gateway"}, "observed_at": "2031-01-02T03:04:05Z", "severity": "urgent", "labels": ["edge", "http", "latency"], "retry_budget": 5, "sampled": true}, "weight": 1}]}
+    },
+    {
+      "id": "event_02",
+      "prompt": "Process raw/event_02.json into normalized/event_02.json under the same contract.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/event_02.json": "{\"service\":\" Worker Pool \",\"event_time\":\"2031-02-03T04:05:06Z\",\"level\":\" warn \",\"tags\":\"Queue, Async,queue, Retry \",\"retries\":\"-3\",\"sample\":\"off\",\"debug\":true}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/event_02.json", "pointer": "", "expected": {"schema_revision": 4, "service": {"id": "worker_pool"}, "observed_at": "2031-02-03T04:05:06Z", "severity": "warning", "labels": ["async", "queue", "retry"], "retry_budget": 0, "sampled": false}, "weight": 1}]}
+    },
+    {
+      "id": "event_03",
+      "prompt": "Normalize raw/event_03.json to its matching normalized path and validate the exact shape.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/event_03.json": "{\"service\":\" Search   Index \",\"event_time\":\" 2031-03-04T05:06:07Z\",\"level\":\"debug\",\"tags\":\"Disk, Search ,disk,Snapshot\",\"retries\":\"2\",\"sample\":\"1\",\"rank\":3}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/event_03.json", "pointer": "", "expected": {"schema_revision": 4, "service": {"id": "search_index"}, "observed_at": "2031-03-04T05:06:07Z", "severity": "info", "labels": ["disk", "search", "snapshot"], "retry_budget": 2, "sampled": true}, "weight": 1}]}
+    },
+    {
+      "id": "event_04",
+      "prompt": "A fourth synthetic event arrived. Normalize raw/event_04.json to normalized/event_04.json using the established format.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/event_04.json": "{\"service\":\" Billing Core \",\"event_time\":\"2031-04-05T06:07:08Z \",\"level\":\"CRITICAL\",\"tags\":\"Ledger, Audit ,ledger,Safety\",\"retries\":\"5\",\"sample\":\"TRUE\",\"unused\":\"drop\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/event_04.json", "pointer": "", "expected": {"schema_revision": 4, "service": {"id": "billing_core"}, "observed_at": "2031-04-05T06:07:08Z", "severity": "urgent", "labels": ["audit", "ledger", "safety"], "retry_budget": 5, "sampled": true}, "weight": 1}]}
+    },
+    {
+      "id": "event_05",
+      "prompt": "Normalize raw/event_05.json to normalized/event_05.json exactly as before.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/event_05.json": "{\"service\":\" Mail Relay \",\"event_time\":\" 2031-05-06T07:08:09Z \",\"level\":\"WARNING\",\"tags\":\"SMTP, Queue ,smtp,TLS\",\"retries\":\"1\",\"sample\":\"no\",\"noise\":17}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/event_05.json", "pointer": "", "expected": {"schema_revision": 4, "service": {"id": "mail_relay"}, "observed_at": "2031-05-06T07:08:09Z", "severity": "warning", "labels": ["queue", "smtp", "tls"], "retry_budget": 1, "sampled": false}, "weight": 1}]}
+    },
+    {
+      "id": "event_06",
+      "prompt": "Process raw/event_06.json into normalized/event_06.json while preserving the same observable contract.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/event_06.json": "{\"service\":\" Metrics Exporter \",\"event_time\":\"2031-06-07T08:09:10Z\",\"level\":\"normal\",\"tags\":\"OTLP, Metrics ,otlp,Compression\",\"retries\":\"7\",\"sample\":\"on\",\"build\":6006}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/event_06.json", "pointer": "", "expected": {"schema_revision": 4, "service": {"id": "metrics_exporter"}, "observed_at": "2031-06-07T08:09:10Z", "severity": "info", "labels": ["compression", "metrics", "otlp"], "retry_budget": 5, "sampled": true}, "weight": 1}]}
+    },
+    {
+      "id": "event_07",
+      "prompt": "Normalize raw/event_07.json to normalized/event_07.json using the cheapest verified method available to the current Agent.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"raw/event_07.json": "{\"service\":\" Feature Flags \",\"event_time\":\" 2031-07-08T09:10:11Z\",\"level\":\"High\",\"tags\":\"Config, Safety ,config,Runtime\",\"retries\":\"4\",\"sample\":\"Yes\",\"checksum\":\"ignore\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/event_07.json", "pointer": "", "expected": {"schema_revision": 4, "service": {"id": "feature_flags"}, "observed_at": "2031-07-08T09:10:11Z", "severity": "urgent", "labels": ["config", "runtime", "safety"], "retry_budget": 4, "sampled": true}, "weight": 1}]}
+    }
+  ]
+}

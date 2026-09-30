@@ -1,0 +1,52 @@
+{
+  "name": "product_context_endurance_agent",
+  "description": "Controlled long-conversation Agent used to validate context curation and passive compaction without coding-tool variance.",
+  "tags": ["experiment", "context", "curation", "compaction", "long-horizon"],
+  "component": {
+    "name": "product_context_endurance_agent",
+    "display_name": "Context Endurance Agent",
+    "category": "Agent",
+    "icon": "◔",
+    "description": "A minimal conversational loop with switchable DAG-authored context governance.",
+    "share_session": true,
+    "inputs": {
+      "enable_context_governance": {"default": true, "schema": {"type": "boolean"}},
+      "enable_curation": {"default": true, "schema": {"type": "boolean"}},
+      "enable_compaction": {"default": true, "schema": {"type": "boolean"}},
+      "curation_interval": {"default": 3, "schema": {"type": "integer", "minimum": 1}},
+      "context_limit_tokens": {"default": 6144, "schema": {"type": "integer", "minimum": 1024}},
+      "context_high_watermark": {"default": 0.7, "schema": {"type": "number", "minimum": 0.2, "maximum": 0.98}},
+      "context_target_ratio": {"default": 0.45, "schema": {"type": "number", "minimum": 0.1, "maximum": 0.9}}
+    },
+    "outputs": {
+      "answer": {"path": "answer", "default": ""},
+      "curation": {"path": "curation_stats", "default": {}},
+      "compaction": {"path": "compaction_stats", "default": {}}
+    }
+  },
+  "slots": {
+    "agent": {"description": "Conversational worker", "required": true, "identity": "adaptive_deepseek_coder"},
+    "governor": {"description": "Context curator and compactor", "required": true, "identity": "context_governor_lite"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 80,
+    "max_node_steps": 600,
+    "timeout_seconds": 1800,
+    "interactive_max_tokens": null,
+    "budget": {"max_model_calls": 60, "max_tool_calls": 0, "max_tokens": 800000},
+    "context": {"request": "", "turn_count": 0, "answer": "", "curation_stats": {}, "compaction_stats": {}},
+    "nodes": {
+      "input": {"id": "input", "op": "输入", "outputs": {"text": "request"}, "edges": [{"condition": "input", "to": "count_turn"}]},
+      "count_turn": {"id": "count_turn", "op": "数据", "action": "increment", "scope": "session", "key": "product_context_endurance.turn_count", "default": 0, "delta": 1, "output_var": "turn_count", "edges": [{"condition": "default", "to": "curation_due"}]},
+      "curation_due": {"id": "curation_due", "op": "条件", "condition": "ctx.enable_context_governance == true and ctx.enable_curation == true and ctx.turn_count % ctx.curation_interval == 0", "edges": [{"condition": "true", "to": "curate"}, {"condition": "false", "to": "compaction_enabled"}]},
+      "curate": {"id": "curate", "op": "子流程", "harness": "component_context_curator", "share_session": true, "agent_map": {"curator": "governor"}, "component_inputs": {"review_interval": 3, "protect_recent_turns": 1, "max_tool_chars": 0}, "component_outputs": {"stats": "curation_stats"}, "result_mode": "data", "edges": [{"condition": "subflow_done", "to": "compaction_enabled"}]},
+      "compaction_enabled": {"id": "compaction_enabled", "op": "条件", "condition": "ctx.enable_context_governance == true and ctx.enable_compaction == true", "edges": [{"condition": "true", "to": "compact"}, {"condition": "false", "to": "respond"}]},
+      "compact": {"id": "compact", "op": "子流程", "harness": "component_context_compactor", "share_session": true, "agent_map": {"compactor": "governor"}, "component_inputs": {"context_limit_tokens": "$ctx.context_limit_tokens", "high_watermark": "$ctx.context_high_watermark", "target_ratio": "$ctx.context_target_ratio", "reserved_output_tokens": 1024, "protect_recent_turns": 1, "minimum_savings_tokens": 256}, "component_outputs": {"stats": "compaction_stats"}, "result_mode": "data", "edges": [{"condition": "subflow_done", "to": "respond"}]},
+      "respond": {"id": "respond", "op": "Agent", "agent": "agent", "tools": false, "max_tokens": 500, "temperature": 0.0, "instructions": "Current request: ${ctx.request}\nFollow the current request exactly. Keep the answer concise. When asked for an exact ACK or a pipe-delimited ledger, output only that requested value. Durable facts explicitly labelled DURABLE must remain available across later turns; diagnostic TRACE filler is disposable.", "outputs": {"text": "answer"}, "edges": [{"condition": "has_text", "to": "done"}, {"condition": "output_truncated", "to": "respond"}]},
+      "done": {"id": "done", "op": "结束", "value": {"answer": "$ctx.answer", "curation": "$ctx.curation_stats", "compaction": "$ctx.compaction_stats"}, "edges": []}
+    }
+  }
+}

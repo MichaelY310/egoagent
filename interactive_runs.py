@@ -26,13 +26,19 @@ def initial_execution_state() -> dict[str, Any]:
         "status": "idle",
         "termination": None,
         "pending_approval": None,
+        "approval_mode": "manual",
         "warnings": [],
         "waiting_for_input": False,
         "current_node": None,
         "workspace": "",
         "project_id": "",
         "session_name": "",
+        "session_title": "",
         "session_id": "",
+        # Identifies the UI/control surface that owns this live run.  A run
+        # started from Chat must never be adopted by the independent Builder
+        # merely because it is the newest run in the workspace.
+        "surface": "unknown",
         "harness": "",
         "agents": {},
         "step_count": 0,
@@ -59,6 +65,10 @@ class InteractiveRun:
     thread: Optional[threading.Thread] = field(default=None, repr=False)
     debug_condition: threading.Condition = field(default_factory=threading.Condition, repr=False)
     approval_lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    approval_requests: dict[str, dict] = field(default_factory=dict, repr=False)
+    approval_answers: dict[str, dict] = field(default_factory=dict, repr=False)
+    approval_closed: bool = False
+    approval_mode_observer: Optional[Any] = field(default=None, repr=False)
     step_budget: int = 0
     node_directive: Optional[dict[str, Any]] = None
     created_at: float = field(default_factory=time.time)
@@ -72,8 +82,61 @@ class InteractiveRun:
     def touch(self) -> None:
         self.touched_at = time.time()
 
-    def snapshot(self, *, include_outputs: bool = False) -> dict[str, Any]:
-        payload = copy.deepcopy(self.state)
+    def _project_approvals(self):
+        pending = next(iter(self.approval_requests.values()), None)
+        was_approval_wait = self.state.get("status") == "waiting_approval" or bool(self.state.get("pending_approval"))
+        self.state["pending_approval"] = copy.deepcopy(pending)
+        if pending or was_approval_wait:
+            self.state["waiting_for_input"] = bool(pending)
+            if self.state.get("running"):
+                self.state["status"] = "waiting_approval" if pending else "running"
+
+    def request_approval(self, request):
+        """Register a nonce, never replace an earlier unresolved request."""
+        with self.approval_lock:
+            if self.approval_closed or not self.state.get("running"):
+                return
+            nonce = str(request["approval_id"])
+            if nonce in self.approval_requests or nonce in self.approval_answers:
+                raise ValueError("Duplicate approval nonce")
+            if self.state.get("approval_mode") == "auto" and request.get("auto_approvable"):
+                self.approval_answers[nonce] = {"decision": "approved", "source": "automatic", "approval_id": nonce}
+            else:
+                self.approval_requests[nonce] = copy.deepcopy(request)
+            self._project_approvals()
+
+    def wait_for_approval(self, nonce, cancelled):
+        """Separate from conversation input: a queued 'yes' cannot approve."""
+        from pipeline_engine import PipelineCancelled
+        try:
+            while True:
+                with self.approval_lock:
+                    if self.approval_closed or not self.state.get("running") or cancelled():
+                        raise PipelineCancelled("审批等待已取消；工具没有执行。")
+                    answer = self.approval_answers.pop(nonce, None)
+                    if answer is not None:
+                        return answer
+                    if nonce not in self.approval_requests:
+                        raise PipelineCancelled("审批请求已失效；工具没有执行。")
+                time.sleep(0.05)
+        finally:
+            with self.approval_lock:
+                if self.approval_requests.pop(nonce, None) is not None:
+                    self._project_approvals()
+                self.approval_answers.pop(nonce, None)
+
+    def close_approvals(self):
+        with self.approval_lock:
+            self.approval_closed = True
+            self.approval_requests.clear()
+            self.approval_answers.clear()
+            self.state["pending_approval"] = None
+
+    def snapshot(self, *, include_outputs: bool = False, include_traces: bool = True) -> dict[str, Any]:
+        # Chat recovery needs messages, not every node's potentially huge I/O.
+        # Filter before copying, so lightweight polling is lightweight on CPU too.
+        source = self.state if include_traces else {k: v for k, v in self.state.items() if k != "node_traces"}
+        payload = copy.deepcopy(source)
         payload["created_at"] = self.created_at
         payload["touched_at"] = self.touched_at
         if include_outputs:
@@ -140,14 +203,14 @@ class InteractiveRunManager:
         finally:
             self._current.reset(token)
 
-    def list(self, workspace: Path | str | None = None) -> list[dict[str, Any]]:
+    def list(self, workspace: Path | str | None = None, *, include_traces: bool = True) -> list[dict[str, Any]]:
         requested = Path(workspace).resolve() if workspace else None
         with self._lock:
             runs = list(self._runs.values())
         if requested is not None:
             runs = [item for item in runs if item.workspace == requested]
         runs.sort(key=lambda item: item.created_at, reverse=True)
-        return [item.snapshot(include_outputs=False) for item in runs]
+        return [item.snapshot(include_outputs=False, include_traces=include_traces) for item in runs]
 
     def remove(self, run_id: object) -> Optional[InteractiveRun]:
         """Forget a completed run (primarily useful for tests and retention jobs)."""

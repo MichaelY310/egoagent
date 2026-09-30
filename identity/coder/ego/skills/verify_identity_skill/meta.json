@@ -1,0 +1,30 @@
+{
+  "type": "tool",
+  "name": "verify_identity_skill",
+  "description": "Activate and exercise a newly persisted executable Skill belonging to the current Identity through the normal Agent permission and workspace boundary. This is the narrow verification bridge for governed evolution; it never grants arbitrary reads of the Identity directory.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "skill_name": {
+        "type": "string",
+        "description": "Exact snake_case name of a Skill stored under the current Identity."
+      },
+      "cases": {
+        "type": "array",
+        "description": "One or more acceptance cases. Each item has arguments and either expected_subset or expect_error_contains.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "arguments": {"type": "object"},
+            "expected_subset": {"type": "object"},
+            "expect_error_contains": {"type": "string"}
+          },
+          "required": ["arguments"]
+        },
+        "minItems": 1,
+        "maxItems": 4
+      }
+    },
+    "required": ["skill_name", "cases"]
+  }
+}

@@ -52,7 +52,7 @@ export default function BackgroundRuns() {
   const [harnesses, setHarnesses] = useState<string[]>([]);
   const [identities, setIdentities] = useState<string[]>([]);
   const [form, setForm] = useState({
-    harness: "react_single", identity: "dante", mode: "agent", workspace: "",
+    harness: "code_agent_auto", identity: "adaptive_deepseek_coder", mode: "agent", workspace: "",
     task: "", mutationTargets: "", priority: 0, maxAttempts: 3, isolate: true,
   });
   const [events, setEvents] = useState<Record<string, any[]>>({});

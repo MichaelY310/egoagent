@@ -425,3 +425,30 @@ def is_name_resolution_error(error: BaseException) -> bool:
             return True
         current = current.__cause__ or current.__context__
     return False
+
+
+def is_recoverable_direct_connection_error(error: BaseException) -> bool:
+    """Return whether the provider request should try the app DNS route once.
+
+    Windows can surface a blocked hostname route as ``WSAEACCES`` (10013)
+    instead of a ``NameResolutionError``.  The fallback remains deliberately
+    narrow: it is only used by :class:`CustomLLM` for the already selected
+    HTTPS provider host, and the CONNECT proxy keeps its exact host/port
+    allow-list.
+    """
+
+    if is_name_resolution_error(error):
+        return True
+    current: Optional[BaseException] = error
+    visited = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        message = str(current).lower()
+        if (
+            "winerror 10013" in message
+            or "wsaeacces" in message
+            or "access a socket in a way forbidden by its access permissions" in message
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False

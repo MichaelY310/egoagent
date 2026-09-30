@@ -7,7 +7,6 @@ uses the same nonce, locking and run-isolation rules.
 
 from __future__ import annotations
 
-import json
 import queue
 import threading
 import time
@@ -46,12 +45,37 @@ class InteractiveExecutionService:
                 raise InteractiveExecutionError("Interactive execution not found", 404) from error
             return None
 
-    def state(self, values: Optional[dict[str, Any]] = None, *, include_outputs: bool = True) -> dict[str, Any]:
+    def state(self, values: Optional[dict[str, Any]] = None, *, include_outputs: bool = True,
+              include_traces: bool = True) -> dict[str, Any]:
         handle = self.resolve(values, required=True)
-        return handle.snapshot(include_outputs=include_outputs)
+        return handle.snapshot(include_outputs=include_outputs, include_traces=include_traces)
 
-    def list(self, workspace: str | Path | None = None) -> list[dict[str, Any]]:
-        return self.manager.list(workspace)
+    def list(self, workspace: str | Path | None = None, *, include_traces: bool = True) -> list[dict[str, Any]]:
+        return self.manager.list(workspace, include_traces=include_traces)
+
+    def rename_session(self, session_name: str, title: str) -> None:
+        """Keep the live run projection in sync with durable Session metadata."""
+
+        target = str(session_name or "").strip()
+        if not target:
+            return
+        for snapshot in self.manager.list():
+            if str(snapshot.get("session_name") or "") != target:
+                continue
+            handle = self.manager.get(snapshot.get("run_id"))
+            if handle is None:
+                continue
+            handle.state["session_title"] = str(title or "").strip()
+            self._publish(handle)
+
+    def dismiss(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Forget one completed live-run tab without deleting durable data."""
+
+        handle = self.resolve(data, required=True)
+        if handle.state.get("running"):
+            raise InteractiveExecutionError("Stop the Session before removing it from the tab bar", 409)
+        removed = self.manager.remove(handle.run_id)
+        return {"ok": True, "run_id": handle.run_id, "dismissed": removed is not None}
 
     def start(
         self,
@@ -61,11 +85,15 @@ class InteractiveExecutionService:
         agents: dict[str, str],
         debug_mode: str,
         mode: str,
+        surface: str,
         mutation_targets: list[str],
         security: dict[str, Any],
         sandbox: dict[str, Any],
         worker_target: Callable[..., None],
         worker_args: tuple[Any, ...] | Callable[[InteractiveRun], tuple[Any, ...]],
+        session_name: str = "",
+        harness_version: str = "",
+        approval_mode: str = "manual",
     ) -> InteractiveRun:
         handle = self.manager.create(Path(workspace))
         state = handle.state
@@ -74,11 +102,13 @@ class InteractiveExecutionService:
             "status": "running",
             "termination": None,
             "pending_approval": None,
+            "approval_mode": "auto" if approval_mode == "auto" else "manual",
             "warnings": [],
             "waiting_for_input": False,
             "current_node": None,
             "workspace": str(handle.workspace),
             "harness": str(harness),
+            "harness_version": str(harness_version or ""),
             "agents": dict(agents),
             "step_count": 0,
             "messages_count": 0,
@@ -89,9 +119,11 @@ class InteractiveExecutionService:
             "pause_reason": None,
             "node_traces": [],
             "mode": mode,
+            "surface": str(surface or "unknown"),
             "mutation_targets": list(mutation_targets),
             "security": dict(security),
             "sandbox": dict(sandbox),
+            "session_name": str(session_name or ""),
         })
         self.notify(state)
         resolved_args = worker_args(handle) if callable(worker_args) else worker_args
@@ -173,6 +205,7 @@ class InteractiveExecutionService:
             "pause_requested": False,
             "pending_node": None,
         })
+        handle.close_approvals()
         while not handle.input_queue.empty():
             try:
                 handle.input_queue.get_nowait()
@@ -182,7 +215,12 @@ class InteractiveExecutionService:
         with handle.debug_condition:
             handle.debug_condition.notify_all()
         self._publish(handle)
-        return {"ok": True, "run_id": handle.run_id}
+        if data.get("wait") and handle.thread is not None and handle.thread is not threading.current_thread():
+            timeout = min(30.0, max(0.0, float(data.get("timeout", 10.0) or 10.0)))
+            handle.thread.join(timeout=timeout)
+            if handle.thread.is_alive():
+                raise InteractiveExecutionError("Execution did not stop before the reconfiguration timeout", 409)
+        return {"ok": True, "run_id": handle.run_id, "session_name": state.get("session_name", "")}
 
     def approval(self, data: dict[str, Any]) -> dict[str, Any]:
         handle = self.resolve(data, required=True)
@@ -200,12 +238,33 @@ class InteractiveExecutionService:
             answer = {"decision": decision, "answer": decision, "message": str(data.get("message") or "")}
             if "data" in data:
                 answer["data"] = data["data"]
-            # Consume the nonce before enqueueing: double-clicks and replayed
-            # HTTP requests can never authorize a second side effect.
-            state.update({"pending_approval": None, "waiting_for_input": False, "status": "running"})
-            handle.input_queue.put(json.dumps(answer, ensure_ascii=False))
+            # Nonce-addressed mailbox, not the general conversation queue.
+            answer.update({"approval_id": approval_id, "source": "manual"})
+            handle.approval_requests.pop(approval_id, None)
+            handle.approval_answers[approval_id] = answer
+            handle._project_approvals()
         self._publish(handle)
         return {"ok": True, "run_id": handle.run_id, "approval_id": approval_id, "decision": decision}
+
+    def set_approval_mode(self, data: dict[str, Any]) -> dict[str, Any]:
+        handle = self.resolve(data, required=True)
+        mode = str(data.get("approval_mode", ""))
+        if mode not in {"manual", "auto"}:
+            raise InteractiveExecutionError("approval_mode must be manual or auto", 400)
+        if mode == "auto" and data.get("confirmed") is not True:
+            raise InteractiveExecutionError("Automatic tool approval requires explicit confirmation", 400)
+        with handle.approval_lock:
+            handle.state["approval_mode"] = mode
+            if mode == "auto":
+                for nonce, request in list(handle.approval_requests.items()):
+                    if request.get("auto_approvable"):
+                        handle.approval_answers[nonce] = {"decision": "approved", "source": "automatic", "approval_id": nonce}
+                        del handle.approval_requests[nonce]
+            handle._project_approvals()
+            if callable(handle.approval_mode_observer):
+                handle.approval_mode_observer(mode)
+        self._publish(handle)
+        return {"ok": True, "run_id": handle.run_id, "approval_mode": mode}
 
     def input(self, data: dict[str, Any]) -> dict[str, Any]:
         handle = self.resolve(data, required=True)

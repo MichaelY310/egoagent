@@ -37,6 +37,7 @@ class NodeRegistryTests(unittest.TestCase):
             "LLMCall": "模型",
             "data_store": "保存数据",
             "处理工具": "工具审查",
+            "capability_registry": "能力",
         }
         for alias, expected in cases.items():
             with self.subTest(alias=alias):

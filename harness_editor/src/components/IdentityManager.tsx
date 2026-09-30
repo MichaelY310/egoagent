@@ -93,13 +93,36 @@ export default function IdentityManager() {
   const [agentDescription, setAgentDescription] = useState("");
   const [agentSystemName, setAgentSystemName] = useState("");
   const [createdHarness, setCreatedHarness] = useState("");
+  const [harnesses, setHarnesses] = useState<string[]>([]);
+  const [governanceHarness, setGovernanceHarness] = useState("code_agent_auto");
+  const [governanceMode, setGovernanceMode] = useState("agent");
+  const [governance, setGovernance] = useState<any>(null);
 
   const refreshList = useCallback(async () => {
     const list = await api.listIdentities();
     setIdentities(list);
   }, []);
 
-  useEffect(() => { refreshList(); }, [refreshList]);
+  useEffect(() => {
+    refreshList();
+    api.listHarnesses().then((items) => {
+      setHarnesses(items);
+      if (!items.includes("code_agent_auto")) setGovernanceHarness(items[0] || "");
+    }).catch(() => {});
+  }, [refreshList]);
+
+  const inspectGovernanceFn = async () => {
+    if (!selected || !governanceHarness) return;
+    setStatus("正在计算有效治理边界...");
+    try {
+      setGovernance(await api.inspectGovernance({
+        harness: governanceHarness, identity: selected, mode: governanceMode,
+      }));
+      setStatus("");
+    } catch (e: unknown) {
+      setStatus(`治理检查失败: ${(e as Error).message}`);
+    }
+  };
 
   const loadFull = async (name: string) => {
     setSelected(name);
@@ -531,6 +554,25 @@ export default function IdentityManager() {
                 <button onClick={saveSuperegoFn} style={{ ...btnStyle, marginTop: 12, padding: "8px 20px", fontSize: 14 }}>
                   💾 保存 superego/config.json
                 </button>
+
+                <section style={{ marginTop: 18, padding: 14, border: "1px solid var(--border)", borderRadius: 8, background: "var(--panel-background)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                    <div><b style={{ color: "var(--text-primary)" }}>统一治理预览</b><div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3 }}>选择一个 Flow 和运行模式，查看 Superego、工作区安全策略与 Flow 的真实交集。请先保存上面的修改。</div></div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <select value={governanceHarness} onChange={(e) => setGovernanceHarness(e.target.value)} style={inputStyle}>{harnesses.map((name) => <option key={name}>{name}</option>)}</select>
+                      <select value={governanceMode} onChange={(e) => setGovernanceMode(e.target.value)} style={inputStyle}><option value="chat">Chat</option><option value="plan">Plan</option><option value="agent">Agent</option><option value="debug">Debug</option><option value="evolve">Evolve</option><option value="evaluate">Evaluate</option></select>
+                      <button onClick={inspectGovernanceFn} style={{ ...btnStyle, whiteSpace: "nowrap" }}>检查有效权限</button>
+                    </div>
+                  </div>
+                  {governance && <div style={{ marginTop: 12 }}>
+                    <div style={{ padding: "8px 10px", borderRadius: 6, background: "var(--input-background)", color: "var(--text-primary)", fontSize: 12 }}><b>组合规则：</b>{governance.effective_rule}</div>
+                    {governance.conflicts?.length > 0 && <div style={{ marginTop: 8, display: "grid", gap: 5 }}>{governance.conflicts.map((item: any) => <div key={item.code} style={{ padding: "7px 9px", borderLeft: `3px solid ${item.severity === 'high' ? '#e05d5d' : item.severity === 'medium' ? '#d69e2e' : '#5b8def'}`, background: "var(--input-background)", fontSize: 11, color: "var(--text-secondary)" }}><b>{item.code}</b> · {item.message}</div>)}</div>}
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(130px, 1.1fr) repeat(3, minmax(70px, .7fr))", marginTop: 10, fontSize: 11, borderTop: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                      {['能力', 'Superego', 'Runtime', '最终'].map((label) => <b key={label} style={{ padding: 6, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", color: "var(--text-muted)" }}>{label}</b>)}
+                      {governance.matrix?.map((row: any) => <span key={row.capability} style={{ display: "contents" }}><span title={row.tool} style={{ padding: 6, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", color: "var(--text-primary)" }}>{row.capability}</span><code style={{ padding: 6, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>{row.superego}</code><code style={{ padding: 6, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>{row.runtime}</code><b style={{ padding: 6, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", color: row.effective === 'deny' ? '#e05d5d' : row.effective === 'ask' ? '#d69e2e' : '#3ba272' }}>{row.effective}</b></span>)}
+                    </div>
+                  </div>}
+                </section>
               </div>
             )}
 

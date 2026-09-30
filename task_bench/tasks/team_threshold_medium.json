@@ -1,0 +1,81 @@
+{
+  "version": "ego.task.v1",
+  "id": "team_threshold_medium",
+  "title": "P5 threshold: medium — Independent configuration and cache package repairs",
+  "description": "Two independent multi-file packages have separate contracts and tests. The task is large enough that one bounded child investigation can reduce parent-context pollution.",
+  "category": "code-product-acceptance",
+  "difficulty": "hard",
+  "tags": [
+    "python",
+    "delegation",
+    "subagent",
+    "multi-package",
+    "tests",
+    "team-threshold",
+    "p5-parity"
+  ],
+  "prompt": "Repair both independent packages in this offline repository. The config_lang package parses a small typed configuration language; the artifact_cache package stores checksummed JSON artifacts. Preserve public signatures and formats, make minimal changes, and run the complete unittest suite. Each package has its own README, implementation files and tests, so one package is a reasonable bounded isolated investigation when that reduces the parent context. The final answer must combine concrete changes and full-suite evidence.",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Repository rules\n\n- Work offline.\n- Preserve all public function signatures.\n- Treat each package README as its local contract.\n- Do not weaken or edit tests.\n- Run `python -m unittest discover -v` before finishing.\n",
+      "config_lang/__init__.py": "from .parser import parse_config\nfrom .render import render_config\n\n__all__ = ['parse_config', 'render_config']\n",
+      "config_lang/README.md": "# config_lang contract\n\n`parse_config(text)` accepts non-empty `key = value` lines, ignores blank lines and lines beginning with `#`, rejects duplicate or invalid snake_case keys, and parses quoted strings, booleans, signed integers and comma-delimited lists in brackets. Invalid syntax raises `ValueError` mentioning the one-based line. `render_config(data)` emits keys in sorted order and produces text that round-trips through the parser. Strings use JSON quoting; lists may contain supported scalar values.\n",
+      "config_lang/lexer.py": "import re\n\nKEY_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]*$')\n\ndef split_assignment(line: str, line_number: int) -> tuple[str, str]:\n    parts = line.split('=')\n    if len(parts) != 2:\n        raise ValueError('bad assignment')\n    return parts[0], parts[1]\n",
+      "config_lang/parser.py": "from .lexer import split_assignment\n\ndef parse_value(raw: str):\n    return raw\n\ndef parse_config(text: str) -> dict:\n    result = {}\n    for number, line in enumerate(text.splitlines(), 1):\n        if not line:\n            continue\n        key, raw = split_assignment(line, number)\n        result[key] = parse_value(raw)\n    return result\n",
+      "config_lang/render.py": "def render_value(value) -> str:\n    return str(value)\n\ndef render_config(data: dict) -> str:\n    return '\\n'.join(f'{key}={render_value(value)}' for key, value in data.items())\n",
+      "artifact_cache/__init__.py": "from .store import ArtifactCache, CacheCorruption\n\n__all__ = ['ArtifactCache', 'CacheCorruption']\n",
+      "artifact_cache/README.md": "# artifact_cache contract\n\n`ArtifactCache(root).put(key, value)` accepts safe keys containing letters, digits, `_`, `-` and `.`, writes deterministic UTF-8 JSON, and returns the 64-character SHA-256 digest of the exact payload. The payload and a `.sha256` sidecar must be replaced atomically. `get(key)` returns the decoded value, returns `None` when both files are absent, and raises `CacheCorruption` for a missing partner, malformed digest, checksum mismatch or invalid JSON. No key may escape the cache root. `list_keys()` returns sorted keys for complete artifact pairs only and ignores unrelated temporary files.\n",
+      "artifact_cache/codec.py": "import json\n\ndef encode(value) -> bytes:\n    return json.dumps(value).encode()\n\ndef decode(payload: bytes):\n    return json.loads(payload)\n",
+      "artifact_cache/store.py": "from pathlib import Path\nfrom .codec import encode, decode\n\nclass CacheCorruption(RuntimeError):\n    pass\n\nclass ArtifactCache:\n    def __init__(self, root):\n        self.root = Path(root)\n\n    def put(self, key: str, value) -> str:\n        self.root.mkdir(parents=True, exist_ok=True)\n        path = self.root / key\n        path.write_bytes(encode(value))\n        return ''\n\n    def get(self, key: str):\n        path = self.root / key\n        return decode(path.read_bytes()) if path.exists() else None\n\n    def list_keys(self) -> list[str]:\n        return [path.name for path in self.root.iterdir()] if self.root.exists() else []\n",
+      "test_config_lang.py": "import unittest\nfrom config_lang import parse_config, render_config\n\nclass ConfigTests(unittest.TestCase):\n    def test_types_comments_and_whitespace(self):\n        text = '# demo\\nname = \\\"worker a\\\"\\nenabled = true\\nretries = -3\\ntags = [\\\"api\\\", 2, false]\\n'\n        self.assertEqual(parse_config(text), {'name':'worker a','enabled':True,'retries':-3,'tags':['api',2,False]})\n    def test_round_trip_is_stable(self):\n        value = {'z': [1, 'two', True], 'a': 'hello'}\n        rendered = render_config(value)\n        self.assertEqual(rendered.splitlines()[0].split('=',1)[0].strip(), 'a')\n        self.assertEqual(parse_config(rendered), value)\n    def test_rejects_bad_input_with_line(self):\n        for text, line in [('ok = 1\\nok = 2', '2'), ('bad-key = 1', '1'), ('x = maybe', '1'), ('x = [1,]', '1')]:\n            with self.subTest(text=text):\n                with self.assertRaisesRegex(ValueError, line): parse_config(text)\n",
+      "test_artifact_cache.py": "import hashlib\nimport tempfile\nimport unittest\nfrom pathlib import Path\nfrom artifact_cache import ArtifactCache, CacheCorruption\n\nclass CacheTests(unittest.TestCase):\n    def setUp(self):\n        self.temp = tempfile.TemporaryDirectory()\n        self.root = Path(self.temp.name)\n        self.cache = ArtifactCache(self.root)\n    def tearDown(self): self.temp.cleanup()\n    def test_round_trip_digest_and_listing(self):\n        value = {'b': 2, 'a': [True, 'x']}\n        digest = self.cache.put('build.1', value)\n        payload = (self.root / 'build.1').read_bytes()\n        self.assertEqual(digest, hashlib.sha256(payload).hexdigest())\n        self.assertEqual(self.cache.get('build.1'), value)\n        (self.root / 'orphan.tmp').write_text('ignore')\n        self.assertEqual(self.cache.list_keys(), ['build.1'])\n    def test_missing_and_corruption_modes(self):\n        self.assertIsNone(self.cache.get('missing'))\n        self.cache.put('x', {'ok': True})\n        (self.root / 'x').write_text('{}')\n        with self.assertRaises(CacheCorruption): self.cache.get('x')\n        (self.root / 'x').unlink()\n        with self.assertRaises(CacheCorruption): self.cache.get('x')\n    def test_rejects_unsafe_keys(self):\n        for key in ('../escape', 'a/b', '', '.hidden'):\n            with self.subTest(key=key):\n                with self.assertRaises(ValueError): self.cache.put(key, 1)\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "code_agent_long",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": [
+      "code_agent_long",
+      "code_agent_team"
+    ],
+    "compatible_identities": [
+      "adaptive_deepseek_coder"
+    ]
+  },
+  "environment": {
+    "backend": "local",
+    "network": "disabled"
+  },
+  "execution": {
+    "timeout_seconds": 5400
+  },
+  "evolution": {
+    "allowed": false,
+    "targets": []
+  },
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {
+        "type": "command",
+        "command": [
+          "python",
+          "-m",
+          "unittest",
+          "discover",
+          "-v"
+        ],
+        "weight": 1
+      }
+    ]
+  },
+  "experiment": {
+    "campaign": "P5-team-threshold-20260908",
+    "source_task": "product_isolated_package_repairs",
+    "team_threshold": {
+      "workspace_files": 12,
+      "workspace_bytes": 5422,
+      "deterministic_child_gate": "files >= 12 OR bytes >= 12000"
+    }
+  }
+}

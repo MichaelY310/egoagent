@@ -5,50 +5,25 @@ import threading
 import uuid
 import time
 import sys
-import re
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))))
 from config import CONFIG
 from secure_command import (
     ProcessBackendError,
+    command_blacklist_match,
     execute_container_command,
     sanitized_subprocess_environment,
     sandbox_failure,
+    windows_python_c_invocation,
 )
 
 
 def _check_blacklist(command: str) -> str:
     """Check if the command matches any blacklist pattern. Returns error message or None."""
-    blacklist = CONFIG.get("command_blacklist", [])
-    cmd_stripped = command.strip()
-    for pattern in blacklist:
-        if isinstance(pattern, str) and pattern in cmd_stripped:
-            return f"Command blocked by blacklist: contains '{pattern}'"
+    pattern = command_blacklist_match(command, CONFIG.get("command_blacklist", []))
+    if pattern:
+        return f"Command blocked by blacklist: matches '{pattern}'"
     return None
-
-
-def _windows_python_c_invocation(command: str):
-    """Return argv for a complete ``python -c`` command on Windows.
-
-    ``cmd.exe`` truncates quoted multiline ``-c`` payloads at line breaks and
-    can still return exit code zero after executing only the first line.  DAG
-    verification frequently uses multiline assertions, so execute this exact
-    command shape without an intermediate shell. Other commands retain normal
-    shell semantics.
-    """
-
-    if os.name != "nt":
-        return None
-    match = re.fullmatch(
-        r'\s*(?:"(?P<path>[^"]*python(?:\.exe)?)"|(?P<name>python(?:3(?:\.\d+)?)?(?:\.exe)?|py(?:\.exe)?))'
-        r'\s+-c\s+(?P<quote>["\'])(?P<code>[\s\S]*)(?P=quote)\s*',
-        str(command or ""),
-        flags=re.IGNORECASE,
-    )
-    if not match:
-        return None
-    executable = match.group("path") or sys.executable
-    return [executable, "-c", match.group("code")]
 
 
 def run_command(command: str, cwd: str = None, blocking: bool = True, timeout: int = 60, _context: dict = None):
@@ -130,7 +105,7 @@ def run_command(command: str, cwd: str = None, blocking: bool = True, timeout: i
         use_shell = False
         process_cwd = None
     else:
-        python_invocation = _windows_python_c_invocation(command)
+        python_invocation = windows_python_c_invocation(command)
         if python_invocation:
             process_args = python_invocation
             use_shell = False

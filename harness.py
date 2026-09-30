@@ -90,6 +90,10 @@ class Session:
         self.full_messages = []  # 包含 system prompt 的完整版本
         self.workspace = workspace
         self.state = {}
+        # The graph does not define a complete Agent by itself.  Persist the
+        # per-Session assembly (Harness, slot -> Identity bindings and mode) so
+        # Session switching/replay never depends on the last global UI choice.
+        self.agent_config = {}
         self.save_dir = Path(save_dir) if save_dir else None
         self.session_id = str(session_id or f"session_{uuid.uuid4().hex}")
         self._lock = threading.RLock()
@@ -149,11 +153,80 @@ class Session:
             "run_id": getattr(run_context, "run_id", None),
             "parent_run_id": getattr(run_context, "parent_run_id", None),
             "harness": getattr(harness, "name", None),
+            "harness_version": getattr(harness, "flow_version", None),
             "node_id": node_id,
             "node_op": node_op,
             "agent": agent_name,
             "identity": identity_name,
         }
+
+    def active_agent_config(self):
+        """Return the compact configuration that produced the next message.
+
+        ``agent_config`` also contains the Session-wide revision history.  That
+        history belongs in session.json, not on every message.  A compact copy
+        makes mixed-Flow conversations independently auditable without
+        needlessly inflating the model context.
+        """
+        config = self.agent_config if isinstance(self.agent_config, dict) else {}
+        return copy.deepcopy({
+            key: config.get(key)
+            for key in (
+                "revision", "harness", "harness_version", "agents", "mode", "debug_mode",
+                "mutation_targets", "run_id", "activated_at",
+            )
+            if config.get(key) is not None
+        })
+
+    def set_agent_config(self, config, *, run_id=None):
+        """Activate a new configuration revision while preserving its history."""
+        next_config = copy.deepcopy(config if isinstance(config, dict) else {})
+        previous = self.active_agent_config()
+        history = copy.deepcopy(
+            self.agent_config.get("history", [])
+            if isinstance(self.agent_config, dict) and isinstance(self.agent_config.get("history"), list)
+            else []
+        )
+        comparable_keys = ("harness", "harness_version", "agents", "mode", "debug_mode", "mutation_targets")
+        changed = bool(previous) and any(previous.get(key) != next_config.get(key) for key in comparable_keys)
+        if changed:
+            history.append({**previous, "deactivated_at": time.time()})
+        revision = int(previous.get("revision") or len(history) or 0) + (1 if changed or not previous else 0)
+        next_config.update({
+            "revision": max(1, revision),
+            "run_id": str(run_id or next_config.get("run_id") or ""),
+            "activated_at": time.time(),
+            "history": history,
+        })
+        self.agent_config = next_config
+        if changed:
+            self.trace(
+                "runtime.configuration.changed",
+                {"previous": previous, "current": self.active_agent_config()},
+            )
+        return self.active_agent_config()
+
+    def _annotate_message(self, msg):
+        if not isinstance(msg, dict):
+            return msg
+        config = self.active_agent_config()
+        if config:
+            msg.setdefault("_agent_config", config)
+        role = str(msg.get("role") or "")
+        name = str(msg.get("name") or "")
+        if name:
+            speaker = {"kind": "agent", "agent": name}
+            context = self._trajectory_context(agent_name=name)
+            if context.get("identity"):
+                speaker["identity"] = context["identity"]
+        elif role == "user" and "<tool_response>" not in str(msg.get("content") or ""):
+            speaker = {"kind": "user", "agent": "user"}
+        elif role == "tool" or "<tool_response>" in str(msg.get("content") or ""):
+            speaker = {"kind": "tool", "agent": "tool"}
+        else:
+            speaker = {"kind": role or "message", "agent": name or role or "unknown"}
+        msg.setdefault("_speaker", speaker)
+        return msg
 
     @staticmethod
     def _resolve_runtime_agent(agent_name):
@@ -264,6 +337,7 @@ class Session:
     def record(self, msg):
         """记录一条消息"""
         with self._lock:
+            self._annotate_message(msg)
             msg.setdefault("_message_id", f"msg_{uuid.uuid4().hex}")
             self.messages.append(msg)
             self._context_generation += 1
@@ -276,6 +350,7 @@ class Session:
     def record_full(self, msg):
         """记录一条含 system prompt 的消息到 full log"""
         with self._lock:
+            self._annotate_message(msg)
             msg.setdefault("_message_id", f"msg_{uuid.uuid4().hex}")
             self.full_messages.append(msg)
             self.trace(
@@ -390,6 +465,7 @@ class Session:
             "trajectory_agents": list(self.trajectory.agents),
             "capability_snapshots": list(self.trajectory.capability_snapshot_ids),
             "health": health.as_dict(),
+            "agent_config": dict(self.agent_config),
         }
         with open(save_dir / "session.json", "w", encoding="utf-8") as f:
             json.dump(metadata, f, ensure_ascii=False, indent=2)
@@ -407,6 +483,8 @@ class Session:
                 metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
                 self.session_id = str(metadata.get("session_id") or self.session_id)
                 self._context_generation = int(metadata.get("context_generation", 0))
+                raw_agent_config = metadata.get("agent_config")
+                self.agent_config = dict(raw_agent_config) if isinstance(raw_agent_config, dict) else {}
                 recorded_path = str(metadata.get("trajectory") or "").strip()
                 recorded_trajectory = Path(recorded_path) if recorded_path else None
                 # A session directory may have been copied or moved. Prefer the

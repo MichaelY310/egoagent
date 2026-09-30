@@ -1,0 +1,78 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_compare_small",
+  "title": "P6 comparison — Two independent subsystem repairs",
+  "description": "A real editing task with two independent code paths where isolated delegation can reduce main-context exploration.",
+  "category": "code-product-acceptance",
+  "difficulty": "hard",
+  "tags": [
+    "python",
+    "delegation",
+    "subagent",
+    "tests",
+    "p6-product-comparison"
+  ],
+  "prompt": "修复 duration 与 graph 两个互不依赖的子系统。保持所有公开函数签名，运行完整测试。两个调查可以独立完成，主回答只需保留合并后的结论与验证证据；是否隔离某个调查由你根据上下文成本决定。",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Maintenance rules\n\n- Keep public signatures unchanged.\n- Work offline.\n- Make minimal patches.\n- Run `python -m unittest discover -v`.\n",
+      "duration.py": "def parse_duration(value: str) -> int:\n    return int(value)\n",
+      "graph.py": "def topological_layers(edges: dict[str, list[str]]) -> list[list[str]]:\n    return [list(edges)]\n",
+      "test_duration.py": "import unittest\nfrom duration import parse_duration\nclass T(unittest.TestCase):\n    def test_units(self):\n        self.assertEqual(parse_duration('45s'), 45)\n        self.assertEqual(parse_duration('2m'), 120)\n        self.assertEqual(parse_duration('1h30m'), 5400)\n    def test_invalid(self):\n        for value in ('', '-1s', '1x', '1h-2m'):\n            with self.assertRaises(ValueError): parse_duration(value)\n",
+      "test_graph.py": "import unittest\nfrom graph import topological_layers\nclass T(unittest.TestCase):\n    def test_layers_include_dependency_only_nodes(self):\n        self.assertEqual(topological_layers({'build':['fetch'], 'test':['build'], 'fetch':[], 'ship':['test']}), [['fetch'], ['build'], ['test'], ['ship']])\n    def test_stable_parallel_layer(self):\n        self.assertEqual(topological_layers({'b':[], 'a':[], 'c':['a','b']}), [['a','b'], ['c']])\n    def test_cycle(self):\n        with self.assertRaises(ValueError): topological_layers({'a':['b'], 'b':['a']})\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "code_agent_auto",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": [
+      "code_agent_fast",
+      "code_agent_auto",
+      "code_agent_long",
+      "code_agent_team",
+      "product_core_code_agent"
+    ],
+    "compatible_identities": [
+      "adaptive_deepseek_coder"
+    ]
+  },
+  "environment": {
+    "backend": "local",
+    "network": "disabled"
+  },
+  "execution": {
+    "timeout_seconds": 3600
+  },
+  "evolution": {
+    "allowed": false,
+    "targets": []
+  },
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {
+        "type": "command",
+        "command": [
+          "python",
+          "-m",
+          "unittest",
+          "discover",
+          "-v"
+        ],
+        "weight": 1
+      }
+    ]
+  },
+  "experiment": {
+    "campaign": "P6-product-comparison-20260908",
+    "source_task": "product_parallel_diagnostics",
+    "lanes": [
+      "code_agent_fast",
+      "code_agent_auto",
+      "code_agent_long",
+      "code_agent_team",
+      "product_core_code_agent",
+      "codex_cli"
+    ]
+  }
+}

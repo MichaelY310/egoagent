@@ -1,0 +1,19 @@
+{
+  "name": "product_context_endurance_governed",
+  "description": "Context endurance parity profile with curation and passive compaction enabled.",
+  "tags": ["experiment", "context", "governed"],
+  "slots": {
+    "agent": {"required": true, "identity": "adaptive_deepseek_coder"},
+    "governor": {"required": true, "identity": "context_governor_lite"}
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "run",
+    "context": {"answer": ""},
+    "nodes": {
+      "run": {"id": "run", "op": "子流程", "harness": "product_context_endurance_agent", "share_session": true, "agent_map": {"agent": "agent", "governor": "governor"}, "component_inputs": {"enable_context_governance": true, "enable_curation": true, "enable_compaction": true, "curation_interval": 3, "context_limit_tokens": 6144, "context_high_watermark": 0.7, "context_target_ratio": 0.45}, "component_outputs": {"answer": "answer", "curation": "curation", "compaction": "compaction"}, "result_mode": "data", "edges": [{"condition": "subflow_done", "to": "done"}]},
+      "done": {"id": "done", "op": "结束", "value": {"answer": "$ctx.answer", "curation": "$ctx.curation", "compaction": "$ctx.compaction"}, "edges": []}
+    }
+  }
+}

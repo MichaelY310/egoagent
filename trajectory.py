@@ -345,6 +345,7 @@ class TrajectoryRecorder:
         run_id: Optional[str] = None,
         parent_run_id: Optional[str] = None,
         harness: Optional[str] = None,
+        harness_version: Optional[str] = None,
         node_id: Optional[str] = None,
         node_op: Optional[str] = None,
         agent: Optional[str] = None,
@@ -387,6 +388,7 @@ class TrajectoryRecorder:
                 "run_id": run_id,
                 "parent_run_id": parent_run_id,
                 "harness": harness,
+                "harness_version": harness_version,
                 "node_id": node_id,
                 "node_op": node_op,
                 "agent": agent,
@@ -916,6 +918,202 @@ def _sharegpt_sample(call: dict[str, Any], *, include_reasoning: bool = False) -
     }
 
 
+def _otel_id(value: str, length: int) -> str:
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:length]
+
+
+def _otel_any_value(value: Any) -> dict[str, Any]:
+    """Encode one value using OTLP/JSON's typed ``AnyValue`` shape."""
+    if isinstance(value, bool):
+        return {"boolValue": value}
+    if isinstance(value, int):
+        # OTLP JSON represents 64-bit integers as decimal strings.
+        return {"intValue": str(value)}
+    if isinstance(value, float):
+        return {"doubleValue": value}
+    if isinstance(value, str):
+        return {"stringValue": value}
+    if isinstance(value, dict):
+        return {"kvlistValue": {"values": _otel_attributes(value)}}
+    if isinstance(value, (list, tuple)):
+        return {"arrayValue": {"values": [_otel_any_value(item) for item in value]}}
+    # AnyValue has no null variant. Keep unusual values inspectable rather than
+    # silently dropping an element from an ordered array.
+    return {"stringValue": json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)}
+
+
+def _otel_attributes(values: dict[str, Any]) -> list[dict[str, Any]]:
+    """Encode OTLP/JSON attributes without flattening structured GenAI data."""
+    return [
+        {"key": str(key), "value": _otel_any_value(value)}
+        for key, value in values.items()
+        if value is not None
+    ]
+
+
+def export_otel_trace(trajectory_path: Path | str, destination: Path | str) -> dict[str, Any]:
+    """Project the native event log into OTLP/JSON GenAI-oriented spans.
+
+    Native EgoAgent JSONL remains canonical.  The projection uses standard
+    ``gen_ai.*`` attributes for model/tool/session fields and ``ego.*`` only
+    where Flow/version/evolution concepts have no stable upstream attribute.
+    Full prompt/tool content is explicitly included because this function is
+    called only from the user-controlled training export path; it was already
+    redacted at the native persistence boundary.
+    """
+    reader = TrajectoryReader(trajectory_path)
+    validation = reader.validate()
+    if not validation["valid"]:
+        raise ValueError("Cannot export an invalid trajectory: " + "; ".join(validation["errors"][:5]))
+    events = reader.read_all(strict=False)
+    destination = Path(destination).expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    trace_id = _otel_id(str(validation.get("trace_id") or Path(trajectory_path).resolve()), 32)
+    runs = sorted({str(event.get("run_id") or "root") for event in events}) or ["root"]
+    spans: list[dict[str, Any]] = []
+    root_span_ids: dict[str, str] = {run_id: _otel_id(f"{trace_id}:run:{run_id}", 16) for run_id in runs}
+
+    def timestamp_ns(value: Any, fallback: float) -> str:
+        try:
+            return str(max(0, int(float(value) * 1_000_000_000)))
+        except (TypeError, ValueError):
+            return str(int(fallback * 1_000_000_000))
+
+    now = time.time()
+    for run_id in runs:
+        own = [event for event in events if str(event.get("run_id") or "root") == run_id]
+        start = min((float(event.get("timestamp") or now) for event in own), default=now)
+        end = max((float(event.get("timestamp") or start) for event in own), default=start) + 0.000001
+        sample = own[0] if own else {}
+        parent_run = next((str(event.get("parent_run_id")) for event in own if event.get("parent_run_id")), "")
+        span = {
+            "traceId": trace_id,
+            "spanId": root_span_ids[run_id],
+            "name": f"invoke_agent {sample.get('harness') or 'egoagent'}",
+            "kind": 1,
+            "startTimeUnixNano": timestamp_ns(start, now),
+            "endTimeUnixNano": timestamp_ns(end, now),
+            "attributes": _otel_attributes({
+                "gen_ai.operation.name": "invoke_agent",
+                "gen_ai.conversation.id": sample.get("session_id"),
+                "gen_ai.agent.name": sample.get("agent") or sample.get("harness"),
+                "gen_ai.agent.id": sample.get("identity"),
+                "gen_ai.agent.version": sample.get("harness_version"),
+                "ego.trace.id": validation.get("trace_id"),
+                "ego.run.id": None if run_id == "root" else run_id,
+                "ego.flow.name": sample.get("harness"),
+                "ego.flow.version": sample.get("harness_version"),
+            }),
+            "status": {"code": 1},
+        }
+        if parent_run and parent_run in root_span_ids:
+            span["parentSpanId"] = root_span_ids[parent_run]
+        spans.append(span)
+
+    requests: dict[str, dict[str, Any]] = {}
+    responses: dict[str, dict[str, Any]] = {}
+    tool_requests: dict[str, dict[str, Any]] = {}
+    tool_results: dict[str, dict[str, Any]] = {}
+    node_starts: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for event in events:
+        event_type = str(event.get("type") or "")
+        call_id = str(event.get("model_call_id") or "")
+        tool_call_id = str(event.get("tool_call_id") or "")
+        if event_type == "model.request" and call_id:
+            requests[call_id] = event
+        elif event_type in {"model.response", "model.error"} and call_id:
+            responses[call_id] = event
+        elif event_type == "tool.request" and tool_call_id:
+            tool_requests[tool_call_id] = event
+        elif event_type == "tool.result" and tool_call_id:
+            tool_results[tool_call_id] = event
+        elif event_type == "node.started":
+            node_starts.setdefault((str(event.get("run_id") or "root"), str(event.get("node_id") or "node")), []).append(event)
+        elif event_type == "node.completed":
+            key = (str(event.get("run_id") or "root"), str(event.get("node_id") or "node"))
+            start_event = node_starts.get(key, []).pop(0) if node_starts.get(key) else event
+            start = float(start_event.get("timestamp") or now)
+            end = max(start + 0.000001, float(event.get("timestamp") or start))
+            spans.append({
+                "traceId": trace_id, "spanId": _otel_id(f"node:{event.get('event_id')}", 16),
+                "parentSpanId": root_span_ids[key[0]],
+                "name": f"execute_flow_node {event.get('node_op') or event.get('node_id') or 'node'}",
+                "kind": 1, "startTimeUnixNano": timestamp_ns(start, now), "endTimeUnixNano": timestamp_ns(end, now),
+                "attributes": _otel_attributes({
+                    "gen_ai.operation.name": "execute_tool" if str(event.get("node_op")) in {"工具", "Tool"} else "invoke_agent",
+                    "gen_ai.agent.name": event.get("agent"), "ego.flow.node.id": event.get("node_id"),
+                    "ego.flow.node.op": event.get("node_op"), "ego.event.sequence.start": start_event.get("sequence"),
+                    "ego.event.sequence.end": event.get("sequence"),
+                }),
+                "status": {"code": 1},
+            })
+
+    for call_id, request in requests.items():
+        response = responses.get(call_id)
+        request_data = request.get("data") or {}
+        response_data = (response or {}).get("data") or {}
+        start = float(request.get("timestamp") or now)
+        end = max(start + 0.000001, float((response or request).get("timestamp") or start))
+        usage = response_data.get("usage") if isinstance(response_data.get("usage"), dict) else {}
+        run_id = str(request.get("run_id") or "root")
+        error = (response or {}).get("type") == "model.error"
+        spans.append({
+            "traceId": trace_id, "spanId": _otel_id(f"model:{call_id}", 16),
+            "parentSpanId": root_span_ids[run_id],
+            "name": f"chat {request_data.get('model') or 'model'}", "kind": 3,
+            "startTimeUnixNano": timestamp_ns(start, now), "endTimeUnixNano": timestamp_ns(end, now),
+            "attributes": _otel_attributes({
+                "gen_ai.operation.name": "chat", "gen_ai.request.model": request_data.get("model"),
+                "gen_ai.provider.name": request_data.get("provider"), "gen_ai.agent.name": request.get("agent"),
+                "gen_ai.agent.id": request.get("identity"), "gen_ai.conversation.id": request.get("session_id"),
+                "gen_ai.usage.input_tokens": usage.get("prompt_tokens", usage.get("input_tokens")),
+                "gen_ai.usage.output_tokens": usage.get("completion_tokens", usage.get("output_tokens")),
+                "gen_ai.response.finish_reasons": [response_data.get("finish_reason")] if response_data.get("finish_reason") else [],
+                "gen_ai.input.messages": request_data.get("messages") or [],
+                "gen_ai.tool.definitions": request_data.get("tools") or [],
+                "gen_ai.output.messages": [{"role": "assistant", "content": response_data.get("content", response_data.get("text", "")), "tool_calls": response_data.get("tool_calls") or []}],
+                "ego.model.call.id": call_id, "ego.flow.node.id": request.get("node_id"),
+            }),
+            "status": {"code": 2 if error else 1, **({"message": str(response_data.get("error") or "model error")} if error else {})},
+        })
+
+    for call_id, request in tool_requests.items():
+        result = tool_results.get(call_id)
+        request_data = request.get("data") or {}
+        result_data = (result or {}).get("data") or {}
+        start = float(request.get("timestamp") or now)
+        end = max(start + 0.000001, float((result or request).get("timestamp") or start))
+        run_id = str(request.get("run_id") or "root")
+        error = str(result_data.get("status", "ok")) not in {"ok", "completed", "success"}
+        spans.append({
+            "traceId": trace_id, "spanId": _otel_id(f"tool:{call_id}", 16),
+            "parentSpanId": root_span_ids[run_id], "name": f"execute_tool {request_data.get('name') or 'tool'}",
+            "kind": 1, "startTimeUnixNano": timestamp_ns(start, now), "endTimeUnixNano": timestamp_ns(end, now),
+            "attributes": _otel_attributes({
+                "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": request_data.get("name"),
+                "gen_ai.tool.call.id": call_id, "gen_ai.tool.call.arguments": request_data.get("arguments"),
+                "gen_ai.tool.call.result": result_data.get("result"), "gen_ai.agent.name": request.get("agent"),
+                "ego.flow.node.id": request.get("node_id"),
+            }),
+            "status": {"code": 2 if error else 1, **({"message": str(result_data.get("status") or "tool error")} if error else {})},
+        })
+
+    payload = {
+        "resourceSpans": [{
+            "resource": {"attributes": _otel_attributes({
+                "service.name": "egoagent", "service.version": "trajectory-v1",
+                "gen_ai.system": "egoagent",
+            })},
+            "scopeSpans": [{
+                "scope": {"name": "egoagent.trajectory", "version": "1"},
+                "spans": spans,
+            }],
+        }],
+    }
+    destination.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"path": str(destination), "trace_id": trace_id, "spans": len(spans), "format": "OTLP/JSON"}
+
+
 def export_training_data(
     trajectory_path: Path | str,
     destination: Path | str,
@@ -955,6 +1153,7 @@ def export_training_data(
     sharegpt_path = destination / "llamafactory_sharegpt.jsonl"
     verl_path = destination / "verl_rollouts.jsonl"
     episodes_path = destination / "egoagent_episodes.jsonl"
+    otel_path = destination / "otel_genai_trace.json"
     exported = 0
     skipped = 0
     verl_rows: list[dict[str, Any]] = []
@@ -1038,6 +1237,7 @@ def export_training_data(
     }
     dataset_info_path = destination / "dataset_info.json"
     dataset_info_path.write_text(json.dumps(dataset_info, ensure_ascii=False, indent=2), encoding="utf-8")
+    otel_projection = export_otel_trace(trajectory_path, otel_path)
     verl_parquet_path: Optional[Path] = None
     verl_parquet_error: Optional[str] = None
     try:
@@ -1070,15 +1270,18 @@ def export_training_data(
             "verl": str(verl_path),
             "verl_parquet": str(verl_parquet_path) if verl_parquet_path else None,
             "egoagent_episodes": str(episodes_path),
+            "opentelemetry_otlp_json": str(otel_path),
         },
         "optional_projection_errors": {
             "verl_parquet": verl_parquet_error,
         },
+        "opentelemetry": otel_projection,
         "notes": [
             "Each row is one exact Agent model call; multi-Agent calls are never merged into a synthetic speaker.",
             "verl rewards remain null unless an external checker or certificate supplies a trusted value.",
             "Task-level rewards are assigned only to the terminal call of the matching run; the episode file preserves all multi-Agent calls for custom credit assignment.",
             "Secrets are redacted before trajectory persistence.",
+            "The OTLP/JSON projection uses gen_ai.* semantic attributes and preserves ego.flow.* extensions for Flow replay.",
         ],
     }
     manifest_path = destination / "manifest.json"

@@ -1,17 +1,20 @@
 # EgoAgent Task Bench
 
-Task Bench 是 Studio 内置的、可复现的 Agent 做题实验台。它把题目、工作区、Harness、Identity、Environment、运行预算、DAG trace、自进化证据和评分放进同一个版本化协议中。
+Task Bench 是 Agent Workbench 内置的、可复现的 Agent 做题实验台。它把题目、工作区、Flow、Identity、Environment、运行预算、执行轨迹、自进化证据和评分放进同一个版本化协议中。
 
-## 在 Studio 中使用
+## 在 Workbench 中使用
 
-1. 启动 `python start-all.py`，打开 `http://127.0.0.1:8765/` 或统一入口中的 Studio。
-2. 点击顶部 **Task Bench**。
-3. 从左侧选择题目，再选择 Harness、Identity 和可选 Environment pack。多 Agent Harness 会出现逐 slot 绑定。
+1. 启动 `python start-all.py`，在 EgoAgent IDE 右上角打开 **Agent Workbench**。
+2. 进入 **Evaluate / Task Bench**。
+3. 从左侧题库或窄面板顶部“选择题目”下拉框选题，再选择 Flow、精确 Flow version、Identity 和可选 Environment pack。多 Agent Flow 会出现逐 slot 绑定。
 4. 可勾选“首节点前暂停”，然后点击“开始做题”。
-5. 运行时可以暂停、单步、自动执行或停止。当前节点旁显示实时活动卡：模型文本、工具名、条件/数据输出和错误摘要；点击节点查看完整输入、模型请求、回复、工具和输出。
-6. 右侧可以切换过程、评分、产物、进化。运行记录与隔离工作区保存在 `.egoagent/task_runs/<run_id>/`。
+5. 运行时可以暂停、单步、自动执行或停止。手动暂停不消耗执行超时预算。统一 Flow 查看器高亮当前节点，显示模型、工具及数据事件；点击节点查看截至当前位置的输入输出预览。完整模型请求仍以原始 trajectory 为准。
+6. 图下方可以切换过程、评分、产物、进化。运行记录与独立题目工作区保存在 `.egoagent/task_runs/<run_id>/`；本地目录不等于 OS 沙箱。
+7. 已停止/失败/超时的 EgoAgent 运行若存在安全的 completed checkpoint，历史行会显示 `↻`。点击后创建新运行、克隆原 workspace 并从 checkpoint 的下一节点继续；原运行保持不变。in-flight 副作用不会被一键恢复。
 
 没有 API 时可运行 **离线 DAG / Tool Trace 自检**。它明确使用 `test_bot` 的 scripted DummyLLM，不伪装成真实模型能力；适合验证 UI、工具循环、两个 Harness 和评分器。
+
+现在可点击 **开始录制 / 停止录制** 或 **保存完整运行到相簿**，从顶部 **运行相簿** 回放。Chat、Task、Build 等 EgoAgent 执行入口共用同一查看器；详见 [统一 Flow 观测与运行相簿](UNIFIED_FLOW_OBSERVATION_ZH.md)。
 
 ## Task v1 格式
 
@@ -61,7 +64,7 @@ Task Bench 是 Studio 内置的、可复现的 Agent 做题实验台。它把题
 
 核心规则：
 
-- fixture 路径必须在 Task workspace 内；每次运行都创建独立目录。
+- fixture 路径必须在 Task workspace 内；每次运行和每次 checkpoint 恢复都创建独立目录。
 - `command` check 必须是字符串数组，以 `shell=False` 运行，并被限制在 Task workspace；不接受 shell 字符串。
 - `network: disabled` 会在模型看到工具 schema 前隐藏 `browser`、`fetch_url`、`fetch_urls` 和 `web_search`。这项列表与统一权限模块共享，不会因新增联网 Tool 而遗漏。这是一项 Agent 工具策略，不等同于操作系统级网络沙箱；需要强网络隔离的题目应选择容器环境。
 - `evolution.allowed: false` 会隐藏 Harness/Identity/Skill/Knowledge mutation 工具。
@@ -99,9 +102,12 @@ Task workspace 默认隔离，但允许进化的题目会有意修改仓库级 H
 - `GET /api/task-bench/runs/<run_id>`
 - `POST /api/task-bench/runs`
 - `POST /api/task-bench/runs/<run_id>/control`
+- `POST /api/task-bench/runs/<run_id>/recover`
 - `POST /api/task-bench/runs/<run_id>/input`
 
 `control` 支持 `pause`、`step`、`auto` 和 `stop`。暂停发生在节点副作用之前，暂停/重试本身不会增加节点尝试次数。
+
+`recover` 只接受已结束的 EgoAgent Flow 运行，并只选择带有明确 `next_node` 的 completed checkpoint。恢复会验证 workspace、Flow 与各 Identity 的内容修订；有人改过文件时会报告冲突，不会静默覆盖较新的修改。旧 workspace 路径还必须精确匹配 `.egoagent/task_runs/<run_id>/workspace`，防止篡改运行记录扩大文件读取范围。
 
 ## 当前内置题目
 

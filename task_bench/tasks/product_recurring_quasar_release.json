@@ -1,0 +1,35 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_recurring_quasar_release",
+  "title": "Recurring Quasar release-record normalization",
+  "description": "Seven resumed synthetic release records test whether repeated deterministic work naturally becomes a verified reusable Skill.",
+  "category": "code-product-acceptance",
+  "difficulty": "medium",
+  "tags": ["multi-step", "recurring-work", "evolution", "skill", "json", "synthetic"],
+  "prompt": "Normalize each incoming fictional Quasar release record according to QUASAR_CONTRACT.md. The same contract will be used for later releases; choose the cheapest verified method using evidence accumulated in this Session.",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Offline fictional fixture\n\nRead only the requested raw record and QUASAR_CONTRACT.md. Never modify raw inputs or the contract. Write exactly the requested output. Do not add a project-local helper merely for one example; use governed reusable capabilities only when repeated measured work justifies them.\n",
+      "QUASAR_CONTRACT.md": "# Quasar release envelope v3\n\nOutput exactly these keys: `schema`, `artifact`, `lane`, `regions`, `wave`, `frozen`.\n\n- `schema` is always `quasar.release/v3`.\n- `artifact`: trim `package`, lowercase it, replace every run of non-alphanumeric characters with one hyphen, then trim hyphens.\n- `lane`: trimmed case-insensitive `production` or `prod` becomes `stable`; `beta` or `canary` becomes `preview`; every other value becomes `dev`.\n- `regions`: split `targets` on `|`, trim and uppercase non-empty values, remove duplicates, sort alphabetically.\n- `wave`: parse `batch` as an integer and clamp to inclusive range 1 through 9.\n- `frozen`: true only when trimmed case-insensitive `freeze` is `locked`, `yes`, `true`, or `1`.\n- Drop every other input field.\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "product_adaptive_code_agent",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["product_adaptive_code_agent", "product_adaptive_no_evolution", "product_core_code_agent"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 5400},
+  "evolution": {"allowed": true, "targets": ["skill", "knowledge", "agent", "harness"]},
+  "evaluation": {"pass_score": 1.0, "checks": []},
+  "steps": [
+    {"id": "release_01", "prompt": "Normalize raw/release_01.json into normalized/release_01.json and verify the exact contract.", "resume_trajectory": true, "workspace": {"files": {"raw/release_01.json": "{\"package\":\" Atlas / API  \",\"lane\":\"PROD\",\"targets\":\"us-east| EU-west |us-east| ap-south\",\"batch\":\"14\",\"freeze\":\"yes\",\"owner\":\"fictional\"}"}}, "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/release_01.json", "pointer": "", "expected": {"schema": "quasar.release/v3", "artifact": "atlas-api", "lane": "stable", "regions": ["AP-SOUTH", "EU-WEST", "US-EAST"], "wave": 9, "frozen": true}, "weight": 1}]}},
+    {"id": "release_02", "prompt": "Process raw/release_02.json into normalized/release_02.json under the same contract.", "resume_trajectory": true, "workspace": {"files": {"raw/release_02.json": "{\"package\":\" Worker___Pool  \",\"lane\":\" beta \",\"targets\":\"eu-north|EU-NORTH| ca-central\",\"batch\":\"0\",\"freeze\":\"off\",\"debug\":true}"}}, "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/release_02.json", "pointer": "", "expected": {"schema": "quasar.release/v3", "artifact": "worker-pool", "lane": "preview", "regions": ["CA-CENTRAL", "EU-NORTH"], "wave": 1, "frozen": false}, "weight": 1}]}},
+    {"id": "release_03", "prompt": "Normalize raw/release_03.json to its matching output and validate every field.", "resume_trajectory": true, "workspace": {"files": {"raw/release_03.json": "{\"package\":\" Search.Index@V2 \",\"lane\":\"nightly\",\"targets\":\" jp-east | us-west |JP-EAST\",\"batch\":\"4\",\"freeze\":\"1\",\"rank\":3}"}}, "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/release_03.json", "pointer": "", "expected": {"schema": "quasar.release/v3", "artifact": "search-index-v2", "lane": "dev", "regions": ["JP-EAST", "US-WEST"], "wave": 4, "frozen": true}, "weight": 1}]}},
+    {"id": "release_04", "prompt": "A fourth release arrived. Normalize raw/release_04.json into normalized/release_04.json.", "resume_trajectory": true, "workspace": {"files": {"raw/release_04.json": "{\"package\":\" Billing Core! \",\"lane\":\"production\",\"targets\":\"eu-west| sa-east |EU-WEST\",\"batch\":\"9\",\"freeze\":\"TRUE\",\"unused\":17}"}}, "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/release_04.json", "pointer": "", "expected": {"schema": "quasar.release/v3", "artifact": "billing-core", "lane": "stable", "regions": ["EU-WEST", "SA-EAST"], "wave": 9, "frozen": true}, "weight": 1}]}},
+    {"id": "release_05", "prompt": "Normalize raw/release_05.json to normalized/release_05.json exactly as before.", "resume_trajectory": true, "workspace": {"files": {"raw/release_05.json": "{\"package\":\" Mail--Relay \",\"lane\":\"CANARY\",\"targets\":\"us-east| us-central |US-CENTRAL\",\"batch\":\"2\",\"freeze\":\"no\",\"noise\":\"drop\"}"}}, "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/release_05.json", "pointer": "", "expected": {"schema": "quasar.release/v3", "artifact": "mail-relay", "lane": "preview", "regions": ["US-CENTRAL", "US-EAST"], "wave": 2, "frozen": false}, "weight": 1}]}},
+    {"id": "release_06", "prompt": "Process raw/release_06.json into normalized/release_06.json using the established observable contract.", "resume_trajectory": true, "workspace": {"files": {"raw/release_06.json": "{\"package\":\" Metrics + Exporter \",\"lane\":\"development\",\"targets\":\"ap-east| AP-SOUTH |ap-east\",\"batch\":\"-8\",\"freeze\":\"locked\",\"build\":6006}"}}, "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/release_06.json", "pointer": "", "expected": {"schema": "quasar.release/v3", "artifact": "metrics-exporter", "lane": "dev", "regions": ["AP-EAST", "AP-SOUTH"], "wave": 1, "frozen": true}, "weight": 1}]}},
+    {"id": "release_07", "prompt": "Normalize raw/release_07.json into normalized/release_07.json using the cheapest verified method available.", "resume_trajectory": true, "workspace": {"files": {"raw/release_07.json": "{\"package\":\" Feature Flags.v3 \",\"lane\":\"Prod\",\"targets\":\" eu-central |us-west|EU-CENTRAL\",\"batch\":\"7\",\"freeze\":\" Yes \",\"checksum\":\"ignore\"}"}}, "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/release_07.json", "pointer": "", "expected": {"schema": "quasar.release/v3", "artifact": "feature-flags-v3", "lane": "stable", "regions": ["EU-CENTRAL", "US-WEST"], "wave": 7, "frozen": true}, "weight": 1}]}}
+  ]
+}

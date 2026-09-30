@@ -1,0 +1,62 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_repeated_log_triage",
+  "title": "Recurring build-log triage",
+  "description": "Seven successive noisy build logs exercise capability discovery, token pressure, periodic evolution and later reuse without explicitly ordering an evolution.",
+  "category": "code-product-acceptance",
+  "difficulty": "medium",
+  "tags": ["multi-step", "recurring-work", "skill-search", "evolution", "context"],
+  "prompt": "Triage the requested local build log using the smallest amount of context.",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Log triage rules\n\n- Read only the requested local log.\n- Never browse the web.\n- The decisive line starts with `ERROR service=`.\n- Reply with exactly `ROOT_CAUSE=<service>:<message>` and no other prose.\n- Similar logs arrive regularly; prefer a safe token-efficient reusable method only when actual session evidence justifies it.\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "product_adaptive_code_agent",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["product_adaptive_code_agent", "product_adaptive_no_evolution"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 5400},
+  "evolution": {"allowed": true, "targets": ["skill", "knowledge", "agent", "harness"]},
+  "evaluation": {"pass_score": 1.0, "checks": []},
+  "steps": [
+    {
+      "id": "log_01", "prompt": "读取 build_01.log，按 AGENTS.md 只返回根因行。", "resume_trajectory": true,
+      "workspace": {"files": {"build_01.log": "TRACE boot=1\nINFO stage=fetch ok\nTRACE object=alpha\nINFO stage=compile ok\nTRACE object=beta\nWARN retry=1\nTRACE object=gamma\nERROR service=database migration checksum mismatch\nTRACE cleanup=done\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ROOT_CAUSE=database:migration checksum mismatch", "weight": 1}]}
+    },
+    {
+      "id": "log_02", "prompt": "读取 build_02.log，按相同协议只返回根因行。", "resume_trajectory": true,
+      "workspace": {"files": {"build_02.log": "TRACE boot=2\nINFO stage=fetch ok\nTRACE request=11\nINFO stage=compile ok\nTRACE request=12\nWARN fallback=old\nTRACE request=13\nERROR service=api schema version unsupported\nTRACE cleanup=done\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ROOT_CAUSE=api:schema version unsupported", "weight": 1}]}
+    },
+    {
+      "id": "log_03", "prompt": "读取 build_03.log，按相同协议只返回根因行。", "resume_trajectory": true,
+      "workspace": {"files": {"build_03.log": "TRACE boot=3\nINFO stage=fetch ok\nTRACE job=21\nINFO stage=compile ok\nTRACE job=22\nWARN retry=2\nTRACE job=23\nERROR service=worker queue lease expired\nTRACE cleanup=done\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ROOT_CAUSE=worker:queue lease expired", "weight": 1}]}
+    },
+    {
+      "id": "log_04", "prompt": "读取 build_04.log，按相同协议只返回根因行。", "resume_trajectory": true,
+      "workspace": {"files": {"build_04.log": "TRACE boot=4\nINFO stage=fetch ok\nTRACE chunk=31\nINFO stage=compile ok\nTRACE chunk=32\nWARN fallback=disk\nTRACE chunk=33\nERROR service=cache snapshot header corrupt\nTRACE cleanup=done\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ROOT_CAUSE=cache:snapshot header corrupt", "weight": 1}]}
+    },
+    {
+      "id": "log_05", "prompt": "读取 build_05.log，按相同协议只返回根因行。", "resume_trajectory": true,
+      "workspace": {"files": {"build_05.log": "TRACE boot=5\nINFO stage=fetch ok\nTRACE key=41\nINFO stage=compile ok\nTRACE key=42\nWARN rotation=pending\nTRACE key=43\nERROR service=auth signing key id missing\nTRACE cleanup=done\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ROOT_CAUSE=auth:signing key id missing", "weight": 1}]}
+    },
+    {
+      "id": "log_06", "prompt": "又收到同类日志。读取 build_06.log，并继续只返回协议规定的根因行。", "resume_trajectory": true,
+      "workspace": {"files": {"build_06.log": "TRACE boot=6\nINFO stage=fetch ok\nTRACE tick=51\nINFO stage=compile ok\nTRACE tick=52\nWARN tz=fallback\nTRACE tick=53\nERROR service=scheduler cron timezone invalid\nTRACE cleanup=done\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ROOT_CAUSE=scheduler:cron timezone invalid", "weight": 1}]}
+    },
+    {
+      "id": "log_07", "prompt": "读取 build_07.log，只返回根因行；如果会话中已经形成经过验证的可复用能力，应通过能力库找到并使用，而不是重新发明。", "resume_trajectory": true,
+      "workspace": {"files": {"build_07.log": "TRACE boot=7\nINFO stage=fetch ok\nTRACE shard=61\nINFO stage=compile ok\nTRACE shard=62\nWARN route=backup\nTRACE shard=63\nERROR service=gateway upstream certificate expired\nTRACE cleanup=done\n"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ROOT_CAUSE=gateway:upstream certificate expired", "weight": 1}]}
+    }
+  ]
+}

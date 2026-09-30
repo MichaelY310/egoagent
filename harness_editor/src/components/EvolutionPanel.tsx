@@ -224,29 +224,29 @@ export default function EvolutionPanel() {
     <div className="evolution-workbench" style={{ padding: 20, maxWidth: 980, margin: "0 auto", color: "var(--text-primary)" }}>
       <h2 style={{ color: "var(--text-primary)", marginBottom: 4 }}>Improve</h2>
       <p style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 20 }}>
-        从真实失败开始，只添加必要能力；通过 held-out、回滚与因果证书后再部署。
+        先做只读诊断，再预览候选修改。只有你明确安装或启动隔离实验时才会写入；每次写入都有事务与回滚记录。
       </p>
 
       <div style={{ ...cardStyle, borderColor: "#0e7490" }}>
-        <h3 style={{ margin: "0 0 5px", fontSize: 14, color: "#67e8f9" }}>🧩 Identity 能力进化诊断</h3>
-        <p style={{ color: "#94a3b8", fontSize: 11, margin: "0 0 8px" }}>
+        <h3 style={{ margin: "0 0 5px", fontSize: 14, color: "var(--text-primary)" }}>1 · 分析真实失败（只读）</h3>
+        <p style={{ color: "var(--text-muted)", fontSize: 11, margin: "0 0 8px" }}>
           粘贴任务、失败轨迹或 Session 摘要。系统先判断应该添加知识、Skill、隔离子 Agent，还是修改 Harness；安装支持预览与精确回滚。
         </p>
         <div style={{ display: "flex", gap: 8, marginBottom: 7 }}>
-          <label style={{ fontSize: 11, color: "#94a3b8", flex: "0 0 190px" }}>
+          <label style={{ fontSize: 11, color: "var(--text-muted)", flex: "0 0 190px" }}>
             目标 Identity
-            <input value={targetIdentity} onChange={(e) => setTargetIdentity(e.target.value)} style={{ display: "block", width: "100%", marginTop: 3, padding: "5px 7px", boxSizing: "border-box", background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 4, color: "#fff" }} />
+            <input value={targetIdentity} onChange={(e) => setTargetIdentity(e.target.value)} style={{ display: "block", width: "100%", marginTop: 3, padding: "5px 7px", boxSizing: "border-box", background: "var(--input-background)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-primary)" }} />
           </label>
           <textarea
             value={observations}
             onChange={(event) => setObservations(event.target.value)}
             placeholder="例如：给 Agent 多篇本地 PDF；之后询问某篇内容时它忽略文件、反复上网搜索，三次失败又占满上下文……"
             rows={5}
-            style={{ flex: 1, padding: 8, background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 4, color: "#e2e8f0", resize: "vertical" }}
+            style={{ flex: 1, padding: 8, background: "var(--input-background)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-primary)", resize: "vertical" }}
           />
         </div>
         <button onClick={analyzeCapabilities} disabled={capabilityBusy || !observations.trim()} style={{ padding: "6px 14px", background: "#0e7490", color: "white", border: 0, borderRadius: 4, cursor: "pointer" }}>
-          {capabilityBusy ? "处理中..." : "分析最小进化方案"}
+          {capabilityBusy ? "处理中..." : "分析最小进化方案（只读）"}
         </button>
         {lastCapabilityTransaction && (
           <button onClick={rollbackCapability} disabled={capabilityBusy} style={{ marginLeft: 7, padding: "6px 14px", background: "#7f1d1d", color: "#fecaca", border: 0, borderRadius: 4, cursor: "pointer" }}>
@@ -254,7 +254,7 @@ export default function EvolutionPanel() {
           </button>
         )}
         {capabilityRecommendations.map((recommendation, index) => (
-          <div key={`${recommendation.pack || recommendation.recipe}-${index}`} style={{ marginTop: 8, padding: 9, background: "#071827", border: "1px solid #164e63", borderRadius: 6 }}>
+          <div key={`${recommendation.pack || recommendation.recipe}-${index}`} style={{ marginTop: 8, padding: 9, background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 6 }}>
             <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
               <b style={{ color: "#a5f3fc", fontSize: 12 }}>{recommendation.pack || recommendation.recipe}</b>
               <span style={{ color: "#64748b", fontSize: 10 }}>{Math.round(recommendation.confidence * 100)}% · {recommendation.kind}</span>
@@ -284,15 +284,17 @@ export default function EvolutionPanel() {
       </details>
 
       {/* 启动进化 */}
-      <div style={cardStyle}>
-        <h3 style={{ margin: "0 0 10px", fontSize: 14, color: "#7ecfff" }}>▶ 启动进化周期</h3>
+      <details style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
+        <summary style={{ padding: "12px 16px", cursor: "pointer", color: "var(--text-primary)", fontSize: 12, fontWeight: 600 }}>2 · 高级：运行隔离进化实验（会调用模型；写入需审批）</summary>
+        <div style={{ padding: "0 16px 14px" }}>
+        <p style={{ color: "var(--text-muted)", fontSize: 11, margin: "0 0 10px" }}>这不是普通诊断：会调用模型，在独立实验运行中生成候选能力并执行评测；候选只有通过 gate 且被你明确部署后才会影响默认行为。默认折叠以避免误启动。</p>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <label style={{ fontSize: 12 }}>
             Mode:
             <select
               value={evoMode}
               onChange={(e) => setEvoMode(e.target.value as "v2_structural" | "harness" | "engine")}
-              style={{ marginLeft: 4, padding: "4px 8px", background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 4, color: "#fff" }}
+              style={{ marginLeft: 4, padding: "4px 8px", background: "var(--input-background)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-primary)" }}
             >
               <option value="engine">Unified Evolution（能力 + 评估 + 回滚）</option>
               <option value="harness">Harness Pipeline（可视 DAG）</option>
@@ -304,7 +306,7 @@ export default function EvolutionPanel() {
             <input
               value={targetHarness}
               onChange={(e) => setTargetHarness(e.target.value)}
-              style={{ marginLeft: 4, padding: "4px 8px", background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 4, color: "#fff", width: 120 }}
+              style={{ marginLeft: 4, padding: "4px 8px", background: "var(--input-background)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-primary)", width: 120 }}
             />
           </label>
           <label style={{ fontSize: 12 }}>
@@ -312,7 +314,7 @@ export default function EvolutionPanel() {
             <input
               value={targetIdentity}
               onChange={(e) => setTargetIdentity(e.target.value)}
-              style={{ marginLeft: 4, padding: "4px 8px", background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 4, color: "#fff", width: 120 }}
+              style={{ marginLeft: 4, padding: "4px 8px", background: "var(--input-background)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-primary)", width: 120 }}
             />
           </label>
           <label style={{ fontSize: 12 }}>
@@ -323,7 +325,7 @@ export default function EvolutionPanel() {
               onChange={(e) => setIterations(parseInt(e.target.value) || 3)}
               min={1}
               max={10}
-              style={{ marginLeft: 4, padding: "4px 8px", background: "#0a1628", border: "1px solid #1e3a5f", borderRadius: 4, color: "#fff", width: 50 }}
+              style={{ marginLeft: 4, padding: "4px 8px", background: "var(--input-background)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-primary)", width: 50 }}
             />
           </label>
           <button
@@ -348,7 +350,8 @@ export default function EvolutionPanel() {
             Status: {evoStatus}
           </div>
         )}
-      </div>
+        </div>
+      </details>
 
       {/* 进化报告 */}
       {evoReport && (

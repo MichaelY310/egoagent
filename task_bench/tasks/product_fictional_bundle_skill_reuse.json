@@ -1,0 +1,32 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_fictional_bundle_skill_reuse",
+  "title": "Fresh-session fictional bundle capability reuse",
+  "description": "A fresh Session must discover, activate and use the verified fictional bundle normalizer created by a prior Session.",
+  "category": "code-product-acceptance",
+  "difficulty": "easy",
+  "tags": ["capability-search", "skill-reuse", "cross-session", "synthetic"],
+  "prompt": "Use BUNDLE_FORMAT.md v3 to normalize raw/bundle_08.json into canonical/bundle_08.json. Search for and reuse an exact verified catalog capability when available; do not create a duplicate.",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Synthetic bundle fixture\n\nAll data is fictional. Never change raw input or BUNDLE_FORMAT.md. Write only canonical/bundle_08.json.\n",
+      "BUNDLE_FORMAT.md": "# Canonical fictional bundle format v3\n\nWrite exactly schema_version=3; bundle.slug from trimmed lowercase package with whitespace runs changed to one hyphen; bundle.version from trimmed version with one leading v/V removed; target as trimmed uppercase; enabled only when trimmed case-insensitive ship is yes, true, or 1; and features from semicolon splitting, trim/lowercase, non-empty deduplication and alphabetical sorting. Drop every other field.\n",
+      "raw/bundle_08.json": "{\"package\":\" Asset Compiler \",\"version\":\" v8.1.0 \",\"target\":\" linux-ppc64le \",\"ship\":\"YES\",\"features\":\"Assets; Cache ;assets;Hash\",\"discard\":88}"
+    }
+  },
+  "selection": {
+    "recommended_harness": "product_adaptive_code_agent",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["product_adaptive_code_agent", "product_adaptive_no_evolution", "product_core_code_agent"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 1800},
+  "evolution": {"allowed": false, "targets": []},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"type": "json_equals", "path": "canonical/bundle_08.json", "pointer": "", "expected": {"schema_version":3,"bundle":{"slug":"asset-compiler","version":"8.1.0"},"target":"LINUX-PPC64LE","enabled":true,"features":["assets","cache","hash"]}, "weight": 1}
+    ]
+  }
+}

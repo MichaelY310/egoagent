@@ -1,0 +1,123 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_context_endurance_ledger",
+  "title": "Long noisy conversation with durable fact recall",
+  "description": "A controlled multi-turn ledger separates disposable diagnostic filler from four durable facts and checks lossless final recall.",
+  "category": "agent-product-acceptance",
+  "difficulty": "medium",
+  "tags": ["multi-turn", "context", "curation", "compaction", "recall"],
+  "prompt": "Follow each conversational instruction exactly. Retain values explicitly labelled DURABLE. TRACE diagnostics are deliberately redundant and may be compacted.",
+  "workspace": {"files": {"README.md": "Controlled context-governance fixture. No file changes are required.\n"}},
+  "selection": {
+    "recommended_harness": "product_context_endurance_governed",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["product_context_endurance_governed", "product_context_endurance_curation_only", "product_context_endurance_compaction_only", "product_context_endurance_ungoverned"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 3600},
+  "evolution": {"allowed": false, "targets": []},
+  "evaluation": {"pass_score": 1.0, "checks": []},
+  "steps": [
+    {
+      "id": "fact_alpha",
+      "prompt": "DURABLE_ALPHA=7319. Retain that exact fact until the final ledger. Reply only ACK-1. TRACE warm cache miss retry passed; TRACE shard-a warm cache miss retry passed; TRACE shard-b warm cache miss retry passed; TRACE shard-c warm cache miss retry passed; TRACE shard-d warm cache miss retry passed; TRACE shard-e warm cache miss retry passed; TRACE shard-f warm cache miss retry passed; TRACE shard-g warm cache miss retry passed; TRACE shard-h warm cache miss retry passed; TRACE shard-i warm cache miss retry passed; TRACE shard-j warm cache miss retry passed; TRACE shard-k warm cache miss retry passed; TRACE shard-l warm cache miss retry passed; TRACE shard-m warm cache miss retry passed; TRACE shard-n warm cache miss retry passed; TRACE shard-o warm cache miss retry passed; TRACE shard-p warm cache miss retry passed; TRACE shard-q warm cache miss retry passed; TRACE shard-r warm cache miss retry passed; TRACE shard-s warm cache miss retry passed; TRACE shard-t warm cache miss retry passed; TRACE shard-u warm cache miss retry passed; TRACE shard-v warm cache miss retry passed; TRACE shard-w warm cache miss retry passed; TRACE shard-x warm cache miss retry passed; TRACE shard-y warm cache miss retry passed; TRACE shard-z warm cache miss retry passed.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-1", "weight": 1}]}
+    },
+    {
+      "id": "noise_two",
+      "prompt": "Reply only ACK-2. The following TRACE batch is resolved and disposable: allocator page 001 retry passed; allocator page 002 retry passed; allocator page 003 retry passed; allocator page 004 retry passed; allocator page 005 retry passed; allocator page 006 retry passed; allocator page 007 retry passed; allocator page 008 retry passed; allocator page 009 retry passed; allocator page 010 retry passed; allocator page 011 retry passed; allocator page 012 retry passed; allocator page 013 retry passed; allocator page 014 retry passed; allocator page 015 retry passed; allocator page 016 retry passed; allocator page 017 retry passed; allocator page 018 retry passed; allocator page 019 retry passed; allocator page 020 retry passed; allocator page 021 retry passed; allocator page 022 retry passed; allocator page 023 retry passed; allocator page 024 retry passed; allocator page 025 retry passed; allocator page 026 retry passed; allocator page 027 retry passed; allocator page 028 retry passed; allocator page 029 retry passed; allocator page 030 retry passed.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-2", "weight": 1}]}
+    },
+    {
+      "id": "fact_beta",
+      "prompt": "DURABLE_BETA=zircon. Retain that exact fact until the final ledger. Reply only ACK-3. Disposable TRACE: index segment 101 rebuilt; index segment 102 rebuilt; index segment 103 rebuilt; index segment 104 rebuilt; index segment 105 rebuilt; index segment 106 rebuilt; index segment 107 rebuilt; index segment 108 rebuilt; index segment 109 rebuilt; index segment 110 rebuilt; index segment 111 rebuilt; index segment 112 rebuilt; index segment 113 rebuilt; index segment 114 rebuilt; index segment 115 rebuilt; index segment 116 rebuilt; index segment 117 rebuilt; index segment 118 rebuilt; index segment 119 rebuilt; index segment 120 rebuilt; index segment 121 rebuilt; index segment 122 rebuilt; index segment 123 rebuilt; index segment 124 rebuilt; index segment 125 rebuilt; index segment 126 rebuilt; index segment 127 rebuilt; index segment 128 rebuilt; index segment 129 rebuilt; index segment 130 rebuilt.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-3", "weight": 1}]}
+    },
+    {
+      "id": "irrelevant_interruption",
+      "prompt": "This turn is unrelated and disposable. Compute 6*7 and reply only 42. TRACE probe north ok; TRACE probe south ok; TRACE probe east ok; TRACE probe west ok; TRACE probe alpha ok; TRACE probe beta ok; TRACE probe gamma ok; TRACE probe delta ok; TRACE probe epsilon ok; TRACE probe zeta ok; TRACE probe eta ok; TRACE probe theta ok; TRACE probe iota ok; TRACE probe kappa ok; TRACE probe lambda ok; TRACE probe mu ok; TRACE probe nu ok; TRACE probe xi ok; TRACE probe omicron ok; TRACE probe pi ok; TRACE probe rho ok; TRACE probe sigma ok; TRACE probe tau ok; TRACE probe upsilon ok; TRACE probe phi ok; TRACE probe chi ok; TRACE probe psi ok; TRACE probe omega ok.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "42", "weight": 1}]}
+    },
+    {
+      "id": "fact_gamma",
+      "prompt": "DURABLE_GAMMA=src/engine.py. Retain the exact path until the final ledger. Reply only ACK-5. Resolved TRACE: compiler unit 201 green; compiler unit 202 green; compiler unit 203 green; compiler unit 204 green; compiler unit 205 green; compiler unit 206 green; compiler unit 207 green; compiler unit 208 green; compiler unit 209 green; compiler unit 210 green; compiler unit 211 green; compiler unit 212 green; compiler unit 213 green; compiler unit 214 green; compiler unit 215 green; compiler unit 216 green; compiler unit 217 green; compiler unit 218 green; compiler unit 219 green; compiler unit 220 green; compiler unit 221 green; compiler unit 222 green; compiler unit 223 green; compiler unit 224 green; compiler unit 225 green; compiler unit 226 green; compiler unit 227 green; compiler unit 228 green; compiler unit 229 green; compiler unit 230 green.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-5", "weight": 1}]}
+    },
+    {
+      "id": "noise_six",
+      "prompt": "Reply only ACK-6. All diagnostic text here is resolved and disposable: network lane 301 synchronized; network lane 302 synchronized; network lane 303 synchronized; network lane 304 synchronized; network lane 305 synchronized; network lane 306 synchronized; network lane 307 synchronized; network lane 308 synchronized; network lane 309 synchronized; network lane 310 synchronized; network lane 311 synchronized; network lane 312 synchronized; network lane 313 synchronized; network lane 314 synchronized; network lane 315 synchronized; network lane 316 synchronized; network lane 317 synchronized; network lane 318 synchronized; network lane 319 synchronized; network lane 320 synchronized; network lane 321 synchronized; network lane 322 synchronized; network lane 323 synchronized; network lane 324 synchronized; network lane 325 synchronized; network lane 326 synchronized; network lane 327 synchronized; network lane 328 synchronized; network lane 329 synchronized; network lane 330 synchronized.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-6", "weight": 1}]}
+    },
+    {
+      "id": "fact_delta",
+      "prompt": "DURABLE_DELTA=AMBER. Retain that exact word. Reply only ACK-7. Resolved TRACE: worker 401 stopped cleanly; worker 402 stopped cleanly; worker 403 stopped cleanly; worker 404 stopped cleanly; worker 405 stopped cleanly; worker 406 stopped cleanly; worker 407 stopped cleanly; worker 408 stopped cleanly; worker 409 stopped cleanly; worker 410 stopped cleanly; worker 411 stopped cleanly; worker 412 stopped cleanly; worker 413 stopped cleanly; worker 414 stopped cleanly; worker 415 stopped cleanly; worker 416 stopped cleanly; worker 417 stopped cleanly; worker 418 stopped cleanly; worker 419 stopped cleanly; worker 420 stopped cleanly; worker 421 stopped cleanly; worker 422 stopped cleanly; worker 423 stopped cleanly; worker 424 stopped cleanly; worker 425 stopped cleanly; worker 426 stopped cleanly; worker 427 stopped cleanly; worker 428 stopped cleanly; worker 429 stopped cleanly; worker 430 stopped cleanly.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-7", "weight": 1}]}
+    },
+    {
+      "id": "noise_eight",
+      "prompt": "Reply only ACK-8. Resolved and disposable TRACE: mirror 501 healthy; mirror 502 healthy; mirror 503 healthy; mirror 504 healthy; mirror 505 healthy; mirror 506 healthy; mirror 507 healthy; mirror 508 healthy; mirror 509 healthy; mirror 510 healthy; mirror 511 healthy; mirror 512 healthy; mirror 513 healthy; mirror 514 healthy; mirror 515 healthy; mirror 516 healthy; mirror 517 healthy; mirror 518 healthy; mirror 519 healthy; mirror 520 healthy; mirror 521 healthy; mirror 522 healthy; mirror 523 healthy; mirror 524 healthy; mirror 525 healthy; mirror 526 healthy; mirror 527 healthy; mirror 528 healthy; mirror 529 healthy; mirror 530 healthy.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-8", "weight": 1}]}
+    },
+    {
+      "id": "noise_nine",
+      "prompt": "Reply only ACK-9. Resolved and disposable TRACE: replica 601 converged; replica 602 converged; replica 603 converged; replica 604 converged; replica 605 converged; replica 606 converged; replica 607 converged; replica 608 converged; replica 609 converged; replica 610 converged; replica 611 converged; replica 612 converged; replica 613 converged; replica 614 converged; replica 615 converged; replica 616 converged; replica 617 converged; replica 618 converged; replica 619 converged; replica 620 converged; replica 621 converged; replica 622 converged; replica 623 converged; replica 624 converged; replica 625 converged; replica 626 converged; replica 627 converged; replica 628 converged; replica 629 converged; replica 630 converged.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-9", "weight": 1}]}
+    },
+    {
+      "id": "noise_ten",
+      "prompt": "Reply only ACK-10. Resolved and disposable TRACE: queue 701 drained; queue 702 drained; queue 703 drained; queue 704 drained; queue 705 drained; queue 706 drained; queue 707 drained; queue 708 drained; queue 709 drained; queue 710 drained; queue 711 drained; queue 712 drained; queue 713 drained; queue 714 drained; queue 715 drained; queue 716 drained; queue 717 drained; queue 718 drained; queue 719 drained; queue 720 drained; queue 721 drained; queue 722 drained; queue 723 drained; queue 724 drained; queue 725 drained; queue 726 drained; queue 727 drained; queue 728 drained; queue 729 drained; queue 730 drained.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-10", "weight": 1}]}
+    },
+    {
+      "id": "noise_eleven",
+      "prompt": "Reply only ACK-11. Resolved and disposable TRACE: archive 801 verified; archive 802 verified; archive 803 verified; archive 804 verified; archive 805 verified; archive 806 verified; archive 807 verified; archive 808 verified; archive 809 verified; archive 810 verified; archive 811 verified; archive 812 verified; archive 813 verified; archive 814 verified; archive 815 verified; archive 816 verified; archive 817 verified; archive 818 verified; archive 819 verified; archive 820 verified; archive 821 verified; archive 822 verified; archive 823 verified; archive 824 verified; archive 825 verified; archive 826 verified; archive 827 verified; archive 828 verified; archive 829 verified; archive 830 verified.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-11", "weight": 1}]}
+    },
+    {
+      "id": "noise_twelve",
+      "prompt": "Reply only ACK-12. Resolved and disposable TRACE: partition 901 balanced; partition 902 balanced; partition 903 balanced; partition 904 balanced; partition 905 balanced; partition 906 balanced; partition 907 balanced; partition 908 balanced; partition 909 balanced; partition 910 balanced; partition 911 balanced; partition 912 balanced; partition 913 balanced; partition 914 balanced; partition 915 balanced; partition 916 balanced; partition 917 balanced; partition 918 balanced; partition 919 balanced; partition 920 balanced; partition 921 balanced; partition 922 balanced; partition 923 balanced; partition 924 balanced; partition 925 balanced; partition 926 balanced; partition 927 balanced; partition 928 balanced; partition 929 balanced; partition 930 balanced.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-12", "weight": 1}]}
+    },
+    {
+      "id": "noise_thirteen",
+      "prompt": "Reply only ACK-13. Resolved and disposable TRACE: journal 1001 replayed; journal 1002 replayed; journal 1003 replayed; journal 1004 replayed; journal 1005 replayed; journal 1006 replayed; journal 1007 replayed; journal 1008 replayed; journal 1009 replayed; journal 1010 replayed; journal 1011 replayed; journal 1012 replayed; journal 1013 replayed; journal 1014 replayed; journal 1015 replayed; journal 1016 replayed; journal 1017 replayed; journal 1018 replayed; journal 1019 replayed; journal 1020 replayed; journal 1021 replayed; journal 1022 replayed; journal 1023 replayed; journal 1024 replayed; journal 1025 replayed; journal 1026 replayed; journal 1027 replayed; journal 1028 replayed; journal 1029 replayed; journal 1030 replayed.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-13", "weight": 1}]}
+    },
+    {
+      "id": "noise_fourteen",
+      "prompt": "Reply only ACK-14. Resolved and disposable TRACE: snapshot 1101 complete; snapshot 1102 complete; snapshot 1103 complete; snapshot 1104 complete; snapshot 1105 complete; snapshot 1106 complete; snapshot 1107 complete; snapshot 1108 complete; snapshot 1109 complete; snapshot 1110 complete; snapshot 1111 complete; snapshot 1112 complete; snapshot 1113 complete; snapshot 1114 complete; snapshot 1115 complete; snapshot 1116 complete; snapshot 1117 complete; snapshot 1118 complete; snapshot 1119 complete; snapshot 1120 complete; snapshot 1121 complete; snapshot 1122 complete; snapshot 1123 complete; snapshot 1124 complete; snapshot 1125 complete; snapshot 1126 complete; snapshot 1127 complete; snapshot 1128 complete; snapshot 1129 complete; snapshot 1130 complete.",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-14", "weight": 1}]}
+    },
+    {"id": "noise_fifteen", "prompt": "Reply only ACK-15. Resolved disposable TRACE: batch 1201 ok; batch 1202 ok; batch 1203 ok; batch 1204 ok; batch 1205 ok; batch 1206 ok; batch 1207 ok; batch 1208 ok; batch 1209 ok; batch 1210 ok; batch 1211 ok; batch 1212 ok; batch 1213 ok; batch 1214 ok; batch 1215 ok; batch 1216 ok; batch 1217 ok; batch 1218 ok; batch 1219 ok; batch 1220 ok.", "resume_trajectory": true, "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-15", "weight": 1}]}},
+    {"id": "noise_sixteen", "prompt": "Reply only ACK-16. Resolved disposable TRACE: batch 1301 ok; batch 1302 ok; batch 1303 ok; batch 1304 ok; batch 1305 ok; batch 1306 ok; batch 1307 ok; batch 1308 ok; batch 1309 ok; batch 1310 ok; batch 1311 ok; batch 1312 ok; batch 1313 ok; batch 1314 ok; batch 1315 ok; batch 1316 ok; batch 1317 ok; batch 1318 ok; batch 1319 ok; batch 1320 ok.", "resume_trajectory": true, "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-16", "weight": 1}]}},
+    {"id": "noise_seventeen", "prompt": "Reply only ACK-17. Resolved disposable TRACE: batch 1401 ok; batch 1402 ok; batch 1403 ok; batch 1404 ok; batch 1405 ok; batch 1406 ok; batch 1407 ok; batch 1408 ok; batch 1409 ok; batch 1410 ok; batch 1411 ok; batch 1412 ok; batch 1413 ok; batch 1414 ok; batch 1415 ok; batch 1416 ok; batch 1417 ok; batch 1418 ok; batch 1419 ok; batch 1420 ok.", "resume_trajectory": true, "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-17", "weight": 1}]}},
+    {"id": "noise_eighteen", "prompt": "Reply only ACK-18. Resolved disposable TRACE: batch 1501 ok; batch 1502 ok; batch 1503 ok; batch 1504 ok; batch 1505 ok; batch 1506 ok; batch 1507 ok; batch 1508 ok; batch 1509 ok; batch 1510 ok; batch 1511 ok; batch 1512 ok; batch 1513 ok; batch 1514 ok; batch 1515 ok; batch 1516 ok; batch 1517 ok; batch 1518 ok; batch 1519 ok; batch 1520 ok.", "resume_trajectory": true, "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-18", "weight": 1}]}},
+    {"id": "noise_nineteen", "prompt": "Reply only ACK-19. Resolved disposable TRACE: batch 1601 ok; batch 1602 ok; batch 1603 ok; batch 1604 ok; batch 1605 ok; batch 1606 ok; batch 1607 ok; batch 1608 ok; batch 1609 ok; batch 1610 ok; batch 1611 ok; batch 1612 ok; batch 1613 ok; batch 1614 ok; batch 1615 ok; batch 1616 ok; batch 1617 ok; batch 1618 ok; batch 1619 ok; batch 1620 ok.", "resume_trajectory": true, "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-19", "weight": 1}]}},
+    {"id": "noise_twenty", "prompt": "Reply only ACK-20. Resolved disposable TRACE: batch 1701 ok; batch 1702 ok; batch 1703 ok; batch 1704 ok; batch 1705 ok; batch 1706 ok; batch 1707 ok; batch 1708 ok; batch 1709 ok; batch 1710 ok; batch 1711 ok; batch 1712 ok; batch 1713 ok; batch 1714 ok; batch 1715 ok; batch 1716 ok; batch 1717 ok; batch 1718 ok; batch 1719 ok; batch 1720 ok.", "resume_trajectory": true, "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-20", "weight": 1}]}},
+    {"id": "noise_twenty_one", "prompt": "Reply only ACK-21. Resolved disposable TRACE: batch 1801 ok; batch 1802 ok; batch 1803 ok; batch 1804 ok; batch 1805 ok; batch 1806 ok; batch 1807 ok; batch 1808 ok; batch 1809 ok; batch 1810 ok; batch 1811 ok; batch 1812 ok; batch 1813 ok; batch 1814 ok; batch 1815 ok; batch 1816 ok; batch 1817 ok; batch 1818 ok; batch 1819 ok; batch 1820 ok.", "resume_trajectory": true, "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-21", "weight": 1}]}},
+    {"id": "noise_twenty_two", "prompt": "Reply only ACK-22. Resolved disposable TRACE: batch 1901 ok; batch 1902 ok; batch 1903 ok; batch 1904 ok; batch 1905 ok; batch 1906 ok; batch 1907 ok; batch 1908 ok; batch 1909 ok; batch 1910 ok; batch 1911 ok; batch 1912 ok; batch 1913 ok; batch 1914 ok; batch 1915 ok; batch 1916 ok; batch 1917 ok; batch 1918 ok; batch 1919 ok; batch 1920 ok.", "resume_trajectory": true, "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-22", "weight": 1}]}},
+    {"id": "noise_twenty_three", "prompt": "Reply only ACK-23. Resolved disposable TRACE: batch 2001 ok; batch 2002 ok; batch 2003 ok; batch 2004 ok; batch 2005 ok; batch 2006 ok; batch 2007 ok; batch 2008 ok; batch 2009 ok; batch 2010 ok; batch 2011 ok; batch 2012 ok; batch 2013 ok; batch 2014 ok; batch 2015 ok; batch 2016 ok; batch 2017 ok; batch 2018 ok; batch 2019 ok; batch 2020 ok.", "resume_trajectory": true, "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-23", "weight": 1}]}},
+    {"id": "noise_twenty_four", "prompt": "Reply only ACK-24. Resolved disposable TRACE: batch 2101 ok; batch 2102 ok; batch 2103 ok; batch 2104 ok; batch 2105 ok; batch 2106 ok; batch 2107 ok; batch 2108 ok; batch 2109 ok; batch 2110 ok; batch 2111 ok; batch 2112 ok; batch 2113 ok; batch 2114 ok; batch 2115 ok; batch 2116 ok; batch 2117 ok; batch 2118 ok; batch 2119 ok; batch 2120 ok.", "resume_trajectory": true, "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "ACK-24", "weight": 1}]}},
+    {
+      "id": "final_recall",
+      "prompt": "Return the four retained values in this exact order and exact pipe-delimited form, with no explanation: ALPHA|BETA|GAMMA|DELTA",
+      "resume_trajectory": true,
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "response_contains", "value": "7319|zircon|src/engine.py|AMBER", "weight": 1}]}
+    }
+  ]
+}

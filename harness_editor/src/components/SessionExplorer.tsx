@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { API_BASE as BASE } from '../api/runtime';
 import TrajectoryReplay from "./TrajectoryReplay";
 import SessionBranchDialog from "./SessionBranchDialog";
+import SessionCreateDialog from "./SessionCreateDialog";
 import ProjectDialog from './ProjectDialog';
 import { annotationKey, TrainingDataPanel, TrainingFeedback, useSessionAnnotations } from "./TrainingDataControls";
 import {
   getTrainingAnnotations,
   listProjects,
   listProjectSessions,
+  trashPortfolioSession,
   updatePortfolioSession,
   updateProject,
   type ProjectPortfolioItem,
@@ -43,6 +45,14 @@ interface SessionInfo {
   project_title?: string;
   timestamp?: number;
   summary?: string;
+  harness?: string;
+  identity?: string;
+  agent_config?: {
+    harness?: string;
+    mode?: string;
+    debug_mode?: string;
+    agents?: Record<string, string>;
+  };
   pinned?: boolean;
   archived?: boolean;
 }
@@ -72,14 +82,24 @@ export default function SessionExplorer() {
   const [evalReport, setEvalReport] = useState<EvalReport | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [sessionAnnotations, setSessionAnnotations] = useState<TrainingAnnotation[]>([]);
   const [detailMode, setDetailMode] = useState<"replay" | "messages" | "training">("replay");
   const [analyzeStatus, setAnalyzeStatus] = useState<string>("");
   const [analyzeResult, setAnalyzeResult] = useState<any>(null);
   const [branchAction, setBranchAction] = useState<'fork' | 'merge' | null>(null);
+  const [branchSources, setBranchSources] = useState<string[]>([]);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
-  const [visibleSessionLimit, setVisibleSessionLimit] = useState(120);
+  const [showSessionDialog, setShowSessionDialog] = useState(false);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [checkedSessions, setCheckedSessions] = useState<Set<string>>(() => new Set());
+  const [renaming, setRenaming] = useState<string>('');
+  const [renameValue, setRenameValue] = useState('');
+  const [contextMenu, setContextMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  const [pendingTrash, setPendingTrash] = useState<SessionInfo | null>(null);
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [visibleSessionLimit, setVisibleSessionLimit] = useState(60);
   // 气泡聊天面板状态
   const [showAnalyzeChat, setShowAnalyzeChat] = useState(false);
   const [analyzeChatMessages, setAnalyzeChatMessages] = useState<AnalyzeMessage[]>([]);
@@ -87,10 +107,11 @@ export default function SessionExplorer() {
   const annotationState = useSessionAnnotations(selected);
 
   const fetchSessions = useCallback(async () => {
+    setCatalogLoading(true);
     try {
       const [projectData, sessionData] = await Promise.all([
-        listProjects(),
-        listProjectSessions({ limit: 1000 }),
+        listProjects(includeArchived),
+        listProjectSessions({ limit: 1000, include_archived: includeArchived }),
       ]);
       const projectById = new Map(projectData.map((project) => [project.id, project]));
       setProjects(projectData);
@@ -107,10 +128,19 @@ export default function SessionExplorer() {
       }
     } catch (e) {
       console.error("Failed to fetch sessions:", e);
+      setNotice({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setCatalogLoading(false);
     }
-  }, []);
+  }, [includeArchived]);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
+  useEffect(() => {
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('blur', close);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('blur', close); };
+  }, []);
   useEffect(() => {
     localStorage.setItem(`egoagent.session-tabs:${WORKSPACE || 'global'}`, JSON.stringify(openSessions.slice(0, 12)));
   }, [openSessions]);
@@ -225,9 +255,10 @@ export default function SessionExplorer() {
     && (!filter || `${s.name} ${s.summary || ''} ${s.project_title || ''}`.toLowerCase().includes(filter.toLowerCase()))
   ));
   const visibleSessions = filteredSessions.slice(0, visibleSessionLimit);
-  useEffect(() => setVisibleSessionLimit(120), [selectedProject, filter]);
+  useEffect(() => setVisibleSessionLimit(60), [selectedProject, filter]);
   const selectedInfo = sessions.find((session) => session.name === selected);
   const selectedProjectInfo = projects.find((project) => project.id === selectedInfo?.project_id);
+  const contextInfo = sessions.find((session) => session.name === contextMenu?.name);
 
   const closeSessionTab = (name: string) => {
     setOpenSessions((current) => current.filter((item) => item !== name));
@@ -245,14 +276,95 @@ export default function SessionExplorer() {
   };
 
   const toggleSessionPin = async (session: SessionInfo) => {
-    await updatePortfolioSession(session.name, { pinned: !session.pinned });
-    await fetchSessions();
+    try {
+      await updatePortfolioSession(session.name, { pinned: !session.pinned });
+      setNotice({ kind: 'ok', text: session.pinned ? '已取消置顶' : 'Session 已置顶' });
+      await fetchSessions();
+    } catch (reason) {
+      setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : String(reason) });
+    }
   };
 
   const handleSessionCreated = async (name: string) => {
     setBranchAction(null);
+    setBranchSources([]);
+    setShowSessionDialog(false);
+    setCheckedSessions(new Set());
     await fetchSessions();
     await selectSession(name);
+    setNotice({ kind: 'ok', text: `已创建并打开 Session：${name}` });
+  };
+
+  const beginRename = (session: SessionInfo) => {
+    setRenaming(session.name);
+    setRenameValue(session.title || session.name);
+    setContextMenu(null);
+  };
+
+  const saveRename = async (session: SessionInfo) => {
+    const title = renameValue.trim();
+    setRenaming('');
+    if (!title || title === (session.title || session.name)) return;
+    try {
+      await updatePortfolioSession(session.name, { title });
+      setNotice({ kind: 'ok', text: `已重命名为“${title}”；稳定 ID 保持不变` });
+      await fetchSessions();
+    } catch (reason) {
+      setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : String(reason) });
+    }
+  };
+
+  const setSessionArchived = async (names: string[], archived: boolean) => {
+    try {
+      await Promise.all(names.map((name) => updatePortfolioSession(name, { archived })));
+      setCheckedSessions(new Set());
+      setNotice({ kind: 'ok', text: `${names.length} 个 Session 已${archived ? '归档' : '恢复'}` });
+      await fetchSessions();
+    } catch (reason) {
+      setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : String(reason) });
+    }
+  };
+
+  const pinSessions = async (names: string[]) => {
+    try {
+      await Promise.all(names.map((name) => updatePortfolioSession(name, { pinned: true })));
+      setCheckedSessions(new Set());
+      setNotice({ kind: 'ok', text: `${names.length} 个 Session 已置顶` });
+      await fetchSessions();
+    } catch (reason) {
+      setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : String(reason) });
+    }
+  };
+
+  const trashSession = async (session: SessionInfo) => {
+    setContextMenu(null);
+    try {
+      await trashPortfolioSession(session.name);
+      setPendingTrash(null);
+      closeSessionTab(session.name);
+      setCheckedSessions((current) => { const next = new Set(current); next.delete(session.name); return next; });
+      setNotice({ kind: 'ok', text: 'Session 已移到本地回收站' });
+      await fetchSessions();
+    } catch (reason) {
+      setNotice({ kind: 'error', text: reason instanceof Error ? reason.message : String(reason) });
+    }
+  };
+
+  const toggleChecked = (name: string) => {
+    setCheckedSessions((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+
+  const openMerge = (names: string[]) => {
+    const unique = Array.from(new Set(names));
+    if (!unique.length) return;
+    setSelected(unique[0]);
+    setBranchSources(unique);
+    setBranchAction('merge');
+    setContextMenu(null);
   };
 
   const getEfficiency = (report: string): number | null => {
@@ -307,9 +419,10 @@ export default function SessionExplorer() {
         <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--portfolio-border)" }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <h3 style={{ margin: 0, color: "var(--portfolio-accent)", fontSize: 14, flex: 1 }}>Project &amp; Session Portfolio</h3>
+            <button type="button" className="portfolio-add-project" onClick={() => setShowSessionDialog(true)}>＋ Session</button>
             <button type="button" className="portfolio-add-project" onClick={() => setShowProjectDialog(true)}>＋ Project</button>
           </div>
-          <div style={{ marginTop: 3, color: 'var(--portfolio-muted)', fontSize: 10 }}>Project = workspace 文件夹；一个 Project 可同时打开多个 Session，跨项目合并会保留来源。</div>
+          <div style={{ marginTop: 3, color: 'var(--portfolio-muted)', fontSize: 10 }}>Project = workspace 文件夹 · 双击重命名 · 右键管理/Fork · 勾选 2–8 个后批量 Merge</div>
           <input
             type="text"
             placeholder="Filter sessions..."
@@ -327,6 +440,9 @@ export default function SessionExplorer() {
               fontSize: 12,
             }}
           />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 7, color: 'var(--portfolio-muted)', fontSize: 10, cursor: 'pointer' }}>
+            <input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> 显示已归档 Session
+          </label>
         </div>
         <div style={{ maxHeight: 190, overflow: 'auto', padding: '7px 8px', borderBottom: '1px solid var(--portfolio-border)', background: 'var(--portfolio-deep)' }}>
           <button
@@ -348,13 +464,29 @@ export default function SessionExplorer() {
             {project.available && !project.current && <button type="button" title="在新的 IDE 窗口打开 Project" onClick={() => openWorkspaceInIde(project.workspace, true)} style={{ padding: '4px', border: 0, color: '#7ecfff', background: 'transparent', cursor: 'pointer' }}>↗</button>}
           </div>)}
         </div>
+        {notice && <div role="status" onClick={() => setNotice(null)} title="点击关闭" style={{ padding: '7px 10px', color: notice.kind === 'error' ? '#f48771' : '#89d185', background: 'var(--portfolio-panel)', borderBottom: '1px solid var(--portfolio-border)', fontSize: 10, cursor: 'pointer' }}>{notice.kind === 'error' ? '⚠ ' : '✓ '}{notice.text}</div>}
+        {checkedSessions.size > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 8px', background: 'var(--portfolio-panel)', borderBottom: '1px solid var(--portfolio-border)', fontSize: 10 }}>
+          <strong style={{ flex: 1, color: 'var(--portfolio-accent)' }}>{checkedSessions.size} 已选择</strong>
+          <button type="button" disabled={checkedSessions.size < 2} onClick={() => openMerge(Array.from(checkedSessions))} className="portfolio-batch-action">⇄ Merge</button>
+          <button type="button" onClick={() => void pinSessions(Array.from(checkedSessions))} className="portfolio-batch-action">Pin</button>
+          <button type="button" onClick={() => void setSessionArchived(Array.from(checkedSessions), true)} className="portfolio-batch-action">Archive</button>
+          <button type="button" onClick={() => setCheckedSessions(new Set())} className="portfolio-batch-action">Clear</button>
+        </div>}
         <div style={{ flex: 1, overflow: "auto", padding: "8px 0" }}>
           {visibleSessions.map((s) => {
             const mark = sessionAnnotationByName.get(s.name);
+            const agentConfig = s.agent_config || {};
+            const configuredIdentities = Object.values(agentConfig.agents || {}).map((value) => String(value).replace(/\\/g, '/').split('/').filter(Boolean).pop()).filter(Boolean);
             return (
             <div
               key={s.name}
               onClick={() => selectSession(s.name)}
+              onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); beginRename(s); }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                void selectSession(s.name);
+                setContextMenu({ name: s.name, x: event.clientX, y: event.clientY });
+              }}
               style={{
                 padding: "8px 16px",
                 cursor: "pointer",
@@ -366,17 +498,22 @@ export default function SessionExplorer() {
               onMouseLeave={(e) => { if (selected !== s.name) e.currentTarget.style.background = "transparent"; }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--portfolio-text)", fontFamily: "monospace" }}>
-                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</span>
-                {!s.name.includes('/') && <button type="button" className="portfolio-session-action" title="Fork 这个 Session" aria-label={`Fork ${s.name}`} onClick={(event) => { event.stopPropagation(); void selectSession(s.name); setBranchAction('fork'); }}>⑂</button>}
-                {!s.name.includes('/') && sessions.some((item) => item.name !== s.name && !item.name.includes('/')) && <button type="button" className="portfolio-session-action" title="把另一个 Session 合并进来" aria-label={`Merge ${s.name}`} onClick={(event) => { event.stopPropagation(); void selectSession(s.name); setBranchAction('merge'); }}>⇄</button>}
+                <input type="checkbox" checked={checkedSessions.has(s.name)} aria-label={`Select ${s.name}`} onClick={(event) => event.stopPropagation()} onChange={() => toggleChecked(s.name)} />
+                {renaming === s.name
+                  ? <input autoFocus value={renameValue} aria-label={`Rename ${s.name}`} onClick={(event) => event.stopPropagation()} onChange={(event) => setRenameValue(event.target.value)} onBlur={() => void saveRename(s)} onKeyDown={(event) => {
+                    if (event.key === 'Enter') void saveRename(s);
+                    if (event.key === 'Escape') setRenaming('');
+                  }} style={{ minWidth: 0, flex: 1, padding: '2px 4px', color: 'var(--portfolio-text)', background: 'var(--input-background)', border: '1px solid var(--portfolio-accent)', borderRadius: 3, font: 'inherit' }} />
+                  : <span title={`显示名：${s.title || s.name}\n稳定 ID：${s.name}\n双击重命名，右键打开操作菜单`} style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: 'nowrap' }}>{s.title || s.name}</span>}
                 <button type="button" title={s.pinned ? '取消 Session 置顶' : '置顶 Session'} onClick={(event) => { event.stopPropagation(); void toggleSessionPin(s); }} style={{ marginLeft: 'auto', padding: 0, border: 0, color: s.pinned ? '#e2c08d' : '#53657a', background: 'transparent', cursor: 'pointer', flexShrink: 0 }}>{s.pinned ? '★' : '☆'}</button>
+                <button type="button" className="portfolio-session-action" title="Session 操作菜单" aria-label={`More actions for ${s.name}`} onClick={(event) => { event.stopPropagation(); setContextMenu({ name: s.name, x: event.clientX, y: event.clientY }); }}>⋯</button>
                 {mark?.rating === "up" && <span title="已点赞" style={{ color: "#89d185", flexShrink: 0 }}>👍</span>}
                 {mark?.rating === "down" && <span title="已点踩" style={{ color: "#f48771", flexShrink: 0 }}>👎</span>}
                 {mark?.important && <span title="重要 Session" style={{ color: "#e2c08d", flexShrink: 0 }}>★</span>}
                 {mark?.include_in_training && <span title="已加入训练集" style={{ color: "#4fc1ff", flexShrink: 0 }}>◆</span>}
               </div>
               <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-                {s.message_count} messages
+                {s.message_count} messages{s.archived ? <span style={{ marginLeft: 6, color: '#c586c0' }}>Archived</span> : null}
                 {s.has_trajectory && <span
                   title={s.health ? `${s.health.status}${s.health.training_ready ? ' · training ready' : ''}${s.health.blockers?.length ? ` · ${s.health.blockers.join('; ')}` : ''}` : 'Health is calculated when the session is saved or opened'}
                   style={{ marginLeft: 7, color: s.health?.status === 'invalid' ? "#f48771" : s.health?.status === 'incomplete' ? '#e2c08d' : s.health?.status === 'healthy' ? "#89d185" : "#858585" }}
@@ -384,22 +521,27 @@ export default function SessionExplorer() {
               </div>
               {selectedProject === 'all' && <div style={{ marginTop: 3, color: '#569cd6', fontSize: 10 }}>{s.project_title}</div>}
               {s.summary && <div style={{ marginTop: 3, color: '#6f7f91', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.summary}</div>}
+              {(agentConfig.harness || s.harness) && <div title="此配置属于该 Session；切换 Session 不会覆盖它" style={{ marginTop: 4, color: 'var(--portfolio-accent)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                ◈ {agentConfig.mode || 'agent'} · {agentConfig.harness || s.harness}{configuredIdentities.length ? ` · ${configuredIdentities.join(', ')}` : s.identity ? ` · ${s.identity}` : ''}
+              </div>}
               {s.lineage && <div title={`Parents: ${(s.lineage.parents || []).join(', ')}`} style={{ marginTop: 4, color: '#c586c0', fontSize: 10 }}>
                 {s.lineage.operation === 'fork' ? '⑂ fork' : `⇄ ${s.lineage.merge_mode || 'merge'}`} · {(s.lineage.parents || []).join(' + ')}
               </div>}
             </div>
             );
           })}
-          {filteredSessions.length === 0 && (
-            <div style={{ padding: 16, color: "#666", fontSize: 12, textAlign: "center" }}>
-              No sessions found
+          {catalogLoading && <div className="portfolio-loading" role="status">正在载入项目与 Session…</div>}
+          {!catalogLoading && filteredSessions.length === 0 && (
+            <div className="portfolio-empty">
+              <b>没有匹配的 Session</b>
+              <span>{filter ? '清除筛选条件后再试。' : '在 Chat 中发送第一条消息后，Session 会自动出现在这里。'}</span>
             </div>
           )}
           {filteredSessions.length > visibleSessions.length && <button
             type="button"
-            onClick={() => setVisibleSessionLimit((current) => current + 120)}
+            onClick={() => setVisibleSessionLimit((current) => current + 60)}
             style={{ width: 'calc(100% - 24px)', margin: '6px 12px 10px', padding: '6px', border: '1px solid var(--portfolio-border)', borderRadius: 4, background: 'var(--portfolio-panel)', color: 'var(--portfolio-accent)', cursor: 'pointer', fontSize: 10 }}
-          >再显示 {Math.min(120, filteredSessions.length - visibleSessions.length)} 个 · 还有 {filteredSessions.length - visibleSessions.length} 个</button>}
+          >再显示 {Math.min(60, filteredSessions.length - visibleSessions.length)} 个 · 还有 {filteredSessions.length - visibleSessions.length} 个</button>}
         </div>
         <div style={{ padding: "8px 16px", borderTop: "1px solid var(--portfolio-border)" }}>
           <button
@@ -453,8 +595,11 @@ export default function SessionExplorer() {
               gap: 12,
             }}>
               <h3 title={selected} style={{ margin: 0, color: "var(--text-primary)", fontSize: 14, flex: "1 1 220px", minWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {selectedProjectInfo?.title ? `${selectedProjectInfo.title} / ` : ''}{selected}
+                {selectedProjectInfo?.title ? `${selectedProjectInfo.title} / ` : ''}{selectedInfo?.title || selected}
               </h3>
+              {selectedInfo?.agent_config?.harness && <span title="该 Session 的独立 Agent 配置" style={{ padding: '3px 7px', border: '1px solid var(--portfolio-border)', borderRadius: 10, color: 'var(--portfolio-accent)', background: 'var(--portfolio-panel)', fontSize: 9, whiteSpace: 'nowrap' }}>
+                {selectedInfo.agent_config.mode || 'agent'} · {selectedInfo.agent_config.harness}
+              </span>}
               <TrainingFeedback
                 session={selected}
                 targetType="session"
@@ -463,8 +608,8 @@ export default function SessionExplorer() {
                 onSaved={onAnnotationSaved}
                 compact
               />
-              {!selected.includes('/') && <button type="button" onClick={() => setBranchAction('fork')} title="复制完整上下文到一个独立分支" style={{ padding: '5px 9px', border: '1px solid var(--border-strong)', borderRadius: 4, cursor: 'pointer', color: 'var(--button-text)', background: 'var(--button-bg)', fontSize: 10, flexShrink: 0 }}>⑂ Fork</button>}
-              {!selected.includes('/') && sessions.some((session) => session.name !== selected && !session.name.includes('/')) && <button type="button" onClick={() => setBranchAction('merge')} title="合并两个 Session 的分支新增内容" style={{ padding: '5px 9px', border: '1px solid var(--border-strong)', borderRadius: 4, cursor: 'pointer', color: 'var(--button-text)', background: 'var(--button-bg)', fontSize: 10, flexShrink: 0 }}>⇄ Merge</button>}
+              {!selected.includes('/') && <button type="button" onClick={() => { setBranchSources([]); setBranchAction('fork'); }} title="复制完整上下文到一个独立分支" style={{ padding: '5px 9px', border: '1px solid var(--border-strong)', borderRadius: 4, cursor: 'pointer', color: 'var(--button-text)', background: 'var(--button-bg)', fontSize: 10, flexShrink: 0 }}>⑂ Fork</button>}
+              {!selected.includes('/') && sessions.some((session) => session.name !== selected && !session.name.includes('/')) && <button type="button" onClick={() => openMerge(checkedSessions.size >= 2 ? Array.from(checkedSessions) : [selected])} title="选择两个或多个 Session 合并" style={{ padding: '5px 9px', border: '1px solid var(--border-strong)', borderRadius: 4, cursor: 'pointer', color: 'var(--button-text)', background: 'var(--button-bg)', fontSize: 10, flexShrink: 0 }}>⇄ Merge</button>}
               <div style={{ display: "flex", flexShrink: 0, background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 4, overflow: "hidden" }}>
                 {selectedInfo?.has_trajectory && <button type="button" onClick={() => setDetailMode("replay")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "replay" ? "white" : "var(--text-dim)", background: detailMode === "replay" ? "var(--focus)" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>精确回放</button>}
                 <button type="button" onClick={() => setDetailMode("messages")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "messages" ? "white" : "var(--text-dim)", background: detailMode === "messages" ? "var(--focus)" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>审计聊天</button>
@@ -872,13 +1017,46 @@ export default function SessionExplorer() {
           </div>
         </div>
       )}
+      {contextMenu && contextInfo && <div
+        role="menu"
+        aria-label={`Actions for ${contextInfo.name}`}
+        onClick={(event) => event.stopPropagation()}
+        style={{ position: 'fixed', zIndex: 60, left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 225)), top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 330)), width: 215, padding: 5, color: 'var(--portfolio-text)', background: 'var(--surface-raised)', border: '1px solid var(--portfolio-border)', borderRadius: 7, boxShadow: '0 12px 34px var(--shadow-color)' }}
+      >
+        <div style={{ padding: '6px 8px 7px', borderBottom: '1px solid var(--portfolio-border)', marginBottom: 4 }}>
+          <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{contextInfo.title || contextInfo.name}</strong>
+          <small title={contextInfo.name} style={{ display: 'block', marginTop: 2, color: 'var(--portfolio-muted)', overflow: 'hidden', textOverflow: 'ellipsis' }}>ID · {contextInfo.name}</small>
+        </div>
+        <button role="menuitem" className="portfolio-context-action" onClick={() => { setContextMenu(null); void selectSession(contextInfo.name); }}>Open <kbd>Enter</kbd></button>
+        <button role="menuitem" className="portfolio-context-action" onClick={() => beginRename(contextInfo)}>Rename <kbd>Double-click</kbd></button>
+        <button role="menuitem" className="portfolio-context-action" onClick={() => { setContextMenu(null); setSelected(contextInfo.name); setBranchSources([]); setBranchAction('fork'); }}>⑂ Fork Session</button>
+        {sessions.some((session) => session.name !== contextInfo.name && !session.name.includes('/')) && <button role="menuitem" className="portfolio-context-action" onClick={() => openMerge(checkedSessions.size ? Array.from(new Set([contextInfo.name, ...checkedSessions])) : [contextInfo.name])}>⇄ Merge Sessions…</button>}
+        <div className="portfolio-context-separator" />
+        <button role="menuitem" className="portfolio-context-action" onClick={() => { setContextMenu(null); void toggleSessionPin(contextInfo); }}>{contextInfo.pinned ? '☆ Unpin' : '★ Pin'}</button>
+        <button role="menuitem" className="portfolio-context-action" onClick={() => { setContextMenu(null); void setSessionArchived([contextInfo.name], !contextInfo.archived); }}>{contextInfo.archived ? 'Restore from Archive' : 'Archive'}</button>
+        <div className="portfolio-context-separator" />
+        <button role="menuitem" className="portfolio-context-action danger" onClick={() => { setContextMenu(null); setPendingTrash(contextInfo); }}>Move to Trash…</button>
+      </div>}
+      {pendingTrash && <div role="dialog" aria-modal="true" aria-label="Move session to trash" style={{ position: 'absolute', inset: 0, zIndex: 70, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(0,0,0,.58)' }}>
+        <div style={{ width: 430, maxWidth: '100%', padding: 16, color: 'var(--portfolio-text)', background: 'var(--surface-raised)', border: '1px solid var(--portfolio-border)', borderRadius: 8, boxShadow: '0 18px 60px var(--shadow-color)' }}>
+          <strong style={{ display: 'block', color: '#f48771', fontSize: 13 }}>Move Session to Trash?</strong>
+          <p style={{ margin: '9px 0 4px', fontSize: 11, lineHeight: 1.5 }}>“{pendingTrash.title || pendingTrash.name}”会从 Portfolio 消失，但不会立即永久删除。</p>
+          <p style={{ margin: 0, color: 'var(--portfolio-muted)', fontSize: 10 }}>可从 <code>.egoagent/session_trash</code> 恢复；稳定 ID：{pendingTrash.name}</p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 15 }}>
+            <button type="button" onClick={() => setPendingTrash(null)} className="portfolio-batch-action">Cancel</button>
+            <button type="button" onClick={() => void trashSession(pendingTrash)} className="portfolio-batch-action" style={{ color: 'white', background: '#b42318', borderColor: '#b42318' }}>Move to Trash</button>
+          </div>
+        </div>
+      </div>}
       {branchAction && selected && <SessionBranchDialog
         action={branchAction}
         source={selected}
         sourceProjectId={selectedInfo?.project_id}
         sourceWorkspace={selectedInfo?.workspace}
+        initialSources={branchSources}
         sessions={sessions.map((session) => ({
           name: session.name,
+          title: session.title,
           message_count: session.message_count,
           project_id: session.project_id,
           project_title: session.project_title,
@@ -887,6 +1065,7 @@ export default function SessionExplorer() {
         onClose={() => setBranchAction(null)}
         onCreated={handleSessionCreated}
       />}
+      {showSessionDialog && <SessionCreateDialog projects={projects} preferredProjectId={selectedProject} onClose={() => setShowSessionDialog(false)} onCreated={(name) => void handleSessionCreated(name)} />}
       {showProjectDialog && <ProjectDialog onClose={() => setShowProjectDialog(false)} onCreated={(project, openNow) => void handleProjectCreated(project, openNow)} />}
     </div>
   );

@@ -1,0 +1,23 @@
+{
+  "name": "context_governor_lite",
+  "role": "compact conversation context governor",
+  "description": "Minimal no-tool Identity for model-authored curation and compaction decisions.",
+  "preferred_tools": [],
+  "personality": {
+    "traits": ["faithful", "conservative", "concise"],
+    "tone": "terse structured output",
+    "language": "match-input"
+  },
+  "ego_inherits": [],
+  "llm": {
+    "type": "deepseek",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-v4-flash",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "temperature": 0.0,
+    "max_tokens": 4096,
+    "enable_thinking": false,
+    "timeout": 180,
+    "max_retries": 2
+  }
+}

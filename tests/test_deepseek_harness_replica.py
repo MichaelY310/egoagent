@@ -91,6 +91,34 @@ class OneToolAgent:
         return result
 
 
+class RepeatingToolAgent(OneToolAgent):
+    """Fault-injection double: repeat one harmless observation three times."""
+
+    def step(self, messages, tools_desc=None, on_token=None):
+        self.calls += 1
+        if self.calls <= 3:
+            text = "I will inspect the same fixture again."
+            tool_calls = [{
+                "id": f"read-{self.calls}",
+                "type": "function",
+                "function": {"name": "read_file", "arguments": json.dumps({"path": "sample.txt"})},
+            }]
+        else:
+            text = "I changed strategy after the repeat reminder and finished."
+            tool_calls = None
+        if on_token:
+            on_token(text)
+        harness = get_current_harness()
+        working = {"role": "assistant", "name": self.name, "content": text}
+        full = copy.deepcopy(working)
+        if tool_calls:
+            working["tool_calls"] = copy.deepcopy(tool_calls)
+            full["tool_calls"] = copy.deepcopy(tool_calls)
+        harness.session.record(working)
+        harness.session.record_full(full)
+        return text, tool_calls
+
+
 class DeepSeekHarnessReplicaTests(unittest.TestCase):
     def test_shipped_flow_components_and_identity_are_valid(self):
         for name in ("component_repeat_tool_guard", "component_tool_result_pruner", "deepseek_harness_replica"):
@@ -165,6 +193,39 @@ class DeepSeekHarnessReplicaTests(unittest.TestCase):
         self.assertIn("T" * 512, pruned_payload["content"])
         self.assertEqual(result["stats"]["pruned_tool_results"], 1)
         self.assertGreater(result["stats"]["saved_tokens_estimated"], 0)
+
+    def test_shipped_flow_repeat_guard_is_reachable_and_model_visible(self):
+        (ROOT / "tmp").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as temporary:
+            workspace = Path(temporary)
+            (workspace / "sample.txt").write_text("fixture-content", encoding="utf-8")
+            operator = RepeatingToolAgent()
+            harness = Harness(
+                ROOT / "harness" / "deepseek_harness_replica",
+                agents={"operator": operator, "compactor": operator},
+                workspace=workspace,
+            )
+            harness._non_interactive = True
+            message = {"role": "user", "content": "Inspect sample.txt and finish."}
+            harness.session.record(copy.deepcopy(message))
+            harness.session.record_full(copy.deepcopy(message))
+            events: list[tuple[str, dict]] = []
+
+            result = PipelineRunner(
+                harness,
+                on_output=lambda event, data: events.append((event, data)),
+                get_input=lambda: None,
+                is_running=lambda: True,
+            ).run()
+
+            self.assertEqual(result.result, "I changed strategy after the repeat reminder and finished.")
+            self.assertEqual(operator.executed, ["read_file", "read_file", "read_file"])
+            reminders = [data for event, data in events if event == "loop_guard_reminder"]
+            self.assertEqual([item["count"] for item in reminders], [3])
+            self.assertTrue(any(
+                message.get("name") == "runtime_repeat_tool_reminder"
+                for message in harness.session.messages
+            ))
 
     def test_shipped_flow_runs_one_complete_tool_round(self):
         (ROOT / "tmp").mkdir(exist_ok=True)

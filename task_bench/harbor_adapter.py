@@ -12,7 +12,10 @@ import copy
 import json
 import re
 import shutil
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 remote hosts
+    import tomli as tomllib
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
@@ -75,10 +78,15 @@ def _embedded_files(root: Path, *, prefixes: Iterable[str] | None = None, target
         if len(raw) > MAX_FILE_BYTES or total > MAX_ASSET_BYTES:
             raise TaskBenchError("Imported task assets exceed the 16 MiB/file or 64 MiB/task safety limit")
         target = _safe_relative(f"{target_prefix}/{relative}")
+        executable = bool(path.stat().st_mode & 0o111)
         try:
-            result[target] = {"content": raw.decode("utf-8")}
+            result[target] = {"content": raw.decode("utf-8"), "executable": executable}
         except UnicodeDecodeError:
-            result[target] = {"content_base64": base64.b64encode(raw).decode("ascii"), "binary": True}
+            result[target] = {
+                "content_base64": base64.b64encode(raw).decode("ascii"),
+                "binary": True,
+                "executable": executable,
+            }
     return result
 
 
@@ -306,6 +314,8 @@ def _write_embedded_assets(spec: dict[str, Any], destination: Path) -> None:
             target.write_bytes(base64.b64decode(str(raw["content_base64"]), validate=True))
         else:
             target.write_text(str(raw.get("content", "") if isinstance(raw, dict) else raw), encoding="utf-8")
+        if isinstance(raw, dict) and raw.get("executable") is True:
+            target.chmod(target.stat().st_mode | 0o111)
 
 
 def export_harbor_task(spec_or_path: dict[str, Any] | Path | str, destination: Path | str) -> Path:

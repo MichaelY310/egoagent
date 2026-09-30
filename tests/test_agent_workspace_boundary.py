@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,7 @@ if str(ROOT) not in sys.path:
 
 from agent import Agent, _console_write
 from harness import Harness, set_current_harness
+from harness_editor.change_tracker import configure_store, get_transaction_summary
 
 
 def _call(name: str, arguments: dict) -> dict:
@@ -54,6 +56,39 @@ class AgentWorkspaceBoundaryTests(unittest.TestCase):
         )
         self.assertIn("Permission denied", result)
         self.assertIn("must stay inside", result)
+
+    def test_task_workspace_confines_path_arguments_of_evolved_tools(self):
+        denied = self.agent._check_workspace_path_access(
+            "generated_normalizer",
+            {"legacy_path": "inside.txt", "output_path": "../escaped.json"},
+        )
+        self.assertIn("output_path", denied)
+        allowed = self.agent._check_workspace_path_access(
+            "generated_normalizer",
+            {"legacy_path": "inside.txt", "output_path": "nested/output.json"},
+        )
+        self.assertIsNone(allowed)
+
+    def test_activated_skill_direct_writes_enter_change_review_transaction(self):
+        source = ROOT / "identity" / "dante" / "ego" / "skills" / "read_file"
+        found = ("tool", SimpleNamespace(source_path=str(source)))
+        self.agent._activated_capability_refs = {
+            "skill:test": SimpleNamespace(source=str(source), kind="skill")
+        }
+        store = self.workspace / "change-journal.json"
+        configure_store(store)
+        try:
+            before = self.agent._activated_capability_workspace_snapshot(found)
+            (self.workspace / "generated.txt").write_text("created by skill\n", encoding="utf-8")
+            self.agent._record_activated_capability_workspace_changes(before, found, "generated_skill")
+            summary = get_transaction_summary("unscoped")
+        finally:
+            configure_store(None)
+
+        self.assertEqual(summary["files"], 1)
+        self.assertEqual(summary["hunks"], 1)
+        self.assertEqual(summary["changes"][0]["tool_name"], "generated_skill")
+        self.assertTrue(summary["changes"][0]["is_new_file"])
 
     def test_denied_windows_path_still_completes_deepseek_tool_protocol(self):
         harness = Harness(

@@ -1,9 +1,9 @@
 # EgoAgent 全功能视频系列总导演手册
 
-更新时间：2026-08-24  
-建议成片：18 集，合计约 6–8 小时。每集都可以独立发布；按顺序录制时，前一集产生的 Session、轨迹和改动可供后一集使用。
+更新时间：2026-08-31
+建议成片：18 集，合计约 7–9 小时。每集都可以独立发布；按顺序录制时，前一集产生的 Session、轨迹、Flow 版本和改动可供后一集使用。
 
-这套系列覆盖的是全部用户能力和每一种产品工作流，不要求把 65 个 Harness 逐个消耗模型跑一遍。目录结构与契约由录制预检和全量测试统一验收，第 3、6、9、11、13、17、18 集再选择代表性 Flow 实际运行。
+这套系列覆盖的是全部用户能力和每一种产品工作流，不要求把所有 Harness 逐个消耗模型跑一遍。可运行 Catalog 的数量会随模板增加而变化，以录制预检当次输出为准；目录结构与契约由录制预检和全量测试统一验收，第 3、6、9、11、13、17、18 集再选择代表性 Flow 实际运行。
 
 名词以当前产品模型为准：`Flow Graph` 是允许循环的可执行图；`Harness` 是 Flow Graph 加 prompts、slots、预算、权限和运行契约，但尚未绑定具体 Identity；`Agent 实例` 是 Harness + 已绑定 Identity + Environment + 模型路由 + 当前 Session。前端仍有少量 `DAG` 旧标签用于兼容，录制时说明它不是“只能无环”的传统 DAG。
 
@@ -27,6 +27,10 @@ http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent
 http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/video_demo_repo
 ```
 
+### 手动录制（2026-09-29 更新）
+
+已移除未完成的交互教程，包括金色教程按钮、遮罩、输入预设和强制点击限制。请按本文步骤手动操作；演示仓库、Task、Flow 和已有记录仍保留。代码补全的当前操作与设置见 [代码补全](AUTOCOMPLETE_ZH.md)。
+
 每次开始拍摄前执行：
 
 ```powershell
@@ -34,7 +38,7 @@ http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/v
 .\.venv\Scripts\python.exe scripts\verify_recording_setup.py --live
 ```
 
-第一条只恢复教学仓库、已知录屏产物和该仓库的旧审阅事务，不会清理其他项目。第二条会检查 8880/8765、65 个 Harness、教学文件、四个录屏 Task、关键 Identity/Environment、Flow/DAG 语义搜索、一次完全离线的 Agent×3/Tool×2 闭环，以及一次最小真实模型请求。只有看到 `RECORDING_SETUP_OK` 才开录。
+第一条只恢复教学仓库、两个专用缺陷 Flow、已知录屏产物和该仓库的旧审阅事务，不会清理其他项目。第二条会检查 8880/8765、全部可运行 Harness、教学文件、七个录屏 Task、关键 Identity/Environment、Flow 语义搜索、一次完全离线的 Agent×3/Tool×2 闭环，以及一次最小真实模型请求。只有看到 `RECORDING_SETUP_OK` 才开录。Build 的 `untitled_custom_flow` 只是内存中的空白草稿；未添加节点并保存前不会写入 Catalog，也不会伪装成可运行 Harness。
 
 注意：
 
@@ -53,7 +57,7 @@ http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/v
 
 1. `EgoAgent` 标题栏：右侧有 `Workbench` 和连接状态；
 2. `Agent 配置` 折叠条：默认收起，点击后才显示模式、Harness、Identity 与 slot 绑定；再次点击整块收起，给聊天历史腾出高度；
-3. `对话 / 运行 / 改动 / 上下文` 四个页签；
+3. `对话 / 改动 / 上下文` 三个页签；运行状态不再占用独立页签，而是显示在输入框下方的活动条，并可在 Workbench 的实时架构和节点详情中展开；
 4. 当前页主体；
 5. 最底部消息输入框、Agent 活动状态、`＠` 上下文按钮和 `发送`。
 
@@ -65,28 +69,40 @@ http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/v
 
 三者都会成为输入框内的原子附件图标。文件/选区图标可点击并跳回来源；文本图标悬停显示内容摘要，单击会打开可滚动、可编辑的完整内容窗口。把光标放到图标右侧按 `Backspace`，或刚插入后按 `Ctrl+Z`，会一次删除整个附件，不会逐字删除 `[文本附件: ...]`。输入框上方不再重复显示任何 Clipboard 卡片。从 Explorer 或编辑器标签拖入的文件/选区也是同一种图标；右键 Explorer 文件点 `EgoAgent → Attach File to Chat`，或右键编辑器选区点 `EgoAgent → Attach Selection to Chat`，是同一数据通路的辅助入口。
 
+### 每一集都按同一套叙事顺序录
+
+后面的每一集都明确写了“本集目的”和逐步操作。录制时不要只展示按钮，要按下面五句话完成一个闭环：
+
+1. **问题**：用户原来遇到什么困难；
+2. **配置**：当前 Workspace、页面、Harness、Identity、Mode 和 Flow 版本是什么；
+3. **动作**：这一部具体点哪个按钮、输入什么；
+4. **证据**：在哪里看到 Tool、节点、版本、分数、轨迹或文件改动；
+5. **边界**：什么是已经真实运行的，什么依赖外部 CLI、容器或模型，不把预览说成执行成功。
+
+如果某一步没有出现该集写明的“成功画面”，先停录并按该步的排错提示处理，不要继续录到下一功能。
+
 ## 18 集总览
 
-| 集数 | 标题 | 建议时长 | 核心证据 |
-|---|---|---:|---|
-| 1 | 一体化 IDE、产品模型与服务体检 | 10–15 分钟 | 8880、实时连接、Home、preflight |
-| 2 | 原生 Chat、六种模式与结构化代码上下文 | 15–20 分钟 | 活动状态、折叠过程、`file.py:line` 上下文卡 |
-| 3 | Adaptive Code Agent 完成真实修复 | 20–30 分钟 | 读取、改文件、命令、测试证据、DAG 轨迹 |
-| 4 | 编辑器内逐块 Accept/Refuse、Ctrl+Z 与 AI 编辑器 | 20–25 分钟 | 红绿高亮、CodeLens、新文件确认、Tab、Inline Edit |
-| 5 | 从零搭一个可运行 DAG | 25–35 分钟 | 类型化端口、分支、循环、审批、暂停/单步 |
-| 6 | 27 节点全功能 Code Agent 与 SubDAG | 30–45 分钟 | 四个组件、并行审查、事务、上下文与进化 |
-| 7 | Identity、Ego、Superego、Skill、Knowledge、Environment | 25–35 分钟 | 可复用角色、私有/共享能力、真实 Tool 调用 |
-| 8 | 像搜视频一样搜索 Tool/Skill/Identity/Knowledge/DAG | 15–25 分钟 | hybrid/semantic/keyword、workspace 优先、usage 更新 |
-| 9 | Task Bench：题目、隔离、逐节点做题和确定性评分 | 25–35 分钟 | pause→step→auto、100 分、产物、Harbor |
-| 10 | Context Curator、被动压缩与真实上下文回放 | 25–35 分钟 | working/audit 差异、before/after、仍保留关键事实 |
-| 11 | 受控自进化、Agent Factory 与 Harness 结构进化 | 30–45 分钟 | 搜索、选择最小产物、审批、持久化、独立验证 |
-| 12 | Session Fork/Merge、精确轨迹和训练数据导出 | 25–35 分钟 | lineage、多 Agent、摘要后真实 surface、LLaMAFactory/verl |
-| 13 | 联网搜索、页面取证、浏览器 Agent 与后台任务 | 25–35 分钟 | URL 证据、observe-act-verify、handoff、durable run |
-| 14 | 安全、审批、Workspace Guard、容器与检查点恢复 | 25–35 分钟 | 单次审批、越界拒绝、fail-closed、选择性恢复 |
-| 15 | Improve、Deploy、EgoIR 与 Research Lab | 25–35 分钟 | held-out/regression/rollback、package、dry-run、science audit |
-| 16 | CoC 多 Agent 跑团与持久人物卡 | 25–40 分钟 | KP 裁决、Identity 数值/物品事务、丢枪后不能射击 |
-| 17 | Codex Flow 与 DeepSeek Harness 的可视复刻 | 25–35 分钟 | 11/18 节点、工具循环、审批、compaction、steering、repeat guard/pruner |
-| 18 | AVO 风格长程搜索、ARC 与 Flow 自进化 | 30–45 分钟 | 持久证据、科学实验、非行动 supervisor、停滞恢复、结构候选与 held-out |
+| 集数 | 标题 | 本集要解决的问题 | 建议时长 | 最终成功证据 |
+|---|---|---|---:|---|
+| 1 | 一体化 IDE、产品模型与服务体检 | 先让观众知道 EgoAgent 是什么、服务是否真的可用 | 10–15 分钟 | 8880、实时连接、Home、`RECORDING_SETUP_OK` |
+| 2 | 原生 Chat、六种模式与结构化代码上下文 | 教会用户提问、切权限、精确引用代码而不污染正文 | 15–20 分钟 | 单次简洁回复、活动状态、`file.py:line` 原子附件 |
+| 3 | Adaptive Code Agent 完成真实修复 | 证明它不是聊天壳，而会读证据、改文件并跑验证 | 20–30 分钟 | 读取、写入、命令、测试通过、实时 Flow 轨迹 |
+| 4 | 编辑器内逐块 Accept/Refuse、Ctrl+Z 与 AI 编辑器 | 让 Agent 默认落盘，同时保留逐块人工控制和可逆性 | 20–25 分钟 | 红绿 diff、块级按钮、撤销恢复审阅态、新文件确认 |
+| 5 | 从零搭一个可运行 Flow Graph | 让普通用户不用写 JSON 也能组装循环式 Agent 流程 | 25–35 分钟 | 类型化端口、分支、循环、审批、版本保存、暂停/单步 |
+| 6 | 全功能 Code Agent 与可复用 SubFlow | 证明压缩、精简、搜索和进化都是 Flow 组件而非硬编码 | 30–45 分钟 | 四个组件、并行审查、事务、SubFlow、上下文与进化 |
+| 7 | Identity、Ego、Superego、能力与统一治理 | 区分“谁在做”“怎么做”“最终允许做什么”，避免权限配置冲突 | 30–40 分钟 | 角色复用、Tool 调用、Superego→Runtime→最终权限预览 |
+| 8 | 像搜视频一样搜索可复用能力和 Flow | 节省上下文与重复开发成本，优先复用当前 Workspace 资产 | 15–25 分钟 | hybrid/semantic/keyword、workspace 优先、usage 自动更新 |
+| 9 | Task Bench：数据集、Runner、精确版本、评分、比较与回放 | 把“跑题”变成可复现、可比较、可审计的实验 | 35–50 分钟 | 自定义字段预览、固定 Flow 版本、100 分、双轨比较、Build 历史回放 |
+| 10 | Context Curator、被动压缩与真实上下文回放 | 区分“删无关内容”和“上下文过长后压缩”，同时保留审计历史 | 25–35 分钟 | working/audit 差异、before/after、关键事实仍可回答 |
+| 11 | 受控自进化、Agent Factory 与 Flow 结构进化 | 展示 Agent 如何创建/修改可复用 Flow，又不把一次偶然结果直接上线 | 45–70 分钟，建议拆 5 条短片 | 真实 mutation、隔离候选、开放选择、科学门控、版本演进 |
+| 12 | Session Fork/Merge、精确轨迹和训练数据导出 | 把日常使用沉淀成可分支、可合并、可训练的数据资产 | 25–35 分钟 | lineage、多 Agent/版本归属、摘要后 surface、LLaMAFactory/verl 导出 |
+| 13 | 联网搜索、页面取证、浏览器 Agent 与后台任务 | 让 Agent 能处理 IDE 外的真实网页与长任务，且保留证据和接管点 | 25–35 分钟 | URL 证据、observe-act-verify、handoff、durable run |
+| 14 | 安全、审批、Workspace Guard、容器与检查点恢复 | 说明安全不是提示词，而是运行时边界、审批和可恢复事务 | 25–35 分钟 | 单次审批、越界拒绝、fail-closed、选择性恢复 |
+| 15 | Improve、Deploy、EgoIR 与 Research Lab | 把失败轨迹转成经过回归验证、可部署的候选 | 25–35 分钟 | held-out/regression/rollback、package、dry-run、science audit |
+| 16 | CoC 多 Agent 跑团与持久人物卡 | 证明 Identity/Flow 不只服务代码任务，也能维持长期世界状态 | 25–40 分钟 | KP 裁决、人物卡事务、物品丢失后规则持续生效 |
+| 17 | Codex Flow、DeepSeek Harness 与原版 Codex 对照 | 证明“一切皆 Flow”的表达力，并与外部真实 Runner 做公平对照 | 30–45 分钟 | 11/18 节点、工具循环、精确版本、原版 Codex CLI lane、轨迹差异 |
+| 18 | AVO 风格长程搜索、ARC 与 Flow 自进化 | 展示长程状态、监督器与证据门控，而不是宣称复刻论文满分 | 30–45 分钟 | 持久证据、非行动 supervisor、停滞恢复、结构候选与 held-out |
 
 ### 18 集的固定起点速查（避免打开错项目）
 
@@ -102,15 +118,15 @@ http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/v
 | 6 | 主仓库 | `Workbench` → `Build` | Harness 下拉选 `tutorial_full_stack_code_agent` |
 | 7 | 主仓库 | `Workbench` → `More` → `Identity` | 克隆 `coder` 为 `video_coder` |
 | 8 | 主仓库 | `Workbench` → `Library` | 搜索框输入 `读取和搜索代码仓库文件` |
-| 9 | 主仓库 | `Workbench` → `Evaluate` | Task 选 `离线 DAG / Tool Trace 自检` |
+| 9 | 主仓库 | `Workbench` → `Evaluate` | Task 选 `离线 DAG / Tool Trace 自检`，Runner 选 `EgoAgent Flow`，锁定显示的 Flow 版本 |
 | 10 | 主仓库 | `Workbench` → `Evaluate` | Task 选 `录屏：精简上下文与被动压缩` |
-| 11 | 主仓库 | `Workbench` → `Evaluate` | Task 选 `录屏：重复工作触发受控自进化` |
+| 11 | 主仓库 | `Workbench` → `Evaluate` | 第一条先选 `录屏：Agent 自己创建可复用 Agent`；随后按本集 Demo 顺序录制 |
 | 12 | 主仓库 | `Workbench` → `More` → `Sessions` | 选择第 10 或第 11 集产生的非临时 Session |
 | 13 | 教学仓库 | Chat `Agent 配置` → Agent 模式 | 第一条使用本集 python.org 搜索 prompt |
 | 14 | 主仓库 | `Workbench` → `More` → `Settings` | 点 `安全、审批与沙箱`；不要先改 Unrestricted |
 | 15 | 主仓库 | `Workbench` → `Improve` | 粘贴一个第 9–11 集的失败/低分轨迹 |
 | 16 | 主仓库 | `Workbench` → `More` → `CoC Table` | 模组先选 `coc_the_haunting` |
-| 17 | 教学仓库 | `Workbench` → `Build` | Harness 下拉先选 `codex_flow` |
+| 17 | 主仓库 | `Workbench` → `Build` | Harness 下拉先选 `codex_flow`，后半段切 Evaluate 做 Codex CLI 对照 |
 | 18 | 主仓库 | `Workbench` → `Build` | Harness 下拉选 `arc_scientific_search`；实验文件从 Explorer 打开 |
 
 如果某一集从中途开始录，先按表重新打开对应 Workspace、对应页面和对应文件，不要相信 Void 上一次恢复的焦点状态。
@@ -118,6 +134,10 @@ http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/v
 ---
 
 ## 第 1 集：一体化 IDE、产品模型与服务体检
+
+### 本集目的
+
+让第一次看到 EgoAgent 的观众在 15 分钟内理解：它是 Code IDE、Agent 构建器、实验平台和数据工作台的同一产品界面，并先用可复现预检证明服务、目录和最小模型调用可用。本集不跑复杂任务。
 
 ### 操作
 
@@ -140,13 +160,17 @@ http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/v
 
 ## 第 2 集：原生 Chat、六种模式与结构化代码上下文
 
+### 本集目的
+
+教用户完成最常用的 Chat 操作：为当前 Session 选 Agent 配置、区分六种权限模式、观察运行状态、精确引用文件/选区/终端/Workspace，并理解工具过程默认折叠但没有丢失。
+
 本集固定打开：
 
 ```text
 http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/video_demo_repo
 ```
 
-先在左侧 Explorer 单击 `garden.py`，确认中间编辑器标题就是 `garden.py`。右侧如果有旧消息，点 `运行` → `清空消息` → 再点 `对话`。
+先在左侧 Explorer 单击 `garden.py`，确认中间编辑器标题就是 `garden.py`。右侧如果有旧消息，点 Session 条最右侧的 `＋`，新建一个继承当前配置的 Session；本集不要删除旧 Session，也不要寻找已经移除的“运行”页签。
 
 ### A. 折叠配置和六种模式
 
@@ -216,24 +240,27 @@ http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/v
    python -m unittest -v
    ```
 
-2. 用鼠标只选中最后 3–5 行测试输出，按 `Ctrl+C`。
-3. 回 Chat 输入 `解释这个测试结果：`，再按 `Ctrl+V`。
-4. 应出现带 `⌘` 的 `Terminal · …` 图标。终端附件没有文件跳转，因此单击不应伪造来源文件。
-5. 不需要发送；删除图标即可。
+2. 用鼠标只选中最后 3–5 行测试输出，按 `Ctrl+Shift+C`。`Ctrl+C` 没有被 EgoAgent 改写，仍用于终止正在运行的进程。
+3. 回到 Chat 输入 `解释这个测试结果：`，按 `Ctrl+V`。应出现带 `⌘` 的 `Terminal · …` 结构化图标；按 `Ctrl+Shift+V` 则只粘贴纯文字。
+4. 再演示快捷入口：重新选中 Terminal 文本后，标题栏右上角会出现对话气泡 `将终端选区加入 EgoAgent 对话`，点击即可直接插入 Chat；Chat 的 `＠` 菜单中也可点 `@terminal` 读取当前终端选区。
+5. 在图标后输入 `解释这个测试结果：`。终端附件没有文件跳转，因此单击不应伪造来源文件；本段不需要发送，点图标的删除按钮即可。
 
-### G. 四个页签到底看什么
+这里明确区分三种操作：`Ctrl+C` 永远保持终端中断语义；`Ctrl+Shift+C` 复制并记住 Terminal 来源；右上角按钮或 `@terminal` 直接把选区加入对话。
+
+### G. 三个页签到底看什么
 
 保持 `garden.py` 打开，按下面顺序逐个点击右侧页签：
 
 1. `对话`：用户消息、Markdown 最终回答、默认折叠的思考/工具，以及最下方实时活动状态。
-2. `运行`：上方按钮依次是 `启动 DAG / 停止 / 清空消息`；下面四个指标是状态、步数、当前节点、消息数，再往下是“执行轨迹”和“最近工具调用”。这里用于回答“现在跑到哪个节点”。
-3. `改动`：这里集中显示 Agent 已默认写入文件但尚未审阅的 change transaction。每个 hunk 有 Accept/Refuse；本集 reset 后应显示 `0`，真正操作留到第 4 集。
-4. `上下文`：先点 `↻ 刷新`。顶部第一排 `工作台 / DAG 构建 / 评测 / 进化 / 安全设置` 是跳转入口；第二排：
+2. `改动`：这里集中显示 Agent 已默认写入文件但尚未审阅的 change transaction。每个 hunk 有 Accept/Refuse；本集 reset 后应显示 `0`，真正操作留到第 4 集。
+3. `上下文`：先点 `↻ 刷新`。顶部第一排 `工作台 / DAG 构建 / 评测 / 进化 / 安全设置` 是跳转入口；第二排：
    - `代码地图` 会在中间编辑器打开当前 Workspace 的符号/文件地图；看完关闭该临时页；
    - `应用预览` 打开配置的本地预览 URL，不是上下文附件；
    - `提交消息` 根据当前 Git diff 生成候选 commit message；
    - `＋ 检查点` 保存当前文件 revision。
-5. 继续在 `上下文` 往下看：当前编辑器 context、`本轮上下文计划`、`记忆`、`项目规则 / AGENTS.md`、`检查点`、`历史 Sessions`。逐个展开即可，不要把上面的动作按钮说成同一类数据。
+4. 继续在 `上下文` 往下看：当前编辑器 context、`本轮上下文计划`、`记忆`、`项目规则 / AGENTS.md`、`检查点`、`历史 Sessions`。逐个展开即可，不要把上面的动作按钮说成同一类数据。
+
+过去的独立 `运行` 页已经删除。简洁状态直接看输入框下方活动条；完整节点轨迹通过当前 Session 菜单的 `在 Build 中观察` 打开。进入观察后 Build 会锁定并显示 linked Session，防止把“调试 Flow”和“正在聊天的 Agent”混为一谈。
 
 ### H. 运行中发送补充消息
 
@@ -251,9 +278,13 @@ http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/v
    ```
 
 4. 第二条不会启动一个不相关的新 Session，也不会让界面假死。前端会锁定当前 `run_id`，等这个 Flow 到达 `等待输入` 协议后把补充消息送入同一运行；底部活动状态会明确显示“正在等待/正在交给当前 DAG”。
-5. 点 `运行`，用相同 run 的节点轨迹和消息数证明两条输入属于同一个执行。
+5. 打开当前 Session 菜单，点 `在 Build 中观察`；用相同 root run、节点轨迹和两条输入证明它们属于同一个执行。观察状态下不要解锁或修改 Flow。
 
 ## 第 3 集：Adaptive Code Agent 完成真实修复
+
+### 本集目的
+
+用一个有权威文档、有真实 bug、有自动测试的最小仓库，证明 Adaptive Code Agent 会从证据出发完成“检索能力 → 读文件 → 最小写入 → 命令验证”的闭环，而不是根据 README 猜答案。
 
 打开教学仓库，选择 `Agent + adaptive_code_agent + openmanus`，发送：
 
@@ -263,18 +294,20 @@ http://127.0.0.1:8880/?folder=/C:/Users/aa310/Desktop/egoagent/tutorial_assets/v
 
 ### 按这个顺序讲
 
-1. `运行` 页出现 capability discovery、Agent、Tool、上下文组件等节点。
-2. 展开 `read_file/search_files`、写入工具和 `run_command`，展示参数与真实结果。
-3. 当 `run_command` 出现高风险审批卡时点 `允许一次`；这是宿主命令边界，不要改成永久允许。任务正常结束不应再为 `terminate` 弹第二张审批卡。
-4. 预期逻辑变为 `should_water(20) == True`、`water_millilitres(12, 5) == 60`。
-5. 终端再次运行：
+1. 发送后先停在输入框下方的活动条，拍到“正在运行”和当前节点；不要寻找已经删除的独立“运行”页签。
+2. 在当前 Session 的菜单点 `在 Build 中观察`。Build 自动加载该 Session 正在使用的确切 Flow 版本、加锁，并显示黄色 `Linked to Session` 边界；这里的暂停/单步只控制观察到的这次运行。
+3. 在图上依次点击 capability discovery、Agent、Tool 和上下文组件；展开 `read_file/search_files`、写入工具和 `run_command`，展示参数与真实结果。
+4. 当 `run_command` 出现高风险审批卡时点 `允许一次`；这是宿主命令边界，不要改成永久允许。任务正常结束不应再为 `terminate` 弹第二张审批卡。
+5. 预期逻辑变为 `should_water(20) == True`、`water_millilitres(12, 5) == 60`。
+6. 终端再次运行：
 
 ```powershell
 python -m unittest -v
 ```
 
-6. 点 Agent 回复或 `改动` 页中的改动文件名，确认直接在 Void 编辑器打开。
-7. 如果模型达到输出上限，UI 应显示“回复被截断/发送继续”，不能留下永久 spinner。
+7. 点 Agent 回复或 `改动` 页中的改动文件名，确认直接在 Void 编辑器打开。
+8. 如果模型达到输出上限，UI 应显示“回复被截断/发送继续”，不能留下永久 spinner。
+9. 回 Build 点锁按钮，确认弹窗提示是否退出 Session 观察；确认退出后才恢复 Flow 编辑能力。退出观察不会停止或改写刚才的 Chat Session。
 
 当前机器实测轨迹为：`search_capabilities → activate_capability(garden_evidence) → read_file ×4 → patch_file ×2 → run_command`，4 项测试全部通过。模型可能改变读取顺序，但必须同时具备“本地证据、真实写入、真实测试”三类证据。
 
@@ -283,6 +316,10 @@ python -m unittest -v
 用 2–3 分钟展示目录中的 `aider_replica`、`openhands_replica`、`swe_agent_replica`、`continue_agent_replica`、`openmanus_replica`。解释它们是不同 agent loop/Harness 模板，不是五套互相割裂的产品 UI；不需要本集逐个消耗模型跑完。
 
 ## 第 4 集：逐块审阅与 AI 编辑器
+
+### 本集目的
+
+证明 Agent 修改默认已经写入文件，但用户仍能在真实编辑器中按 hunk Accept/Refuse；审阅决定本身进入 Undo 栈，新文件的拒绝则必须二次确认。
 
 ### 逐块 Accept/Refuse 与 Ctrl+Z
 
@@ -335,41 +372,67 @@ python -m unittest -v
 
 ### AI 编辑器
 
-1. 打开 `garden.py`，在文件末尾新起一行输入 `def describe_moisture(value):`，停 1–2 秒等待 ghost text；按 `Tab` 接受。再输入另一段触发建议并按 `Escape` 拒绝。录完撤销这段人工演示代码。
+1. 打开 `garden.py`，在文件末尾输入 `def describe_moisture(value):`，回车并缩进后等待灰色建议；也可按 `Alt+\` 手动触发。状态栏会显示补全中、Tab 接受或超时；真实模型速度不保证 1–2 秒。按 `Tab` 接受，`Ctrl+Z` 撤销；再触发一次，按 `Esc` 取消，确认文件内容没有变化。`Ctrl+Right` 可只接受下一词，`Ctrl+Alt+Right` 接受下一行。录完撤销这段人工演示代码。
 2. 选中 `watering_decision` 函数体，按 `Ctrl+I`，在弹框输入 `改成更清晰的提前返回，并保留行为`；先看 Diff 预览，再点“应用并进入逐段审阅”。
 3. 展示代码审查、next-edit suggestion 与状态栏本地 usage 计数。
 4. 强调模型不可用时可本地降级验证 UI，但正式演示应以已连接模型为准。
 
-## 第 5 集：从零搭一个可运行 DAG
+## 第 5 集：从零搭一个可运行 Flow Graph
 
-进入 `Build`，新建 `video_basic_agent`。
+### 本集目的
+
+让没有写过 EgoAgent JSON 的用户先用三个节点真正搭通最小 ReAct，再理解如何继续加入分支、审批和 Checkpoint；全程只用前端画布，并保存出不可变版本。
+
+进入 `Build`，新建 `video_basic_react`。本集手动操作，不再提供教程遮罩、黄色目标框或自动绑定；下面明确列出所需端口和配置。
 
 ### 推荐图
 
 ```text
-Input → Context(snapshot) → Agent
-Agent --has_tool_calls--> Tool → Agent
-Agent --has_text--> If
-If(true) → Human Approval → Checkpoint → Output
-If(false) → Loop → Agent
+输入 --input--> Agent
+Agent --has_tool_calls--> 工具 --tools_executed--> Agent
+Agent --has_text--> 输入
 ```
 
 ### 每一步
 
-1. 从左侧拖 `Input / Agent / Tool / If / Loop / Human Approval / Context / Checkpoint / Output`。
-2. 给 Agent 绑定 slot 和 Identity；在右侧用表单设置 instruction、工具可见性、最大工具轮数、temperature/max tokens。
-3. 配 If 条件和 true/false 连线；给 Loop 设置有限次数，避免无界循环。
-4. 打开 Harness 全局设置，展示预算、timeout、权限、auto checkpoint、错误路由与 typed inputs/outputs。
-5. 保存并重新加载，证明图和高级字段没有丢失。
-6. 勾 `首节点暂停`，依次点 `执行 → 单步 → 自动`。
-7. 点击发光节点旁的小框，展示输入、模型收到的消息、回复、工具、重试、输出和 token/cost。
-8. 演示失败后“修改输入重试”和无副作用“安全跳过节点”。
+1. 点 `＋ 新建`，再点顶部 `配置`；在右侧名称框输入 `video_basic_react`。
+2. 点回 `组件`。把 `输入` 拖到画布左侧：它既读取用户消息，也是在一轮回答结束后暂停等下一条消息的协议节点。
+3. 把 `Agent` 拖到中间上方。打开配置里的 `Agent Slots`，在 `slot 名` 输入 `agent` 并添加；在 Identity 绑定区域把 `coder` 绑定到这个 slot。选中 Agent 节点，把 `Agent (slot 名)` 设为 `agent`。它负责决定“输出最终文字”还是“请求工具”。
+4. 把 `工具` 拖到右侧下方；把它的 `Agent (slot 名)` 同样设为 `agent`。它只执行模型已经请求、且通过运行权限策略的 Tool。
+5. 从各节点的命名输出端口拖到目标节点的 `flow` 输入端口：`输入.input → Agent.flow`、`Agent.has_tool_calls → 工具.flow`、`工具.tools_executed → Agent.flow`、`Agent.has_text → 输入.flow`。端口类型检查仍保留，但不会再强制你按教程步骤操作。
+6. 沿箭头复述一次最小 ReAct：用户输入进入模型；有工具调用就执行并把 observation 回给模型；有最终文字就回到等待输入。这样用户能看懂“Flow 如何接入 Chat”，也能看懂循环为何不是传统 DAG。
+7. 单击边后点浮动工具条中的 `＋ 控制点`，或直接在连线上双击/右键，在鼠标位置精确加入 Bezier 控制点。插入采用曲线精确分割，因此加入前后形状不变。拖动圆点会智能带动其余控制点，`Shift+拖动` 只改当前点，`Alt+拖动` 沿原曲线滑动；拖动方形手柄可旋转切线。边的两端始终固定在命名输入/输出 socket；移动端点时控制点按距离比例平滑跟随，按住 Shift 可关闭联动。`Ctrl+Z` 撤销节点、边和控制点编辑，`Ctrl+Y` 重做。
+8. 点击 Build 顶栏的 `自动整理`，先展示 `紧凑 / 均衡 / 最清晰` 三个预设，再依次拖动 `紧凑度 / 避让强度 / Edge 简洁度`。选择 `最清晰` 后点击 `整理并重新布线`：节点会重新分层，循环边优先走图外侧。再次打开弹窗，展示穿节点、交叉、重线与控制点数量的前后对比。按一次 `Ctrl+Z` 展示整个自动整理是一次可撤销事务，再按 `Ctrl+Y` 恢复。
+8. 展开一个具有多个参数的节点，指出每个输入和输出都拥有独立 socket。黄色菱形表示控制事件，蓝色圆点表示数据端口；数据输出连接到数据输入后，保存时会自动生成 `$node.<source>.<port>`，不需要手写 JSON 引用。
+9. 点 `💾 保存`，记录生成的不可变 Flow Version；再次保存会产生新版本，不会覆盖这条轨迹引用的旧版本。
+10. 勾 `首节点暂停`，点 `独立试跑`，再点 `单步` 和 `自动`。运行到 `等待输入` 时说明：纯 Task Flow 可以不含它；要接入多轮 Chat 的 Flow 必须用输入/等待协议主动读取下一条消息。
+
+录完最小 ReAct 后，可以再加 `If / Human Approval / Checkpoint / Context / Output`；完整复杂模板放在第 6 集讲，避免第一次搭图时把“节点很多”误当成“理解了 Agent loop”。
 
 这里要明确：节点有固定的操作契约，但端口、变量引用、边和多数细节都可在前端配置；高级 JSON 是逃生口，不是正常搭图的必需品。Python 节点只在没有类型化组件能表达时使用。
 
-## 第 6 集：27 节点全功能 Code Agent 与 SubDAG
+## 第 6 集：全功能 Code Agent 与可复用 SubFlow
+
+### 本集目的
+
+用旗舰模板拆开讲解复杂 Code Agent：能力搜索、上下文压缩、上下文精简、重复工具保护、结果裁剪和周期进化都由普通组件/SubFlow 组合，而不是藏在某个“大 Agent”类里。
 
 详细搭建稿见 `docs/DAG_ALL_FEATURE_CODE_AGENT_TUTORIAL_ZH.md`。最快录法是在 Build 加载 `tutorial_full_stack_code_agent`，先讲图，再挑关键配置。
+
+### 逐步操作
+
+1. 打开主仓库 → `Workbench` → `Build`，在 Harness 下拉选 `tutorial_full_stack_code_agent`；确认顶部显示节点/连线数量和当前不可变版本。
+2. 点 `整理布局`，再用缩放适配全图。先只沿主链从 Input 指到等待下一轮输入，不逐个打开节点。
+3. 双击 `component_capability_discovery / component_context_compactor / component_context_curator / component_capability_evolver` 四个 SubFlow 节点；每次都展示 typed inputs/outputs、失败/超时策略和 `share_session`，点画布空白收回小节点。
+4. 打开 Agent↔Tool 回边、并行测试/审查→Join、写入前后 Checkpoint 和 review transaction；用有方向的 edge label 说明这是允许循环的 Flow Graph，不是传统无环 DAG。
+5. 回 Chat 新建一个 Session，模式选 `Agent`，Harness 选 `tutorial_full_stack_code_agent`，Identity 选 `coder`，版本保留 `latest`，发送：
+
+   ```text
+   只读检查 ARCHITECTURE.md，概括 Flow Graph、Harness、Identity 和 Session 的关系；不要修改文件，也不要运行命令。
+   ```
+
+6. 在该 Session 菜单点 `在 Build 中观察`。确认 Build 锁定到 Chat 记录的 exact version；点击本次真正经过的节点看输入/输出，未经过的节点保持静止，不能为了画面伪造“全部节点都被调用”。
+7. 任务完成后点 Build 的 `退出观察`，在确认框选择退出。回到独立草稿后不要保存任何录屏临时改动。
 
 ### 四个已嵌入 SubFlow 与两个新增控制组件
 
@@ -392,7 +455,11 @@ If(false) → Loop → Agent
 
 展示 typed SubDAG 的 inputs/outputs、agent_map、`share_session`、失败/超时策略。再从 `SubDAG 组件` 拖一个已保存 Harness 到图中，证明 Harness 能成为 component，而不是复制 JSON。
 
-## 第 7 集：Identity、Ego、Superego、Skill、Knowledge、Environment
+## 第 7 集：Identity、Ego、Superego、能力与统一治理
+
+### 本集目的
+
+把最容易混淆的三个层次拆开：Identity/Ego/Superego 规定角色与长期约束，Flow 决定执行结构，Runtime policy 决定最终能力边界。观众录完应能创建私有能力、共享环境能力，并在运行前看懂最终权限到底来自哪里。
 
 进入 `More → Identity`，克隆 `coder` 为 `video_coder`，不要直接改正式角色。
 
@@ -447,7 +514,20 @@ def workspace_policy_lookup(topic, _context=None):
 
 在运行记录中必须看到同名 Tool，且 `source` 位于当前 workspace。最后说明 Identity 私有能力跟着角色复用；Environment 能力跟着工作环境组合。
 
-## 第 8 集：能力 Library 与 DAG 搜索
+### 统一治理预览：证明 Superego 和 Flow 不会互相“暗中覆盖”
+
+1. 仍在 `More → Identity`，左侧选刚创建的 `video_coder`，切到 `Superego`。先展示它声明的 Tool 白/黑名单和权限，不要直接修改正式 `coder`。
+2. 在页面下方的 `统一治理预览` 中，Flow 选 `adaptive_code_agent`，Mode 选 `Agent`，点击 `检查有效权限`。
+3. 在结果中按从左到右的来源解释：`Superego 声明` → `Flow/Mode 请求` → `Runtime/Workspace policy` → `最终有效权限`。最终矩阵才是执行时真值，前两者都不能越过 Runtime 边界。
+4. 展开一项文件写入或命令执行能力，指出 allow/ask/deny 的来源。再把 Mode 切到 `Chat` 重算；写入/进程能力应收紧。
+5. 打开 `adaptive_code_agent` 的可视图，指出 Human Approval/Checkpoint 节点是显式流程控制，但节点“出现在图上”不等于自动获得宿主权限。
+6. 本段成功标准：页面没有要求用户自己对照三份 JSON，且能明确回答“谁声明、谁请求、谁最终裁决”。
+
+## 第 8 集：能力 Library 与 Flow 搜索
+
+### 本集目的
+
+展示 Agent 不需要把全部 Tool/Skill/Knowledge/Identity/Flow 塞进上下文，也不需要重复手写已有能力；它先按语义和关键词搜索、按 Workspace/质量排序，再显式激活所需能力。
 
 进入 `Library`。当前目录应看到 Skill、Tool、Knowledge、Identity、DAG/Harness 五类卡片，以及简介、标签、来源、曝光、使用量、成功率和最近使用时间。
 
@@ -463,29 +543,77 @@ harness guide DAG nodes loops subflow
 
 ### 必录动作
 
-1. 分别切换 `混合搜索 / 仅语义 / 仅关键词`。
-2. 打开 Workspace 优先，展示本项目能力排在前面；说明私有 workspace 能力不会跨项目泄漏。
-3. 打开 `component_context_compactor`，展示 `typed_subdag / subflow_node / subagent_session` 复用协议。
-4. 对一个能力点 `用于此项目`，再运行 discovery Agent。
-5. 在轨迹中找到 `search_capabilities → activate_capability`，Harness 命中应返回 `action: invoke_subdag`。
-6. 回 Library 刷新，展示 impression/usage/success 指标变化。
-7. 点 `重新索引`，说明搜索主路径是 SQLite catalog + 本地多语言 embedding + lexical ranking，不要求 Meilisearch 常驻服务。
+1. 打开主仓库 → `Workbench` → `Library`。先输入第一条查询 `读取和搜索代码仓库文件`，不要切筛选；观察混合搜索结果。
+2. 分别切换 `混合搜索 / 仅语义 / 仅关键词`，用同一个查询解释：关键词看字面命中，语义看 embedding 相似度，混合模式综合两者与质量/使用信号。
+3. 打开 Workspace 优先，展示本项目能力排在前面；说明私有 workspace 能力不会跨项目泄漏。
+4. 依次粘贴上面的其余四条查询。最后用 `压缩长上下文的可复用子 DAG` 打开 `component_context_compactor`，展示 `typed_subdag / subflow_node / subagent_session` 复用协议。
+5. 对一个能力点 `用于此项目`，再从 Chat/Task 运行一个带 capability discovery 的 Agent。
+6. 在轨迹中找到 `search_capabilities → activate_capability`；Harness 命中应返回 `action: invoke_subdag`，找不到时只能提出创建候选，不能静默写入。
+7. 回 Library 刷新，展示 impression/usage/success 指标变化。
+8. 点 `重新索引`，说明搜索主路径是 SQLite catalog + 本地多语言 embedding + lexical ranking，不要求 Meilisearch 常驻服务。
 
-## 第 9 集：Task Bench 完整做题
+## 第 9 集：Task Bench——数据集、Runner、精确版本、评分、比较与回放
 
-先选 `离线 DAG / Tool Trace 自检`：
+### 本集目的
 
-1. Harness 保持 `aider_review_worker`，Identity 保持 `test_bot`；这两个由题目兼容性约束，不要强选 `react_single`。
-2. 勾 `首节点前暂停`，点 `开始做题`。
-3. 第一次暂停在 Input；点一次 `单步`，再点 `自动`。
-4. 预期：Agent 节点 3 次、`glob_search` 1 次、`read_file` 1 次、最终 100/100。
-5. 点击每个节点旁的小框与 `过程 / 评分 / 产物 / 进化` 四页。
+把“让 Agent 做一道题”升级为一套可复现实验：明确数据字段、固定 Runner 与 Flow 版本、隔离环境、确定性评分、比较两条轨迹，并把历史运行投影回 Build。它是后续论文实验和原版 Codex 对照的基础。
 
-然后选 `录屏：修复智能花盆控制器`，展示 Task 自动建立隔离 workspace、真实修改与确定性 checker。强调“Agent 说完成了”不能得分。
+### A. 先跑一条完全离线、结果确定的基准
 
-展开 `导入 / 导出 benchmark`：说明 `ego.task.v1`、多步骤题、Harbor 1.4、旧 Terminal-Bench 导入和 Harbor 导出。可打开 `task_bench/tasks/video_code_agent_walkthrough.json` 讲 version、workspace、selection、environment、execution、evolution、evaluation。
+1. 打开主仓库 → `Workbench` → `Evaluate`，左侧 Task 选 `离线 DAG / Tool Trace 自检`。
+2. Runner 选 `EgoAgent Flow`。Harness 选 `aider_review_worker`，Identity 选 `test_bot`；这是题目兼容矩阵给出的配置，不要强选无关模板。
+3. 在 `Flow version` 下拉中选择当前标为 `最新` 的精确版本，并把完整版本 ID 读给观众。开始后这次 Run 固定该版本，后续保存新版本不会改写历史 Run。
+4. 勾 `首节点前暂停`，点 `开始做题`。第一次应暂停在 Input；点一次 `单步`，确认只推进一个节点，再点 `自动`。
+5. 预期：Agent 节点 3 次、`glob_search` 1 次、`read_file` 1 次、最终 100/100。若不是 100，不要继续讲比较，先在 `评分` 看哪条确定性 checker 失败。
+6. 依次打开 `过程 / 评分 / 产物 / 进化`：`过程` 看事件和节点，`评分` 看客观条目，`产物` 看隔离 Workspace 输出，`进化` 只显示候选/晋升证据，不能把普通答题说成已进化。
+
+### B. 把这次历史运行投影回 Build
+
+1. 在完成页点击 `在 Build 回放`。
+2. 中央 Build 顶部必须显示 `HISTORICAL TASK REPLAY`、Task Run ID、Runner、Harness 和完整 Flow 版本；画布处于只读锁定状态。
+3. 预期图上重建出 7 条节点 trace。依次点 Input、Agent、Tool、Output，旁边的小框展示该次历史运行的真实输入/输出，不是重新执行一次模型。
+4. 点击 Build 顶部带锁图标的 `退出回放`。当前历史版本会成为可编辑草稿；只有你随后点击保存才会创建新的 latest，历史 Run 和旧版本本身不会被修改。
+5. 若回放页出现空白，停止录制并刷新；当前版本已经为旧格式 message 做了 normalize，正常路径不应再出现白屏。
+
+### C. 比较两条真实 Run
+
+1. 回 Evaluate。再次运行同一题；为了产生可解释差异，可保留同一配置只改变“首节点暂停/自动”录制方式，或选择已有的另一条同题 Run。
+2. 在历史 Run 列表勾选两条记录，点 `比较所选轨迹 (2)`。
+3. 比较页同时展示两条 lane：Runner、Harness、Identity、Flow 版本、分数、耗时、模型/工具/节点调用数和失败信息。
+4. 展开轨迹差异。讲清比较对象是两条保存的 Run，不是把两个最终答案文本手工并排。
+5. 退出比较，确认原来的 Run 记录未被修改。
+
+### D. 演示用户自定义数据集字段，不要求先改 Python 适配器
+
+1. 在 Evaluate 展开 `＋ 自定义数据集格式`。
+2. Dataset ID 填 `video_planter_preview`，标题填 `智能花盆字段映射预览`，格式选 `JSON array`。
+3. 粘贴：
+
+   ```json
+   [
+     {"case_id":"plant-dry","question":"湿度 20、阈值 35 时是否应该浇水？","expected":"true"},
+     {"case_id":"pump-volume","question":"流速 12 ml/s、持续 5 秒，水量是多少？","expected":"60"}
+   ]
+   ```
+
+4. 字段映射不是下拉框；在对应输入框手动填：`题目字段 *`=`question`、`Case ID`=`case_id`、`标题`=`case_id`、`期望答案`=`expected`，其余留空。
+5. 点 `预览字段映射`。预览区必须出现 `2 cases`，并列出两条稳定 ID 和 prompt；这一步只验证 schema，不运行模型。
+6. 正式录制默认停在预览，不点 `固化并加入题库`，避免反复录制污染目录；要演示持久化时再点该按钮，并说明每个 case 会物化成标准 `ego.task.v1` Task。
+
+### E. 真实代码题、外部 Runner 与 benchmark 互操作
+
+1. Task 改选 `录屏：修复智能花盆控制器`，Runner 保持 `EgoAgent Flow`，展示 Task 自动建立隔离 Workspace、真实修改与确定性 checker。强调“Agent 说完成了”不能得分。
+2. Runner 切换为 `Original Codex CLI`。此时 EgoAgent Harness、`Flow version`、Identity 与首节点暂停配置会变灰不可用，因为外部 CLI 使用自己的 harness；页面必须标出 CLI 安装、登录和网络前置条件。
+3. 只有本机 `codex` CLI 已安装且已登录时才点击执行。未满足条件时只展示可用性提示，不创建假成功 Run，也不把 EgoAgent Flow 冒充原版 Codex。
+4. 展开 `导入 / 导出 benchmark`：说明 `ego.task.v1`、多步骤题、Harbor 1.4、旧 Terminal-Bench 导入和 Harbor 导出。打开 `task_bench/tasks/video_code_agent_walkthrough.json`，逐项讲 version、workspace、selection、environment、execution、evolution、evaluation。
+
+本集成功标准：至少留下一条 100 分 EgoAgent Run、一次只读 Build 历史回放、一张双轨比较页，以及一份通过预览的数据集字段映射。
 
 ## 第 10 集：上下文精简、被动压缩与真实回放
+
+### 本集目的
+
+用长对话分别证明两个不同机制：Curator 按相关性移除/摘要无关内容，Compactor 只在 token 压力越过阈值后被动触发；审计聊天仍完整，后续模型调用则真实使用新的 working surface。
 
 选择 Task `录屏：精简上下文与被动压缩`、Harness `conversation_component_demo`、Identity `dante`。Task 自带的第一轮是端口与验证命令；点击 `▶ 开始做题` 后，在它每次停到等待输入时，依次复制下面四条，不能一次性全发：
 
@@ -519,6 +647,22 @@ harness guide DAG nodes loops subflow
 5. 最终回答仍包含端口 7319、TTL 45 秒、`python -m unittest discover -v`。
 
 ## 第 11 集：受控自进化与 Agent 创建 Agent
+
+### 本集目的
+
+展示三种不同层级的进化：创建可复用 Agent、修改现有 Flow 结构、抽取隔离 SubFlow；所有变更都必须有查重、审批、持久化、验证、版本和晋升/回滚证据。
+
+本集建议录成一个 45–70 分钟长片，或者拆成下面 5 条短片。不要把五种能力混成一段“Agent 变聪明了”的口号：每条都必须拍到真实事件、持久产物或验证结果。
+
+| 顺序 | Demo | Task / Flow | 必须拍到的证据 |
+|---|---|---|---|
+| 11A | Agent 创建可复用 Agent | `录屏：Agent 自己创建可复用 Agent` | `agent_factory` 根 Run、`component_agent_designer` 子 Run、审批、Identity + Harness、独立复用 |
+| 11B | 失败证据驱动结构进化 | `录屏：运行证据驱动 Flow 结构进化` | inspect revision、最小 patch、审批、mutation transaction、before→after |
+| 11C | 抽取隔离 SubFlow | `录屏：把重复搜索进化成隔离 SubFlow` | 搜索现有 Flow、`share_session=false`、父子 Run 树、主上下文只接收紧凑结果 |
+| 11D | 开放式产物选择 | `录屏：重复工作触发受控自进化` | no-change/Knowledge/Skill/Identity/Harness 比较；允许模型诚实选择不进化 |
+| 11E | 科学候选与晋升门控 | `component_flow_evolver` + ARC 实验 | candidate、validation、held-out、promotion/rollback；不能声称复现 NVIDIA 100% |
+
+完整逐按钮操作、固定输入、画面构图和失败分支见 [VIDEO_SELF_EVOLUTION_SHOWCASE_ZH.md](VIDEO_SELF_EVOLUTION_SHOWCASE_ZH.md)。录制这五条时保持 `LIVE ARCHITECTURE` 可见：Build 默认已打开该面板，按钮文字会是 `隐藏实时结构`；只有被手动隐藏后才会显示 `显示实时结构`。
 
 ### 能力进化
 
@@ -554,9 +698,21 @@ judge 比较不变/Knowledge/Skill/Identity/Sub-Agent/Harness
 
 ### Harness 结构进化
 
-在 Improve 或 `Evolve` 模式给一段重复失败轨迹，让它提出添加/删除节点或换 SubDAG。必须先 dry-run/validation，再人工批准 commit；只改 prompt 不算结构进化。展示 mutation event、revision 和 rollback。
+优先使用确定性题目 `录屏：运行证据驱动 Flow 结构进化`，而不是临场编失败轨迹。它会让 `flow_evolution_showcase` 检查 `demo_fragile_release_flow`，在不可逆执行前插入审批边界。必须展示 inspect → proposal → approval → transactional patch → verify；只改 prompt 不算结构进化。
+
+### 本集固定的画面证据
+
+1. `LIVE ARCHITECTURE` 中根 Run 与子 Run 按 `parent_run_id` 缩进，而不是平铺成多个聊天角色。
+2. `事件故事线` 按真实顺序显示子 Agent、审批、mutation 和完成/失败。
+3. `Flow 版本变化` 显示目标、revision、transaction、节点/连线增删改。
+4. 实时变更发生时，当前正在显示的目标画布可用绿色/黄色强调；如果任务结束后才重新打开目标 Flow，只要求展示最终结构和保存的 revision diff，不要声称历史高亮仍会保留。
+5. 刷新已完成 Task 后，拓扑能由历史事件重建；模型自述“已经进化”不算证据。
 
 ## 第 12 集：Session Fork/Merge、精确轨迹和训练导出
+
+### 本集目的
+
+展示一个用户如何同时推进多个思路、再把它们合并，并把真实的多 Agent/多 Flow 版本轨迹标注和导出为不同训练投影；UI 可见聊天与模型实际 working context 必须明确区分。
 
 进入 `More → Sessions`，选择一个非 TaskBench 临时 Session。
 
@@ -577,9 +733,11 @@ judge 比较不变/Knowledge/Skill/Identity/Sub-Agent/Harness
 切 `精确回放`：
 
 - 按事件逐步查看 system/user/assistant/tool、node、run、agent、model_call_id；
-- 多 Agent 事件必须显示不同 agent；
+- 多 Agent 事件必须显示不同 agent；每段事件还要能追溯当时的 Harness/Flow 版本，不能用当前 latest 覆盖旧记录；
 - compaction 后的下一次 request 必须是替换后的 working surface；
 - 完整性应显示 `✓ 完整性通过`。
+
+这里要与第 9 集区分：Sessions 的“精确回放”按不可变事件查看真实模型 surface，适合数据审计；Task Bench 的“在 Build 回放”把某次 Task Run 的节点 trace 投影回 Flow 画布，适合比较和讲解结构。两者引用同一历史事实，但不是同一个页面。
 
 切到 `训练数据`：选择 `当前 Session`、`整个 Session`，勾选 `精确模型调用 SFT / 完整长轨迹 / verl Rollout`，保存目录留空并点 `生成训练数据`。预期每次模型调用是独立样本，不把多个 Agent 混成一个说话人。顺便展示整段对话 SFT、单条回复 SFT、KTO、DPO/ORPO 和标注审计表；DPO 为 0 通常只表示尚无同 prompt 的赞踩配对。Settings 的 `训练轨迹额外收集` 可另设数据集目录；原生 Session 轨迹始终保留，开关只是镜像复制。
 
@@ -593,32 +751,47 @@ judge 比较不变/Knowledge/Skill/Identity/Sub-Agent/Harness
 
 ## 第 13 集：联网、浏览器 Agent 和后台任务
 
+### 本集目的
+
+证明 EgoAgent 能越过本地代码边界完成“发现网页 → 打开正文取证 → 浏览器操作 → 人工接管 → 后台恢复”，同时把搜索摘要、页面证据和高风险交互明确分开。
+
 ### 搜索与页面取证
 
-选择 `adaptive_code_agent + openmanus`：
+1. 打开教学仓库 Chat，新建 Session；模式选 `Agent`，Harness 选 `adaptive_code_agent`，Identity 选 `openmanus`。
+2. 发送：
 
 ```text
 搜索 Python 3.14 官方文档最近的变化，只使用 python.org。打开最相关的两个页面，区分搜索摘要与正文证据，并附 URL 总结。
 ```
 
-运行记录应先出现 `web_search`，再出现 `fetch_url/fetch_urls`。讲清搜索只是发现，页面抓取才是正文证据。
+3. 运行记录应先出现 `web_search`，再出现 `fetch_url/fetch_urls`。展开两者，指出搜索摘要只是发现候选，页面抓取内容与 URL 才是正文证据。
+4. 如果公网失败，保留明确的网络错误并停止本段；不要用预置文字假装网页已抓取。
 
 ### 浏览器
 
-切 `browser_use_replica` 或保持 openmanus：
+1. 在同一 Session 中展开 `Agent 配置`，Harness 切 `browser_use_replica`（也可保持支持 browser tools 的 `openmanus`），然后收起配置。该配置会随下一条对话事件记录，不要求新建 Session。
+2. 发送：
 
 ```text
 打开 https://example.com，观察页面，截图，然后告诉我页面标题、主要文本和截图路径。
 ```
 
-展示 `start/navigate/observe/screenshot`。复杂交互采用 observe→act→verify；CAPTCHA、登录、支付、发布等步骤必须 `handoff` 给人，不能绕过。
+3. 展示 `start/navigate/observe/screenshot`，并打开产物中的截图路径。
+4. 口述复杂交互必须采用 observe→act→verify；CAPTCHA、登录、支付、发布等步骤必须 `handoff` 给人，不能绕过。
 
 ### 深度研究和后台运行
 
-- 用 `open_deep_research_replica` 展示多个隔离 Worker 并行搜索、结果压缩后汇总，父上下文只接收结果。
-- 进入 `More → Background`：创建 durable Harness run，展示优先级、队列、pause/resume/cancel、逐节点 checkpoint、失败重试、重启恢复、从 checkpoint Fork。
+1. 在 Agent 配置把 Harness 切成 `open_deep_research_replica`，发送一个需要比较两个官方来源的短研究问题。
+2. 在 Build 观察多个隔离 Worker 并行搜索、结果压缩后汇总；父上下文只接收结果，完整子过程留在子 Run。
+3. 进入 `More → Background`，点新建 durable Harness run，选择一个低成本 Harness 和当前 Workspace，设置优先级后提交。
+4. 在队列依次展示 pause/resume/cancel；打开 run 详情看逐节点 checkpoint、失败重试和重启恢复信息。
+5. 对一个已保存 checkpoint 点 Fork，确认新 run 记录 parent/checkpoint，而不是覆盖原 run。
 
 ## 第 14 集：安全、审批、沙箱与恢复
+
+### 本集目的
+
+用三个可重复的负面测试说明安全边界：Workspace Guard 管文件路径，Runtime policy 管能力，审批卡管单次高风险动作，容器隔离宿主进程；它们都不是靠 system prompt 劝模型听话。
 
 进入 `More → Settings → 安全、审批与沙箱`。
 
@@ -650,6 +823,10 @@ judge 比较不变/Knowledge/Skill/Identity/Sub-Agent/Harness
 
 ## 第 15 集：Improve、Deploy、EgoIR 与 Research Lab
 
+### 本集目的
+
+展示从失败轨迹到候选能力、回归验证、版本化包和科研记录的完整后半程；重点是候选可以失败并回滚，而不是点击一次“进化”就替换生产 Agent。
+
 ### Improve
 
 1. 进入 `Improve`，在“任务、失败轨迹或 Session 摘要”文本框粘贴：`连续三次搜索 docs/sensors.md 时，Agent 都先用全仓库 grep 并读取 20 个无关文件；目标是只返回型号对应的阈值与证据路径，且未知型号明确报错。`。
@@ -676,6 +853,10 @@ judge 比较不变/Knowledge/Skill/Identity/Sub-Agent/Harness
 进入 `More → Research`：展示研究项目、实验契约、排队执行、artifact hash、独立 reviewer 和完整性审计。强调一次偶然成功不能成为科研结论；`ai_scientist_replica` 可作为自动化科学 Harness 示例。
 
 ## 第 16 集：CoC 多 Agent 跑团
+
+### 本集目的
+
+用非代码场景展示 Flow 与 Identity 的通用性：角色卡可跨模组复用，HP/SAN/位置/物品是持久状态事务，KP 和规则裁判必须根据当前真实状态拒绝不可能动作。
 
 进入 `More → CoC Table`，讲清人物卡就是可复用 Identity，不是每局复制到 prompt 的 JSON。
 
@@ -716,6 +897,10 @@ judge 比较不变/Knowledge/Skill/Identity/Sub-Agent/Harness
 
 ## 第 17 集：Codex Flow 与 DeepSeek Harness 的可视复刻
 
+### 本集目的
+
+证明通用 Flow 组件足以表达两种不同的 coding harness 语义，并把 EgoAgent Codex Flow 与外部原版 Codex CLI 放到同一 Task/评分协议下比较。复刻的是公开运行语义，不是假装调用第三方未公开内部实现。
+
 这集讲“同一组通用组件怎样组装出不同 agent loop”，不要声称复制了第三方品牌、模型或未公开实现。
 
 ### Codex Flow
@@ -741,7 +926,20 @@ judge 比较不变/Knowledge/Skill/Identity/Sub-Agent/Harness
 
 详细实现边界见 `docs/CODEX_FLOW_REPLICATION.md` 与 `docs/DEEPSEEK_HARNESS_FLOW_REPLICATION.md`。
 
+### 同一道题对照 EgoAgent Codex Flow 与 Original Codex CLI
+
+1. 切回主仓库 → Workbench → Evaluate，选择一个代码 Task，例如 `录屏：修复智能花盆控制器`。
+2. 第一条 lane：Runner 选 `EgoAgent Flow`，Harness 选 `codex_flow`，Identity 选 `codex_operator`，Flow 版本选择并读出当前 exact version；开始做题并保留 Run。
+3. 第二条 lane：Runner 改成 `Original Codex CLI`。确认 EgoAgent Harness/Identity/版本字段不再参与配置；页面显示检测到的 CLI/认证状态。
+4. 只有 CLI 已安装、已登录且用户愿意产生外部调用时才开始第二条 Run。否则停在“外部 Runner 尚未就绪”并口述这是可选实现边界，不伪造分数。
+5. 两条都完成后勾选它们，点 `比较所选轨迹 (2)`。依次比较分数、耗时、工具/模型/节点次数、文件产物和错误；强调相同的是 Task 与 checker，不同的是 harness/runner。
+6. EgoAgent lane 可以点 `在 Build 回放`，因为它有 Flow 节点映射；Original Codex lane 保留规范化 trajectory/产物，但没有 EgoAgent Flow 时不能伪造 Build 节点回放。
+
 ## 第 18 集：AVO 风格长程搜索、ARC 与 Flow 自进化
+
+### 本集目的
+
+把“自进化”放进真正长程、反馈稀疏的任务中检验：持久证据避免上下文重置后从零开始，非行动 supervisor 识别停滞，候选 Flow 必须在复测和 held-out 指标上变好才晋升。
 
 这是一集“真实研究过程”，结论必须诚实：EgoAgent 已跑通官方 ARC-AGI-3 接口、长程 Flow 和证据驱动进化门控，但 DeepSeek V4 Flash 在现有 `ls20/vc33` 小实验中没有通过首关，不能说复现了 NVIDIA 的 100%。
 
@@ -775,33 +973,37 @@ judge 比较不变/Knowledge/Skill/Identity/Sub-Agent/Harness
 
 录完 18 集后，用下面清单检查是否全部出现过：
 
-- Void：Explorer、Editor、Terminal、Chat、对话/运行/改动/上下文、状态栏；
+- Void：Explorer、Editor、Terminal、Chat、对话/改动/上下文、输入框下方活动条、Session 条与状态栏；
 - Workbench：Home、Build、Evaluate、Library、Improve；
 - More：Deploy、EgoIR、Research、CoC Table、Background、Agent Changes、Checkpoints、Identity、Environment、Sessions、Settings；
 - Flow Graph（UI 兼容标签 DAG）：Input、Agent、Tool、Process、Output、If、Loop、Parallel、Map、Join、Approval、Subflow/SubDAG、Data、Workspace、Context、Memory、Checkpoint、Python escape hatch；
 - IDE AI：Tab、Inline Edit、next edit、review、逐 hunk Accept/Refuse、Ctrl+Z 撤销审阅、新文件确认、点击文件名打开；
 - Agent runtime：工具循环、流式状态、折叠过程、子 Agent、预算/timeout/truncation、暂停/单步/停止、等待输入；
-- 能力治理：Identity/Ego/Superego、Environment、Skill/Tool/Knowledge/DAG 搜索、激活、usage、workspace 优先；
+- 能力治理：Identity/Ego/Superego、Environment、Skill/Tool/Knowledge/Flow 搜索、激活、usage、workspace 优先、Superego→Runtime→最终权限检查；
 - 长程能力：curator、compactor、memory、self-evolution、agent factory、Harness mutation、rollback；
-- 数据与科研：Task Bench、Harbor、轨迹回放、Fork/Merge、SFT/RL 导出、Improve、Research Lab；
+- 数据与科研：自定义 dataset mapping、Task Bench、Harbor、EgoAgent/外部 Runner、精确 Flow 版本、双轨比较、Build 历史回放、Fork/Merge、SFT/RL/OTLP 导出、Improve、Research Lab；
 - 安全与生产：权限、审批、workspace guard、container fail-closed、checkpoints、durable background runs、packages；
 - 扩展能力：web search、fetch evidence、browser handoff、CoC。
 - 复刻与研究：`codex_flow`、`deepseek_harness_replica`、repeat guard、tool-result pruner、ARC persistent evidence、non-acting supervisor、候选不提升则拒绝晋升。
 
 ## 当前录制验收结果
 
-2026-08-24 在当前机器完成：
+2026-08-30 在当前机器完成第二轮产品验收。下面同时包含自动测试和实际从 Void 页面点击完成的路径：
 
 - `verify_recording_setup.py --live`：通过；除服务、Catalog、Task、Library 和 provider 探针外，现在还会真实启动 `adaptive_code_agent`，确认一次问候、零 Tool、返回等待输入；
 - 离线 Task Bench：Agent 3 次、Tool 2 次、100/100；
 - 真实 `adaptive_code_agent` 教学任务：搜索并激活能力、读取证据、两次 patch、一次宿主命令审批、4 tests OK、2 个待审 hunk；
 - Library hybrid 查询“压缩长上下文的可复用子 DAG”：命中 `component_context_compactor`；中文自然语言查询还把 Curator、Compactor 和全功能 Code Agent 排到前列；
 - 前端逐页实测：Home、Build、Evaluate、Library、Improve 和 More 下 11 个页面均可加载；
-- Task Bench UI：首节点暂停、单步、自动、工具轨迹与 100 分均实测；
+- Task Bench UI：`offline_trace_smoke + aider_review_worker@v000001-… + test_bot` 首节点暂停、单步、自动均实测，得到模型步骤 3、工具步骤 2、节点 trace 7、100/100；该题使用 scripted DummyLLM，不消耗 API；
+- 精确实验链：Run 保存完整 Flow Version；`在 Build 回放` 显示 `HISTORICAL TASK REPLAY`、当时版本和七步输入/模型/工具/输出；点 `退出回放` 后当前历史版本成为可编辑草稿，只有再次保存才创建新版本；
+- 比较与数据集：同题两条历史 Run 已在前端并排比较版本、score、duration、model/tool counts 与七行轨迹；JSON/JSONL/CSV 自定义字段映射可预览真实 case；
+- 统一治理：Identity → Superego → Governance Inspector 已实际显示 Tool、Knowledge 与变更能力的 Superego/Runtime/最终交集，白/黑名单冲突会 fail-closed；
 - Sessions：89-event 离线轨迹和 239-event DeepSeek Flow 轨迹可回放，Fork/Merge、赞踩/重要/入库与八种训练投影入口均已打开；
 - Build：全功能模板 27/37、Codex 11/14、DeepSeek 18/21、ARC scientific 19/25 均从前端加载；
-- Python 回归共发现 530 项：527 项通过，3 项按环境能力声明跳过；其中 Chrome/CDP 集成在受限测试沙箱内无法连接临时调试端口，已在正常主机权限下 `2/2` 单独通过；
-- Vite production build：224 modules transformed，构建成功；
+- 核心回归：`204 passed, 1 skipped, 2 subtests passed`；完整 `tests/`：`630 passed, 3 skipped, 148 subtests passed`。唯一环境性失败是无头 Chromium 在受限沙箱中不能监听 CDP 端口，已在允许启动本机浏览器的边界下单独重跑通过；
+- Vite production build：234 modules transformed；`package:extension` 已验证会把构建产物同步到活动 Void 扩展，不再出现“源码有功能、运行页面还是旧包”；
+- Task 历史回放对旧 message schema 会先 normalize；此前点击 Build 回放导致 React `.map()` 白屏的问题已经修复，并有 Workbench error boundary 防止单页错误摧毁整个工作台；
 - 无头浏览器集成：导航、表单、语义/坐标点击、dialog、download、screenshot、CAPTCHA/handoff 全链路通过；
 - reset 后录屏仓库 `改动 0`，运行中 backend 的旧 review journal 也会按 workspace 同步清除。
 
@@ -809,23 +1011,23 @@ judge 比较不变/Knowledge/Skill/Identity/Sub-Agent/Harness
 
 | 集数 | 结论 | 本次复核证据 / 注意点 |
 |---|---|---|
-| 1 | 通过 | 8880/8765、Home 生命周期、65/65 Harness Catalog 与 provider health 均通过预检。 |
+| 1 | 通过 | 8880/8765、Home 生命周期、全部可运行 Harness Catalog 与 provider health 均通过预检；空白编辑草稿不计入 Catalog。 |
 | 2 | 通过，已修复 | 问候只有一次并回到 `input`；Agent 配置可整体折叠；输出按 Markdown 渲染；结构化粘贴/拖放使用正文内原子图标；Clipboard 不再重复渲染预览卡，文本图标可悬停预览、单击编辑。 |
 | 3 | 通过 | 真实教学 run 已有 search/activate/read/两次 patch/测试证据；工具、文件事务与非零命令结果回归通过。 |
 | 4 | 通过 | 单一 CodeLens、原生 inline Diff、逐 hunk Accept/Refuse、决定后装饰清理、Ctrl+Z 恢复 pending、run transaction 隔离、新文件删除确认与 Inline Edit 回归通过。 |
 | 5 | 通过 | 全部可视节点契约、typed ports、循环、错误路由、审批和 builder round-trip 均通过。 |
 | 6 | 通过 | `tutorial_full_stack_code_agent` 27 节点/37 连线及四个 SubFlow 可加载，SubDAG 输入输出 schema 会在运行前验证。 |
-| 7 | 通过 | Identity、Ego/Superego、Skill/Knowledge 与根 `egoagent` Environment API/组合测试通过。 |
+| 7 | 通过，已补统一治理 | Identity、Ego/Superego、Skill/Knowledge 与根 `egoagent` Environment API/组合测试通过；Tool/Knowledge/变更能力会显示并执行 Superego、Mode/Flow 与 Runtime policy 的交集。 |
 | 8 | 通过 | Library 共五类能力；中文语义检索使用本地 fastembed，workspace 优先、usage 更新、找不到建议创建均通过。 |
-| 9 | 通过 | 四个录屏 Task 可见；离线真 Runner 完成 Agent ×3、Tool ×2、100 分，并覆盖暂停/单步/隔离/评分。 |
+| 9 | 通过，已扩为实验闭环 | 专用录屏 Task 与完整题库可见；离线 Runner 完成 Agent ×3、Tool ×2、7 trace、100 分；精确版本、Build 历史回放、双轨比较和自定义数据集预览均从真实前端走通。Original Codex CLI 仍要求外部安装/认证。 |
 | 10 | 通过 | Curator 与被动 Compactor 是两个独立 SubDAG；working view、完整 audit、summary/tool 压缩与可恢复性测试通过。 |
 | 11 | 通过 | capability/identity/harness 三种演进、独立证据、held-out/regression、EvoCert、失败回滚与 Agent Factory 测试通过。 |
-| 12 | 通过，已优化窄布局 | Fork/Merge 三模式、lineage、exact replay、赞踩/重要/入库和训练投影通过；Sessions 窄窗口改为上下布局，避免误点。 |
+| 12 | 通过，已优化窄布局 | Fork/Merge 三模式、lineage、按 Agent/Flow 版本归属的 exact replay、赞踩/重要/入库和训练投影通过；Sessions 窄窗口改为上下布局，避免误点。 |
 | 13 | 通过 | web search/fetch 的 SSRF 与证据边界、真实 Chromium observe-act-download-screenshot、后台 durable run 全部通过；公网状态仍需开录前探针。 |
 | 14 | 通过 | Workspace guard、host/container fail-closed、危险命令审批、secret 过滤、检查点冲突与中断恢复通过。 |
 | 15 | 通过 | Improve 证据门控、签名 package 安装/升级/可恢复卸载、EgoIR dry-run/commit/undo、Research artifact hash 通过。Deploy 页面当前使用英文动作标签。 |
 | 16 | 通过 | CoC Identity 人物卡、HP/SAN/Luck 状态事务、物品 Tool 转移/丢失、非法动作拒绝与可重放骰点通过。 |
-| 17 | 通过 | `codex_flow` 11/14 与 `deepseek_harness_replica` 18/21 通过 Catalog 和完整工具轮测试；repeat guard/pruner 不破坏完整 audit。 |
+| 17 | 条件通过 | `codex_flow` 11/14 与 `deepseek_harness_replica` 18/21 通过 Catalog 和完整工具轮测试；repeat guard/pruner 不破坏完整 audit。EgoAgent lane 已可与 Original Codex CLI lane 进入同题比较，但外部 lane 是否能现场执行取决于 Codex CLI 安装、登录、网络与额度。 |
 | 18 | 研究性通过 | ARC 适配器、19/25 Flow、持久证据、非行动 supervisor 与候选晋升门控通过；真实 V4 pilot 仍未通首关，录制时必须按真实失败展示。 |
 
 模型输出质量、第三方网站状态和公网延迟无法由本地测试永久保证。录制开放式网络、自进化或 Dialogue Merge 前仍应单独跑一次最小探针，并保留失败时的真实 UI 提示。

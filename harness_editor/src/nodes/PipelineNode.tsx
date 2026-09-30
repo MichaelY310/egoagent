@@ -1,8 +1,9 @@
-import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { memo, useEffect } from 'react';
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import type { PipelineNode } from '../types';
 import type { NodeTrace } from '../types';
 import type { DagNodeContract } from '../components/DagFormEditors';
+import { FLOW_INPUT_HANDLE, socketsForNode } from '../graphSockets';
 
 const NODE_CLASS_BY_PALETTE_CLASS: Record<string, string> = {
   'dnd-wait': 'node-wait-input',
@@ -64,7 +65,7 @@ function metrics(trace: NodeTrace | undefined): string[] {
   return result;
 }
 
-function PipelineNodeComponent({ data }: NodeProps) {
+function PipelineNodeComponent({ id, data, isConnectable }: NodeProps) {
   const node = data as unknown as PipelineNode;
   const contract = (data as any)._contract as DagNodeContract | undefined;
   const config = {
@@ -79,37 +80,75 @@ function PipelineNodeComponent({ data }: NodeProps) {
   const runtimeTrace = (data as any).runtimeTrace as NodeTrace | undefined;
   const runtimeActivityMode = (data as any).runtimeActivityMode as 'active' | 'recent' | undefined;
   const runtimePaused = Boolean((data as any).runtimePaused);
+  const mutationState = String((data as any)._mutationState || '');
+  const expanded = Boolean((data as any)._expanded);
   const liveActivity = activity(runtimeTrace, runtimePaused);
   const liveMetrics = metrics(runtimeTrace);
-  const inputPorts = [...new Set([...Object.keys(contract?.inputs || {}), ...Object.keys(node.inputs || {})])];
-  const outputPorts = [...new Set([...Object.keys(contract?.outputs || {}), ...Object.keys(node.outputs || {})])];
+  const sockets = socketsForNode(node, contract);
+  const updateNodeInternals = useUpdateNodeInternals();
+  const socketSignature = `${sockets.inputs.map((socket) => socket.id).join('|')}::${sockets.outputs.map((socket) => socket.id).join('|')}::${expanded}`;
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, socketSignature, updateNodeInternals]);
+  const summary = node.agent ? `@${node.agent}`
+    : node.condition ? `if ${compact(node.condition, 42)}`
+      : node.prompt ? compact(node.prompt, 48)
+        : node.command != null ? compact(node.command, 48)
+          : node.script ? `${node.script}.py`
+            : node.key ? `${node.action || 'set'} ${node.key}`
+              : node.id;
+  const configPreview = Object.fromEntries(
+    Object.entries(node as unknown as Record<string, unknown>).filter(([key]) => !key.startsWith('_') && ![
+      'highlight', 'subHarness', 'runtimeStatus', 'runtimeCount', 'runtimeTrace', 'runtimeActivityMode', 'runtimePaused',
+    ].includes(key)),
+  );
 
   return (
-    <div className={`pipeline-node ${config.cssClass}${highlight}${subHarness ? ' sub-harness-active' : ''}${runtimeStatus ? ` runtime-${runtimeStatus}` : ''}`}>
-      <Handle type="target" position={Position.Top} />
+    <div className={`pipeline-node ${config.cssClass}${expanded ? ' expanded' : ' compact'}${highlight}${subHarness ? ' sub-harness-active' : ''}${runtimeStatus ? ` runtime-${runtimeStatus}` : ''}${mutationState ? ` mutation-${mutationState}` : ''}`} data-node-id={node.id} data-op={node.op} title={expanded ? '点击画布空白处收起' : '双击展开完整节点内容'}>
       <div className="node-header">
         <span className="node-icon">{config.icon}</span>
-        <span className="node-title">{config.label}</span>
+        <span className="node-title">{config.label}<small>{node.id}</small></span>
       </div>
-      {inputPorts.length > 0 && <div className="node-port-strip inputs" aria-label="输入端口">{inputPorts.map((name) => <span key={name} title={`${name}: ${contract?.inputs?.[name]?.type || 'any'}`}><i />{name}<small>{contract?.inputs?.[name]?.type || ''}</small></span>)}</div>}
-      {node.agent && <div className="node-agent">@{node.agent}</div>}
-      {node.condition && <div className="node-prompt">if: {String(node.condition)}</div>}
-      {node.key && <div className="node-prompt">{node.action || 'set'}: {node.key}</div>}
-      {node.op === '数据' && !node.key && node.action && <div className="node-prompt">{node.action}</div>}
-      {node.prompt && <div className="node-prompt">prompt: {node.prompt}</div>}
-      {node.script && <div className="node-script-badge">{node.script}.py</div>}
-      {node.command != null && <div className="node-prompt">process: {String(node.command)}</div>}
-      {node.timeout_seconds && <div className="node-prompt">timeout: {node.timeout_seconds}s</div>}
-      {node.op === '进程' && node.backend && node.backend !== 'local' && <div className="node-prompt">backend: {node.backend}</div>}
-      {node.op === '子流程' && node.mode === 'port_graph' && <div className="node-prompt">端口事件图</div>}
-      {subHarness && <div className="node-sub-harness-badge">子流程: {subHarness}</div>}
+      {!expanded && <div className="node-compact-summary">{summary}</div>}
+      <div className="node-socket-columns" aria-label="节点输入与输出">
+        <div className="node-socket-list inputs" aria-label="输入 sockets">
+          <div className="node-socket-row control input" title="控制流入口；可接收多个事件路径">
+            <Handle id={FLOW_INPUT_HANDLE} type="target" position={Position.Left} isConnectable={isConnectable} className="tutorial-target-handle socket-control" data-socket-id={FLOW_INPUT_HANDLE} />
+            <span>flow</span><small>控制</small>
+          </div>
+          {sockets.inputs.map((socket) => <div key={socket.id} className="node-socket-row data input" title={`${socket.name}: ${socket.type}${socket.required ? ' · 必填' : ''}`}>
+            <Handle id={socket.id} type="target" position={Position.Left} isConnectable={isConnectable} className="socket-data" data-socket-id={socket.id} />
+            <span>{socket.name}</span><small>{socket.type}{socket.required ? ' *' : ''}</small>
+          </div>)}
+        </div>
+        <div className="node-socket-list outputs" aria-label="输出 sockets">
+          {sockets.outputs.map((socket) => <div key={socket.id} className={`node-socket-row ${socket.socketClass} output`} title={`${socket.name}: ${socket.type}`}>
+            <span>{socket.name}</span><small>{socket.type === 'control' ? '事件' : socket.type}</small>
+            <Handle id={socket.id} type="source" position={Position.Right} isConnectable={isConnectable} className={socket.socketClass === 'event' ? 'tutorial-source-handle socket-control' : 'socket-data'} data-socket-id={socket.id} />
+          </div>)}
+        </div>
+      </div>
+      {expanded && <div className="node-expanded-content">
+        {node.agent && <div className="node-agent">@{node.agent}</div>}
+        {node.condition && <div className="node-prompt">if: {String(node.condition)}</div>}
+        {node.key && <div className="node-prompt">{node.action || 'set'}: {node.key}</div>}
+        {node.op === '数据' && !node.key && node.action && <div className="node-prompt">{node.action}</div>}
+        {node.prompt && <div className="node-prompt">prompt: {node.prompt}</div>}
+        {node.script && <div className="node-script-badge">{node.script}.py</div>}
+        {node.command != null && <div className="node-prompt">process: {String(node.command)}</div>}
+        {node.timeout_seconds && <div className="node-prompt">timeout: {node.timeout_seconds}s</div>}
+        {node.op === '进程' && node.backend && node.backend !== 'local' && <div className="node-prompt">backend: {node.backend}</div>}
+        {node.op === '子流程' && node.mode === 'port_graph' && <div className="node-prompt">端口事件图</div>}
+        {subHarness && <div className="node-sub-harness-badge">子流程: {subHarness}</div>}
+      </div>}
       {runtimeStatus && (
         <div className={`node-runtime-badge ${runtimeStatus}`}>
           {runtimeStatus === 'running' ? '运行中' : runtimeStatus === 'completed' || runtimeStatus === 'ok' ? '已完成' : runtimeStatus === 'error' ? '失败' : '待执行'}
           {runtimeCount > 1 ? ` ×${runtimeCount}` : ''}
         </div>
       )}
-      {runtimeActivityMode && liveActivity && (
+      {mutationState && <div className={`node-mutation-badge ${mutationState}`}>{mutationState === 'added' ? '＋ 新节点' : '↗ 已改变'}</div>}
+      {runtimeActivityMode && liveActivity && (expanded || runtimeActivityMode === 'active') && (
         <div className={`node-activity-card ${runtimeActivityMode}${runtimePaused ? ' paused' : ''}`}>
           <div className="node-activity-phase"><span>{liveActivity.icon}</span><b>{liveActivity.phase}</b>{runtimeCount > 1 && <em>#{runtimeCount}</em>}</div>
           <p>{liveActivity.text}</p>
@@ -117,8 +156,10 @@ function PipelineNodeComponent({ data }: NodeProps) {
           {runtimeActivityMode === 'active' && <small>点击节点查看完整输入 / 输出 / 工具</small>}
         </div>
       )}
-      {outputPorts.length > 0 && <div className="node-port-strip outputs" aria-label="输出端口">{outputPorts.map((name) => <span key={name} title={`${name}: ${contract?.outputs?.[name]?.type || 'any'}`}><i />{name}<small>{contract?.outputs?.[name]?.type || ''}</small></span>)}</div>}
-      <Handle type="source" position={Position.Bottom} />
+      {runtimeActivityMode === 'recent' && liveActivity && !expanded && <div className="node-runtime-summary"><span>{liveActivity.icon}</span>{liveActivity.phase}</div>}
+      {expanded && <>
+        <details className="node-config-preview"><summary>完整节点配置</summary><pre>{JSON.stringify(configPreview, null, 2)}</pre></details>
+      </>}
     </div>
   );
 }

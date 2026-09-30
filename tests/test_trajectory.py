@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from harness import Session
 from message_protocol import compose_model_messages
+from pipeline_engine import RunContext
 from trajectory import (
     TrajectoryReader,
     TrajectoryRecorder,
@@ -18,6 +19,47 @@ from subagent_lifecycle import finish_subagent, link_subagent
 
 
 class TrajectoryRecorderTests(unittest.TestCase):
+    def test_nested_subflow_event_is_persisted_once_and_forwarded_once(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            session = Session(workspace=root, save_dir=root / "session")
+            public_events = []
+
+            def harness(name):
+                return SimpleNamespace(
+                    name=name, workspace=root, dir=root, session=session, agents={},
+                    config={"pipeline": {"nodes": {"apply": {"op": "上下文"}}}},
+                )
+
+            root_ctx = RunContext(
+                harness=harness("root"), graph={"nodes": {"apply": {"op": "上下文"}}},
+                on_output=lambda event, payload: public_events.append((event, payload)),
+                get_input=lambda: None, is_running=lambda: True,
+            )
+            child_ctx = RunContext(
+                harness=harness("child"), graph={"nodes": {"apply": {"op": "上下文"}}},
+                on_output=lambda event, payload: root_ctx.emit(event, {**payload, "subflow": "child"}),
+                get_input=lambda: None, is_running=lambda: True, parent=root_ctx,
+            )
+            grandchild_ctx = RunContext(
+                harness=harness("grandchild"), graph={"nodes": {"apply": {"op": "上下文"}}},
+                on_output=lambda event, payload: child_ctx.emit(event, {**payload, "subflow": "grandchild"}),
+                get_input=lambda: None, is_running=lambda: True, parent=child_ctx,
+            )
+            grandchild_ctx.current_node = "apply"
+            grandchild_ctx.emit("conversation_applied", {"mode": "tool_prune", "saved_tokens_estimated": 100})
+
+            events = TrajectoryReader(root / "session" / "trajectory.jsonl").read_all()
+            matching = [
+                item for item in events
+                if item["type"] == "runtime.event"
+                and (item.get("data") or {}).get("event") == "conversation_applied"
+            ]
+            self.assertEqual(len(matching), 1)
+            self.assertEqual(matching[0]["harness"], "grandchild")
+            self.assertEqual(len(public_events), 1)
+            self.assertNotIn("_egoagent_trajectory_recorded", public_events[0][1])
+
     def test_provider_request_has_one_system_prefix_after_compaction(self):
         messages = compose_model_messages(
             "identity and workspace instructions",
@@ -98,6 +140,18 @@ class TrajectoryRecorderTests(unittest.TestCase):
             verl = json.loads((root / "export" / "verl_rollouts.jsonl").read_text(encoding="utf-8"))
             self.assertIsNone(verl["reward"])
             self.assertEqual(verl["prompt"], exact_view)
+            otel = json.loads((root / "export" / "otel_genai_trace.json").read_text(encoding="utf-8"))
+            spans = otel["resourceSpans"][0]["scopeSpans"][0]["spans"]
+            model_span = next(span for span in spans if span["name"].startswith("chat "))
+            attributes = {item["key"]: item["value"] for item in model_span["attributes"]}
+            self.assertEqual(attributes["gen_ai.request.model"]["stringValue"], "tiny-model")
+            self.assertEqual(
+                attributes["gen_ai.response.finish_reasons"]["arrayValue"]["values"][0]["stringValue"],
+                "stop",
+            )
+            input_messages = attributes["gen_ai.input.messages"]["arrayValue"]["values"]
+            self.assertIn("kvlistValue", input_messages[0])
+            self.assertIn("opentelemetry_otlp_json", manifest["files"])
 
     def test_child_sessions_share_one_ordered_root_trace_without_mixing_agents(self):
         with tempfile.TemporaryDirectory() as temporary:

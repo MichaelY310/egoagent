@@ -7,10 +7,51 @@ export type OpType =
 
 export type EdgeCondition = string;
 
+export interface BezierKnot {
+  id: string;
+  x: number;
+  y: number;
+  /** Tangent direction in radians; the incoming handle is mirrored. */
+  angle?: number;
+  in_length?: number;
+  out_length?: number;
+}
+
 export interface PipelineEdge {
   condition: EdgeCondition;
   to: string | null;
   when?: string;
+  /** Explicit control socket. Older files infer it from `condition`. */
+  source_port?: string;
+  /** Control links normally enter the target's `flow` socket. */
+  target_port?: string;
+  route?: 'auto' | 'curve' | 'orthogonal' | 'bezier' | 'straight';
+  /** Legacy route points. They are migrated to Blender-style reroutes on load. */
+  waypoints?: Array<{ x: number; y: number }>;
+  /** Editable Bezier knots. Endpoints remain attached to their sockets. */
+  reroutes?: BezierKnot[];
+  /** Endpoint handle lengths; needed for shape-preserving knot insertion. */
+  source_handle?: number;
+  target_handle?: number;
+  /** Automatic separation for reciprocal/reverse links. */
+  channel_offset?: number;
+  /** Blender-style noodle curvature, normally between 0 and 1.2. */
+  curvature?: number;
+  bend?: number;
+  label_offset?: number;
+}
+
+export interface PipelineDataLink {
+  id?: string;
+  source: string;
+  source_port: string;
+  target: string;
+  target_port: string;
+  reroutes?: BezierKnot[];
+  source_handle?: number;
+  target_handle?: number;
+  curvature?: number;
+  label_offset?: number;
 }
 
 export interface RetryPolicy {
@@ -31,6 +72,8 @@ export interface PipelineNode {
   agent?: string;
   prompt?: string;
   edges: PipelineEdge[];
+  /** Versioned editor geometry. Runtime ignores it; replay restores the exact canvas. */
+  editor_position?: { x: number; y: number };
 
   // Explicit typed-ish data ports. Values such as $ctx.key and $node.id.port
   // are resolved by the runtime without converting objects to strings.
@@ -228,6 +271,7 @@ export interface PipelineNode {
   choices?: string[];
   approved_values?: string[];
   harness?: string;
+  harness_version?: string;
   block_harness?: string;
   identity_map?: Record<string, string>;
   agent_map?: Record<string, string>;
@@ -385,6 +429,12 @@ export interface HarnessConfig {
     auto_checkpoint?: boolean;
     secret_names?: string[];
     permissions?: PipelinePermissions;
+    /**
+     * Visual, typed data links. The editor also materializes each link as a
+     * `$node.<source>.<port>` target input so old runtimes execute it without
+     * needing a second graph engine.
+     */
+    data_links?: PipelineDataLink[];
     budget?: PipelineBudget;
     budget_exceeded_to?: string;
     limit_exceeded_to?: string;
@@ -397,7 +447,13 @@ export interface HarnessConfig {
 export interface ExecutionState {
   run_id?: string;
   workspace?: string;
+  surface?: 'chat' | 'builder' | 'unknown' | string;
+  session_name?: string;
+  session_title?: string;
+  session_id?: string;
+  mode?: string;
   harness?: string;
+  harness_version?: string;
   agents?: Record<string, string>;
   running: boolean;
   status?: 'idle' | 'running' | 'waiting_approval' | 'completed' | 'limit_exceeded' | 'cancelled' | 'error' | string;
@@ -534,10 +590,41 @@ export interface TaskSpec {
     artifacts?: string[];
   }>;
   external_format?: { type: 'harbor' | 'terminal-bench'; schema_version?: string; task_version?: string; authors?: string[] };
+  dataset?: {
+    id: string; case_id: string; source_index: number; source_sha256: string;
+    metadata?: Record<string, unknown>;
+  };
+}
+
+export interface TaskDatasetSummary {
+  version: 'ego.dataset.v1';
+  id: string;
+  title: string;
+  description?: string;
+  format: 'json' | 'jsonl' | 'csv';
+  row_count: number;
+  fields: string[];
+  source_sha256: string;
+  created_at: number;
+  tasks: string[];
+  cases?: Array<{
+    id: string; title: string; prompt: string; expected?: unknown;
+    workspace_files: Record<string, unknown>; metadata: Record<string, unknown>;
+    source_index: number; source_sha256: string;
+  }>;
 }
 
 export interface TaskBenchOptions {
-  harnesses: Array<{ name: string; description: string; slots: Record<string, SlotDef>; node_count: number }>;
+  runners: Array<{
+    name: 'ego_flow' | 'codex_cli'; display_name: string; description: string;
+    available: boolean; supports_debug: boolean; supports_identity: boolean;
+    boundary: string; executable?: string; unavailable_reason?: string;
+  }>;
+  harnesses: Array<{
+    name: string; description: string; slots: Record<string, SlotDef>; node_count: number;
+    latest_version?: string;
+    versions?: Array<{ id: string; number: number; label: string; created_at: number; parent?: string | null; digest?: string }>;
+  }>;
   identities: Array<{ name: string; description: string; role: string }>;
   environments: Array<{ name: string; description: string }>;
 }
@@ -572,12 +659,14 @@ export interface TaskRunState {
   task_id: string;
   task: TaskSpec;
   selection: {
+    runner?: 'ego_flow' | 'codex_cli';
     harness: string;
+    harness_version?: string;
     identity: string;
     environments: string[];
     slot_bindings: Record<string, string>;
   };
-  status: 'created' | 'running' | 'evaluating' | 'passed' | 'failed' | 'error' | 'stopped' | 'timeout';
+  status: 'created' | 'preparing' | 'running' | 'evaluating' | 'passed' | 'failed' | 'error' | 'stopped' | 'timeout';
   running: boolean;
   debug_mode: 'auto' | 'paused';
   paused: boolean;
@@ -601,7 +690,14 @@ export interface TaskRunState {
   created_at: number;
   started_at: number | null;
   completed_at: number | null;
-  error: string | null;
+    error: string | null;
+    recovery_available?: boolean;
+    recovery?: {
+      source_run_id?: string; source_status?: string; source_step?: string;
+      checkpoint?: string; checkpoint_phase?: string; inherited_steps?: number;
+      source_stats?: Record<string, any>; started_at?: number | null;
+    };
   stats: Record<string, any>;
   policy: { hidden_tools: string[]; network: string };
+  runner?: { name: string; display_name: string; version: string; boundary: string; raw_event_format?: string };
 }

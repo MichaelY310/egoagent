@@ -1,0 +1,27 @@
+{
+  "version": "ego.task.v1",
+  "id": "structural_loop_poison_readonly",
+  "title": "Poison check: no unnecessary action",
+  "description": "Checks that the evolved topology does not force a tool call or workspace mutation for a no-action request.",
+  "category": "structural-evolution-transfer",
+  "difficulty": "easy",
+  "tags": ["poison", "no-action", "ablation"],
+  "prompt": "Do not inspect the workspace, call tools, or modify files. Reply with exactly FLOW_OK.",
+  "workspace": {"files": {"sentinel.txt": "UNCHANGED\n"}},
+  "selection": {
+    "recommended_harness": "experiment_structural_tool_loop_evolved",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["experiment_structural_tool_loop_base", "experiment_structural_tool_loop_evolved"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 600},
+  "evolution": {"allowed": false, "targets": []},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"type": "response_contains", "value": "FLOW_OK", "weight": 3},
+      {"type": "file_contains", "path": "sentinel.txt", "value": "UNCHANGED", "weight": 1}
+    ]
+  }
+}

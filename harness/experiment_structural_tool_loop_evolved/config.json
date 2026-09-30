@@ -1,0 +1,99 @@
+{
+  "name": "experiment_structural_tool_loop_evolved",
+  "description": "Unpromoted structural-evolution candidate generated from a measured missing tool-feedback trajectory; retained only for paired validation and held-out evaluation.",
+  "tags": [
+    "experiment",
+    "structural-evolution",
+    "candidate",
+    "do-not-recommend"
+  ],
+  "catalog": {
+    "category": "experiment",
+    "visibility": "internal",
+    "display_name": "Structural Tool Loop Candidate (experiment)"
+  },
+  "slots": {
+    "agent": {
+      "description": "Primary software engineer",
+      "required": true,
+      "identity": "adaptive_deepseek_coder"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 80,
+    "timeout_seconds": 1800,
+    "workspace_preview": true,
+    "budget": {
+      "max_model_calls": 24,
+      "max_tool_calls": 80,
+      "max_tokens": 180000
+    },
+    "context": {
+      "request": "",
+      "agent_answer": ""
+    },
+    "nodes": {
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "outputs": {
+          "text": "request"
+        },
+        "edges": [
+          {
+            "condition": "input",
+            "to": "infer"
+          }
+        ]
+      },
+      "infer": {
+        "id": "infer",
+        "op": "Agent",
+        "agent": "agent",
+        "tools": "all",
+        "hidden_tools": [
+          "terminate",
+          "end_session",
+          "submit_result",
+          "finish",
+          "done"
+        ],
+        "max_tool_rounds": 16,
+        "instructions": "Complete the request in the current workspace: ${ctx.request}\nInspect exact source, make the smallest safe edit, run the requested test, then report evidence. Your first action on a coding task must inspect the workspace.",
+        "outputs": {
+          "text": "agent_answer"
+        },
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "tool_exec"
+          },
+          {
+            "condition": "has_text",
+            "to": "done"
+          }
+        ]
+      },
+      "done": {
+        "id": "done",
+        "op": "结束",
+        "value": {
+          "answer": "$ctx.agent_answer"
+        },
+        "edges": []
+      },
+      "tool_exec": {
+        "id": "tool_exec",
+        "op": "工具",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "infer"
+          }
+        ]
+      }
+    }
+  }
+}

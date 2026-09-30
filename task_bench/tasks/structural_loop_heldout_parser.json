@@ -1,0 +1,31 @@
+{
+  "version": "ego.task.v1",
+  "id": "structural_loop_heldout_parser",
+  "title": "Held-out split B: parse enabled flags",
+  "description": "A fresh-session held-out repair requiring file inspection, editing and tests in another domain.",
+  "category": "structural-evolution-transfer",
+  "difficulty": "easy",
+  "tags": ["held-out", "tool-loop", "ablation"],
+  "prompt": "Fix the boolean parser while preserving the public signature and tests. Run `python -m unittest discover -v`.",
+  "workspace": {
+    "files": {
+      "flags.py": "def enabled(value: str) -> bool:\n    \"\"\"Return whether a textual flag is enabled.\"\"\"\n    return value == 'false'\n",
+      "test_flags.py": "import unittest\nfrom flags import enabled\n\nclass FlagTests(unittest.TestCase):\n    def test_true_values(self):\n        for value in ('true', 'TRUE', ' yes ', '1'):\n            self.assertTrue(enabled(value))\n\n    def test_false_values(self):\n        for value in ('false', 'no', '0', ''):\n            self.assertFalse(enabled(value))\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "experiment_structural_tool_loop_evolved",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["experiment_structural_tool_loop_base", "experiment_structural_tool_loop_evolved"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 900},
+  "evolution": {"allowed": false, "targets": []},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"type": "command", "command": ["python", "-m", "unittest", "discover", "-v"], "weight": 5}
+    ]
+  }
+}

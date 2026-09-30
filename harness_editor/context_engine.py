@@ -405,7 +405,7 @@ def _feedback(root: Path) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {"items": {}}
 
 
-def retrieve(workspace: Any, query: str, limit: int = 16, mode: str = "auto") -> Dict[str, Any]:
+def retrieve(workspace: Any, query: str, limit: int = 16, mode: str = "auto", *, budget_seconds=None) -> Dict[str, Any]:
     root = _workspace(workspace)
     state = _load_json(_index_path(root), {})
     if not state.get("files"):
@@ -414,12 +414,17 @@ def retrieve(workspace: Any, query: str, limit: int = 16, mode: str = "auto") ->
     query_terms = _terms(query)
     feedback = _feedback(root).get("items", {})
     results: List[Dict[str, Any]] = []
+    deadline = time.monotonic() + float(budget_seconds) if budget_seconds is not None else float("inf")
     now = time.time()
     semantic_enabled = mode in {"auto", "embedding", "hybrid", "semantic-local"}
     query_embedding = _local_embedding(query) if semantic_enabled else {}
     for relative, file_info in state.get("files", {}).items():
+        if time.monotonic() >= deadline:
+            break
         path_terms = _terms(relative)
         for chunk in file_info.get("chunks", []):
+            if time.monotonic() >= deadline:
+                break
             content_terms = _terms(chunk.get("content", ""))
             if query_terms:
                 term_counts = {term: content_terms.count(term) for term in set(query_terms)}
@@ -546,9 +551,14 @@ def build_catalog(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             item = _payload_item(kind, value, index=index)
             if item:
                 items.append(item)
-    if payload.get("include_repo_map", True):
+    # Sending a chat must not synchronously build an entire cold index. Tools
+    # can still read/search the workspace; explicit indexing retains its API.
+    index_ready = not payload.get("cached_only") or index_status(root).get("available")
+    if index_ready and payload.get("include_repo_map", True):
         items.append(repo_map(root))
-    retrieval = retrieve(root, query, limit=int(payload.get("retrieval_limit") or 18), mode=str(payload.get("retrieval_mode") or "auto"))
+    retrieval = retrieve(root, query, limit=int(payload.get("retrieval_limit") or 18),
+                         mode=str(payload.get("retrieval_mode") or "auto"),
+                         budget_seconds=payload.get("retrieval_budget_seconds")) if index_ready else {"items": []}
     items.extend(ContextItem(**{
         key: value for key, value in raw.items() if key in ContextItem.__dataclass_fields__
     }) for raw in retrieval["items"])

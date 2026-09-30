@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 from agent_bus import AgentBus
 from pipeline_engine import PipelineError, PipelineRunner
-from test_pipeline_runtime import FakeHarness
+from tests.test_pipeline_runtime import FakeHarness
 
 
 class AgentBusTests(unittest.TestCase):

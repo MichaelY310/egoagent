@@ -1,0 +1,24 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_quasar_release_transfer",
+  "title": "Fresh-Session Quasar release transfer",
+  "description": "Three new records test cross-Session discovery and reuse after the recurring Quasar task.",
+  "category": "code-product-acceptance",
+  "difficulty": "medium",
+  "tags": ["transfer", "skill-search", "cross-session", "json", "synthetic"],
+  "prompt": "Normalize these new fictional Quasar records according to QUASAR_CONTRACT.md. This is a fresh Session; use a verified reusable capability if one is discoverable and actually fits the contract.",
+  "workspace": {"files": {
+    "AGENTS.md": "Work offline. Do not edit QUASAR_CONTRACT.md or raw inputs. Write only requested normalized outputs.\n",
+    "QUASAR_CONTRACT.md": "# Quasar release envelope v3\n\nOutput exactly `schema`, `artifact`, `lane`, `regions`, `wave`, `frozen`. `schema` is `quasar.release/v3`. Artifact is trimmed/lowercase with runs of non-alphanumeric characters replaced by one hyphen and edge hyphens removed. Lane maps production/prod to stable, beta/canary to preview, otherwise dev. Regions split `targets` on `|`, trim, uppercase, deduplicate and sort. Wave is integer `batch` clamped 1..9. Frozen is true only for locked/yes/true/1 after case-insensitive trimming. Drop extras.\n"
+  }},
+  "selection": {"recommended_harness": "product_adaptive_code_agent", "recommended_identity": "adaptive_deepseek_coder", "compatible_harnesses": ["product_adaptive_code_agent", "product_core_code_agent"], "compatible_identities": ["adaptive_deepseek_coder"]},
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 3600},
+  "evolution": {"allowed": false},
+  "evaluation": {"pass_score": 1.0, "checks": []},
+  "steps": [
+    {"id": "transfer_08", "prompt": "Normalize raw/release_08.json to normalized/release_08.json under the Quasar release envelope v3 contract.", "resume_trajectory": true, "workspace": {"files": {"raw/release_08.json": "{\"package\":\" Auth / Broker#2 \",\"lane\":\"beta\",\"targets\":\"us-east| EU-WEST |us-east\",\"batch\":\"12\",\"freeze\":\"off\",\"x\":1}"}}, "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/release_08.json", "pointer": "", "expected": {"schema": "quasar.release/v3", "artifact": "auth-broker-2", "lane": "preview", "regions": ["EU-WEST", "US-EAST"], "wave": 9, "frozen": false}, "weight": 1}]}},
+    {"id": "transfer_09", "prompt": "Normalize raw/release_09.json to normalized/release_09.json under the Quasar release envelope v3 contract.", "resume_trajectory": true, "workspace": {"files": {"raw/release_09.json": "{\"package\":\" Image@Proxy \",\"lane\":\"PRODUCTION\",\"targets\":\"ap-north| AP-NORTH |sa-south\",\"batch\":\"3\",\"freeze\":\"true\",\"x\":2}"}}, "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/release_09.json", "pointer": "", "expected": {"schema": "quasar.release/v3", "artifact": "image-proxy", "lane": "stable", "regions": ["AP-NORTH", "SA-SOUTH"], "wave": 3, "frozen": true}, "weight": 1}]}},
+    {"id": "transfer_10", "prompt": "Normalize raw/release_10.json to normalized/release_10.json under the Quasar release envelope v3 contract and verify its exact shape.", "resume_trajectory": true, "workspace": {"files": {"raw/release_10.json": "{\"package\":\" CLI...Tools \",\"lane\":\"nightly\",\"targets\":\" eu-east |ca-west|EU-EAST\",\"batch\":\"-1\",\"freeze\":\"LOCKED\",\"x\":3}"}}, "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/release_10.json", "pointer": "", "expected": {"schema": "quasar.release/v3", "artifact": "cli-tools", "lane": "dev", "regions": ["CA-WEST", "EU-EAST"], "wave": 1, "frozen": true}, "weight": 1}]}}
+  ]
+}

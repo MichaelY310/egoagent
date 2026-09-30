@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from harness import EndSession, Session, get_current_harness
-from agent import Agent, build_tool_image_message
+from harness import EndSession, Session, get_current_harness, reset_current_harness, set_current_harness
+from agent import Agent, _compact_tool_preamble, build_tool_image_message
 from pipeline_engine import PipelineBudgetExceeded, PipelineRunner
 from context_policy import context_blocks
 from process_backends import ContainerInvocation
@@ -98,6 +98,72 @@ class FakeHarness:
 
 
 class PipelineRuntimeTests(unittest.TestCase):
+    def test_reasoning_streams_separately_even_with_compacted_tool_preamble(self):
+        visible, thoughts = [], []
+
+        class Provider(FakeLLM):
+            model = "fixture"
+            config = {}
+            last_response_metadata = {}
+
+            def chat_stream(self, messages, **kwargs):
+                yield {"reasoning_content": "check configuration"}
+                self.observed_before_answer = list(thoughts)
+                yield {"content": "two configurations"}
+
+        provider = Provider()
+        agent = Agent(ROOT / "identity" / "dante", workspace=self.root, model_provider=provider)
+        with patch.object(agent, "_superego_output_policy", return_value={}):
+            response, _ = agent.step([], tools_desc=[], on_token=visible.append,
+                                     on_reasoning=thoughts.append, compact_tool_preamble_chars=320)
+        self.assertEqual(provider.observed_before_answer, ["check configuration"])
+        self.assertEqual(response, "two configurations")
+        self.assertNotIn("check configuration", "".join(visible))
+
+    def test_reasoning_redaction_waits_for_split_secret_before_exposing(self):
+        thoughts = []
+
+        class Provider(FakeLLM):
+            model = "fixture"
+            config = {}
+            last_response_metadata = {}
+
+            def chat_stream(self, messages, **kwargs):
+                yield {"reasoning_content": "SECRET_"}
+                self.before_final = list(thoughts)
+                yield {"reasoning_content": "VALUE"}
+                yield {"content": "answer"}
+
+        provider = Provider()
+        agent = Agent(ROOT / "identity" / "dante", workspace=self.root, model_provider=provider)
+        policy = {"redactions": [{"pattern": "SECRET_VALUE", "replacement": "[REDACTED]"}]}
+        with patch.object(agent, "_superego_output_policy", return_value=policy):
+            agent.step([], tools_desc=[], on_reasoning=thoughts.append)
+        self.assertEqual(provider.before_final, [])
+        self.assertEqual(thoughts, ["[REDACTED]"])
+
+    def test_tool_running_event_precedes_executor_and_redacts_sensitive_args(self):
+        events = []
+
+        class RecordingAgent(FakeAgent):
+            def execute_tool_call(self, call, **kwargs):
+                self.saw_start = any(event == "tool_start" for event, _ in events)
+                return "read result"
+
+        agent = RecordingAgent()
+        graph = {"start": "tools", "nodes": {
+            "tools": {"op": "工具", "agent": "agent", "sensitive_fields": ["secret"],
+                      "inputs": {"tool_calls": "$ctx.calls"}, "edges": [{"condition": "default", "to": "done"}]},
+            "done": {"op": "结束", "edges": []}}}
+        self.run_graph(graph, agents={"agent": agent}, initial_data={"calls": [
+            {"id": "1", "function": {"name": "read_file", "arguments": '{"secret":"hidden"}'}}
+        ]}, events=events)
+        self.assertTrue(agent.saw_start)
+        start = next(data for event, data in events if event == "tool_start")
+        self.assertEqual(start["arguments"]["secret"], "[REDACTED]")
+        end = next(data for event, data in events if event == "tool_end")
+        self.assertEqual(end["tool_call_id"], "1")
+
     def setUp(self):
         (ROOT / "tmp").mkdir(exist_ok=True)
         self.temp = tempfile.TemporaryDirectory(dir=ROOT / "tmp")
@@ -119,6 +185,60 @@ class PipelineRuntimeTests(unittest.TestCase):
             initial_data=initial_data,
         )
         return harness, runner.run()
+
+    def test_tool_preamble_compaction_keeps_a_short_explicit_marker(self):
+        original = "I will now restate every implementation detail. " * 40
+        compacted = _compact_tool_preamble(original, 160)
+        self.assertLessEqual(len(compacted), 160)
+        self.assertIn("完整原文保留在轨迹", compacted)
+        self.assertEqual(_compact_tool_preamble("short progress", 160), "short progress")
+
+    def test_agent_keeps_exact_tool_preamble_in_audit_but_compacts_working_context(self):
+        long_preamble = "Detailed private implementation draft. " * 80
+        tool_call = {
+            "id": "call_read",
+            "type": "function",
+            "function": {"name": "read_file", "arguments": '{"file_path":"demo.py"}'},
+        }
+
+        class StreamingToolLLM:
+            model = "test-model"
+            config = {"provider": "test"}
+
+            def __init__(self):
+                self.last_response_metadata = {}
+
+            def chat(self, messages, **kwargs):
+                return {"choices": [{"message": {"content": "unused"}}]}
+
+            def chat_stream(self, messages, **kwargs):
+                yield {"content": long_preamble}
+                self.last_response_metadata = {
+                    "sequence": 1,
+                    "finish_reason": "tool_calls",
+                    "output_truncated": False,
+                }
+                yield {"content": "", "tool_calls": [tool_call]}
+
+        provider = StreamingToolLLM()
+        agent = Agent(ROOT / "identity" / "dante", workspace=self.root, model_provider=provider)
+        harness = FakeHarness(self.root, {"start": "done", "nodes": {"done": {"op": "结束", "edges": []}}}, agents={"agent": agent})
+        token = set_current_harness(harness)
+        try:
+            response, calls = agent.step(
+                [],
+                tools_desc=[{"type": "function", "function": {"name": "read_file", "parameters": {"type": "object"}}}],
+                compact_tool_preamble_chars=160,
+            )
+        finally:
+            reset_current_harness(token)
+
+        self.assertEqual(calls, [tool_call])
+        self.assertLessEqual(len(response), 160)
+        self.assertIn("完整原文保留在轨迹", response)
+        self.assertIn(response, harness.session.messages[-1]["content"])
+        self.assertIn(long_preamble.strip(), harness.session.full_messages[-1]["content"])
+        self.assertNotIn(long_preamble.strip(), harness.session.messages[-1]["content"])
 
     def test_workspace_preview_does_not_replace_interactive_user_input(self):
         graph = {
@@ -1889,6 +2009,30 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.assertTrue(result.data["restore"]["backup_path"])
         self.assertEqual(result.data["restore"]["count"], 1)
 
+    def test_workspace_measure_reports_bounded_scope_without_reading_contents(self):
+        (self.root / "package").mkdir()
+        (self.root / "package" / "a.py").write_text("a" * 20, encoding="utf-8")
+        (self.root / "package" / "b.py").write_text("b" * 30, encoding="utf-8")
+        (self.root / "package" / "__pycache__").mkdir()
+        (self.root / "package" / "__pycache__" / "ignored.pyc").write_bytes(b"x" * 100)
+        graph = {
+            "start": "measure",
+            "nodes": {
+                "measure": {
+                    "op": "工作区", "action": "measure", "paths": ["package"],
+                    "output_var": "scope", "edges": [{"condition": "default", "to": "done"}],
+                },
+                "done": {"op": "结束", "value": "$ctx.scope", "edges": []},
+            },
+        }
+
+        _, result = self.run_graph(graph)
+
+        self.assertEqual(result.result["files"], 2)
+        self.assertEqual(result.result["bytes"], 50)
+        self.assertEqual(result.result["paths"], ["package"])
+        self.assertFalse(result.result["truncated"])
+
     def test_workspace_reads_bounded_text_json_and_typed_missing_defaults(self):
         (self.root / "experiment.py").write_text("VALUE = 3\n", encoding="utf-8")
         (self.root / "prompt.json").write_text('{"task_description":"demo"}', encoding="utf-8")
@@ -2633,6 +2777,18 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.assertEqual(result.result[0]["type"], "skill")
         self.assertIn("plant watering", result.result[0]["text"])
         self.assertTrue((self.root / ".egoagent/memory/agent.json").is_file())
+
+    def test_memory_search_can_require_lexical_overlap(self):
+        graph = {
+            "start": "add",
+            "nodes": {
+                "add": {"op": "记忆", "action": "add", "namespace": "filtered", "value": "nebula rollback Q7-EMBER-491", "importance": 10, "edges": [{"condition": "memory_added", "to": "search"}]},
+                "search": {"op": "记忆", "action": "search", "namespace": "filtered", "query": "unrelated gardening question", "minimum_overlap": 1, "edges": [{"condition": "memory_empty", "to": "done"}]},
+                "done": {"op": "结束", "inputs": {"value": "$node.search.items"}, "edges": []},
+            },
+        }
+        _, result = self.run_graph(graph)
+        self.assertEqual(result.result, [])
 
     def test_memory_unique_recent_window_and_skill_upsert(self):
         graph = {

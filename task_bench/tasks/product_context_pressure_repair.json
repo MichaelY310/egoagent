@@ -1,0 +1,33 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_context_pressure_repair",
+  "title": "大型工具输出后的修复",
+  "description": "测试失败会生成很长的 diff；Agent 必须保留决定性首尾证据、压缩工作上下文并完成真实修复。",
+  "category": "code-product-acceptance",
+  "difficulty": "medium",
+  "tags": ["python", "tool-pruning", "compaction", "audit"],
+  "prompt": "修复 normalizer.py，使 normalize_build_output 删除 TRACE 行、统一 Windows 换行并保留其余行的顺序与内容。先运行测试复现，再做最小修改并再次运行测试。不要修改测试。",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "Keep the patch minimal. Do not edit tests. Run python -m unittest discover -v.\n",
+      "normalizer.py": "def normalize_build_output(text: str) -> str:\n    return text\n",
+      "test_normalizer.py": "import unittest\nfrom normalizer import normalize_build_output\n\nclass T(unittest.TestCase):\n    maxDiff = None\n    def test_large_build_log(self):\n        trace = ''.join(f'TRACE noisy diagnostic {i:05d} ' + ('x' * 80) + '\\r\\n' for i in range(900))\n        raw = 'start\\r\\n' + trace + 'ERROR decisive failure\\r\\nfinished\\r\\n'\n        self.assertEqual(normalize_build_output(raw), 'start\\nERROR decisive failure\\nfinished\\n')\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "product_adaptive_pressure_lab",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["product_core_code_agent", "product_adaptive_code_agent", "product_adaptive_pressure_no_context", "product_adaptive_pressure_lab"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 1800},
+  "evolution": {"allowed": false},
+  "evaluation": {
+    "pass_score": 1.0,
+    "checks": [
+      {"type": "command", "command": ["python", "-m", "unittest", "discover", "-v"], "weight": 5},
+      {"type": "file_regex", "path": "normalizer.py", "pattern": "TRACE|trace", "weight": 1}
+    ]
+  }
+}

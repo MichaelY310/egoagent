@@ -1,0 +1,77 @@
+{
+  "version": "ego.task.v1",
+  "id": "product_recurring_customer_migration",
+  "title": "Recurring legacy customer migrations",
+  "description": "Seven resumed production-style data migrations expose a stable typed transformation with credible future reuse and deterministic validation.",
+  "category": "code-product-acceptance",
+  "difficulty": "medium",
+  "tags": ["multi-step", "recurring-work", "skill-search", "evolution", "json"],
+  "prompt": "Normalize each requested legacy customer record according to SCHEMA.md. This migration arrives repeatedly in this project, so use ordinary edits at first and let observed session evidence determine whether a reusable capability becomes worthwhile.",
+  "workspace": {
+    "files": {
+      "AGENTS.md": "# Migration workspace rules\n\n- Work offline and read only the requested input plus SCHEMA.md.\n- Never change legacy inputs or SCHEMA.md.\n- Write only the requested normalized JSON artifact.\n- Do not add ad-hoc project scripts before repeated evidence justifies automation; reusable automation belongs in the governed capability system.\n- More customer batches arrive every week.\n",
+      "SCHEMA.md": "# Customer schema v2\n\nFor each legacy object, write a JSON object with this exact shape:\n\n- `schema_version`: integer `2`\n- `customer.id`: the legacy integer `id`\n- `customer.display_name`: trimmed `first_name` and `last_name` joined by one space\n- `customer.email`: trimmed lowercase email\n- `status`: `active` only when trimmed case-insensitive legacy `active` is `yes`; otherwise `inactive`\n- `tags`: split the legacy comma-delimited string, trim and lowercase each non-empty tag, remove duplicates, then sort alphabetically\n\nDo not preserve any other fields.\n"
+    }
+  },
+  "selection": {
+    "recommended_harness": "product_adaptive_code_agent",
+    "recommended_identity": "adaptive_deepseek_coder",
+    "compatible_harnesses": ["product_adaptive_code_agent", "product_adaptive_no_evolution"],
+    "compatible_identities": ["adaptive_deepseek_coder"]
+  },
+  "environment": {"backend": "local", "network": "disabled"},
+  "execution": {"timeout_seconds": 5400},
+  "evolution": {"allowed": true, "targets": ["skill", "knowledge", "agent", "harness"]},
+  "evaluation": {"pass_score": 1.0, "checks": []},
+  "steps": [
+    {
+      "id": "batch_01",
+      "prompt": "Normalize legacy/customer_01.json into normalized/customer_01.json and verify the exact output against SCHEMA.md.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/customer_01.json": "{\"id\":101,\"first_name\":\" Ada \",\"last_name\":\" Lovelace\",\"email\":\" ADA@EXAMPLE.COM \",\"active\":\"YES\",\"tags\":\"Math, pioneer, math\",\"ignored\":9}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/customer_01.json", "pointer": "", "expected": {"schema_version":2,"customer":{"id":101,"display_name":"Ada Lovelace","email":"ada@example.com"},"status":"active","tags":["math","pioneer"]}, "weight": 1}]}
+    },
+    {
+      "id": "batch_02",
+      "prompt": "Process the next weekly record: legacy/customer_02.json to normalized/customer_02.json, using the same contract.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/customer_02.json": "{\"id\":102,\"first_name\":\" Grace\",\"last_name\":\"Hopper \",\"email\":\"Grace@Navy.MIL\",\"active\":\" no \",\"tags\":\"Compiler, Navy,compiler\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/customer_02.json", "pointer": "", "expected": {"schema_version":2,"customer":{"id":102,"display_name":"Grace Hopper","email":"grace@navy.mil"},"status":"inactive","tags":["compiler","navy"]}, "weight": 1}]}
+    },
+    {
+      "id": "batch_03",
+      "prompt": "Normalize legacy/customer_03.json into the matching normalized path and validate it.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/customer_03.json": "{\"id\":103,\"first_name\":\"  Linus\",\"last_name\":\"Torvalds\",\"email\":\" LINUS@KERNEL.ORG\",\"active\":\"Yes\",\"tags\":\"Kernel, git, ,Linux,GIT\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/customer_03.json", "pointer": "", "expected": {"schema_version":2,"customer":{"id":103,"display_name":"Linus Torvalds","email":"linus@kernel.org"},"status":"active","tags":["git","kernel","linux"]}, "weight": 1}]}
+    },
+    {
+      "id": "batch_04",
+      "prompt": "A fourth weekly record arrived. Normalize legacy/customer_04.json to normalized/customer_04.json under the established schema.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/customer_04.json": "{\"id\":104,\"first_name\":\" Margaret \",\"last_name\":\" Hamilton \",\"email\":\"MARGARET@NASA.GOV \",\"active\":\"TRUE\",\"tags\":\"Apollo, Software,apollo\",\"legacy_rank\":1}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/customer_04.json", "pointer": "", "expected": {"schema_version":2,"customer":{"id":104,"display_name":"Margaret Hamilton","email":"margaret@nasa.gov"},"status":"inactive","tags":["apollo","software"]}, "weight": 1}]}
+    },
+    {
+      "id": "batch_05",
+      "prompt": "Normalize legacy/customer_05.json to normalized/customer_05.json exactly as before.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/customer_05.json": "{\"id\":105,\"first_name\":\" Barbara\",\"last_name\":\" Liskov\",\"email\":\"BARBARA@CS.EXAMPLE \",\"active\":\"YES\",\"tags\":\"Types, Abstraction,types,Design\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/customer_05.json", "pointer": "", "expected": {"schema_version":2,"customer":{"id":105,"display_name":"Barbara Liskov","email":"barbara@cs.example"},"status":"active","tags":["abstraction","design","types"]}, "weight": 1}]}
+    },
+    {
+      "id": "batch_06",
+      "prompt": "Process weekly record legacy/customer_06.json into normalized/customer_06.json. Preserve the same observable contract.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/customer_06.json": "{\"id\":106,\"first_name\":\" Donald \",\"last_name\":\" Knuth \",\"email\":\" KNUTH@BOOKS.EXAMPLE\",\"active\":\" yes \",\"tags\":\"Algorithms, TeX, algorithms,writing\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/customer_06.json", "pointer": "", "expected": {"schema_version":2,"customer":{"id":106,"display_name":"Donald Knuth","email":"knuth@books.example"},"status":"active","tags":["algorithms","tex","writing"]}, "weight": 1}]}
+    },
+    {
+      "id": "batch_07",
+      "prompt": "Normalize legacy/customer_07.json to normalized/customer_07.json. Reuse a verified catalog capability if this session has produced one; otherwise use the cheapest correct method.",
+      "resume_trajectory": true,
+      "workspace": {"files": {"legacy/customer_07.json": "{\"id\":107,\"first_name\":\" Radia \",\"last_name\":\" Perlman \",\"email\":\"RADIA@NETWORK.EXAMPLE\",\"active\":\"No\",\"tags\":\"Networks, STP,networks, Protocols\"}"}},
+      "evaluation": {"pass_score": 1.0, "checks": [{"type": "json_equals", "path": "normalized/customer_07.json", "pointer": "", "expected": {"schema_version":2,"customer":{"id":107,"display_name":"Radia Perlman","email":"radia@network.example"},"status":"inactive","tags":["networks","protocols","stp"]}, "weight": 1}]}
+    }
+  ]
+}
