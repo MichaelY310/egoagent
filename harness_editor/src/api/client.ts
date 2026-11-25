@@ -794,6 +794,7 @@ export async function updatePortfolioSession(session: string, changes: { title?:
 }
 
 export async function createPortfolioSession(input: {
+  flow_selection?: { harness: string; version: string };
   name?: string;
   title?: string;
   workspace?: string;

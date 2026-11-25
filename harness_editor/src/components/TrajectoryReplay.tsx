@@ -100,28 +100,34 @@ export default function TrajectoryReplay({ session }: Props) {
   const [agent, setAgent] = useState("all");
   const [group, setGroup] = useState("all");
   const listRef = useRef<HTMLDivElement>(null);
+  const requestGeneration = useRef(0);
   const annotationState = useSessionAnnotations(session);
 
   const load = useCallback(async () => {
+    const generation = ++requestGeneration.current;
+    setSummary(null); setEvents([]); setHasMore(false); setNextAfter(0);
     setLoading(true); setError(""); setPlaying(false); setCursor(0);
     try {
       const nextSummary = await getTrajectorySummary(session);
       const result = await getTrajectoryEvents(session, { after: 0, limit: 2000 });
+      if (generation !== requestGeneration.current) return;
       setSummary(nextSummary); setEvents(result.events); setNextAfter(result.next_after); setHasMore(result.has_more);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { setLoading(false); }
+    } catch (reason) { if (generation === requestGeneration.current) setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { if (generation === requestGeneration.current) setLoading(false); }
   }, [session]);
 
   const loadMore = async () => {
+    const generation = requestGeneration.current;
     if (!hasMore) return;
     try {
       const result = await getTrajectoryEvents(session, { after: nextAfter, limit: 2000 });
+      if (generation !== requestGeneration.current) return;
       setEvents((currentEvents) => [...currentEvents, ...result.events]);
       setNextAfter(result.next_after); setHasMore(result.has_more);
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   };
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => { requestGeneration.current++; }; }, [load]);
 
   const filtered = useMemo(() => events.filter((event) => (agent === "all" || event.agent === agent) && (group === "all" || eventGroup(event.type) === group)), [events, agent, group]);
   useEffect(() => { setCursor(0); setPlaying(false); }, [agent, group]);

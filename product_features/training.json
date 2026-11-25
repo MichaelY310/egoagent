@@ -1,0 +1,1 @@
+{"id":"training","enabled":false,"depends":[],"routes":[],"api_prefixes":["/api/training","/api/trajectory/export"],"flows":[],"flow_patterns":[],"acceptance":"Exclude rejected turns and verify per-agent context projections with actual training-framework smoke runs."}

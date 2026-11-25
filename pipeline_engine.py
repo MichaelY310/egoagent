@@ -1787,7 +1787,7 @@ class PipelineRunner:
                 last_error = error
                 del self.ctx.harness.session.messages[message_len:]
                 del self.ctx.harness.session.full_messages[full_len:]
-                if attempt < max_attempts:
+                if attempt < max_attempts and not isinstance(error, NodeTimeout):
                     self.ctx.stats.retries += 1
                     self.ctx.emit(
                         "node_retry",
@@ -6544,6 +6544,7 @@ class PipelineRunner:
                 branch_harness,
                 on_output=emit_branch,
                 get_input=lambda: None,
+                get_approval=self.ctx.get_approval,
                 is_running=self.ctx.is_running,
                 initial_data=branch_data,
                 start=spec["start"],
@@ -6572,7 +6573,11 @@ class PipelineRunner:
 
         collected: list[dict] = []
         with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=f"dag-{self.ctx.run_id[:6]}") as executor:
-            futures = {executor.submit(run_branch, index, spec): spec for index, spec in enumerate(branches)}
+            # ContextVars do not automatically cross ThreadPoolExecutor boundaries.
+            # A separate copy per branch preserves parent policy/secrets/deadline
+            # and lineage without entering one Context concurrently.
+            import contextvars
+            futures = {executor.submit(contextvars.copy_context().run, run_branch, index, spec): spec for index, spec in enumerate(branches)}
             for future in as_completed(futures):
                 if self.ctx.cancelled():
                     for pending in futures:
@@ -7838,6 +7843,13 @@ def _call_with_timeout(call: Callable[[], NodeOutcome], timeout: float) -> NodeO
         remaining = deadline.remaining()
         if remaining <= 0:
             deadline.cancelled.set()
+            # Python threads cannot be killed safely. Do not declare completion
+            # or route/retry while the timed-out worker can still mutate state.
+            from harness import get_current_run_context
+            context = get_current_run_context()
+            if context is not None:
+                context.emit("status", {"message": "Node timeout: waiting for in-process work to stop. Use a Process node for hard termination."})
+            worker.join()
             raise NodeTimeout(f"node exceeded active execution timeout ({timeout}s; approval wait excluded)")
         try:
             success, value = results.get(timeout=min(0.05, remaining))

@@ -311,7 +311,8 @@ class DurableRunQueueTests(unittest.TestCase):
         self.assertEqual(compared["delta"]["cost_actual"], 1)
         self.assertEqual(compared["right"]["mutations"][0]["tool"], "modify_harness")
 
-    def test_http_api_enqueues_reads_and_cancels_a_durable_run(self):
+    @patch('product_features.disabled_api', return_value=None)
+    def test_http_api_enqueues_reads_and_cancels_a_durable_run(self, _development_branch_gate):
         from harness_editor import server as server_module
 
         previous_queue = server_module._durable_run_queue
@@ -357,7 +358,8 @@ class DurableRunQueueTests(unittest.TestCase):
             thread.join(timeout=2)
             server_module._durable_run_queue = previous_queue
 
-    def test_http_api_lists_inspects_and_recovers_interrupted_runs(self):
+    @patch('product_features.disabled_api', return_value=None)
+    def test_http_api_lists_inspects_and_recovers_interrupted_runs(self, _development_branch_gate):
         from harness_editor import server as server_module
 
         checkpoint = self.root / "http-inflight.json"

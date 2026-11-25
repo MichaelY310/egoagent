@@ -5,6 +5,41 @@ historical notes; validation applies only to the explicitly recorded scope.
 For installation, see [README](README.md). For source ownership, see
 [Repository Guide](docs/REPOSITORY_GUIDE.md).
 
+Current product scope, maturity, branches and acceptance criteria are maintained
+in [PROJECT_STATUS.md](PROJECT_STATUS.md). Historical entries are not rewritten
+to imply that an old experiment is part of the current product.
+
+## 2026-11-25 · main 产品收敛、安全回归与开发分支整理
+
+### 核对与产品边界
+
+- 阅读并交叉核对 11 月 23 日报告、机器结果、原始复现和源码：其 AMBER/开发者预览结论正确，888 项通过不是所有真实环境验收。
+- 先保存整理前集成快照 `codex/archive-integrated-20261125`（`9b2f6d8`），不丢弃其他 Agent 的工作。
+- main 定位为本地代码助手：IDE + Flow/Identity/工具与 Skills + Session + 改动审阅 + 运行可视化与回放。
+- 共享 `product_features/*.json` 门禁同时作用于 UI 导航、旧路由恢复、API、Flow/SubFlow 依赖和能力推荐。Evaluate、Evolution、Research、Training、Deployment、Background、CoC、HeartFlow、Remote 分别归入开发分支；不是只把 tab 隐藏。
+- 默认助手改为无实验依赖的 `code_agent_fast`；已开放 Cookbook 19 关。Session 创建只选 Flow/版本，Identity 与策略读取该不可变版本，不再另设互相覆盖的配置。
+- 清理首页无效统计/操作、Identity 工厂入口和实验角色推荐；防止旧 Session/轨迹异步请求覆盖新选择。保留历史 Session，不自动迁移或删除用户数据。
+
+### 修复
+
+- 并行分支继承父权限、SecretView、审批、运行上下文；Knowledge 环境变量模板必须获得明确授权，输出在记录轨迹前脱敏。
+- Anthropic 不覆盖显式密钥；全局凭据限定官方服务来源。包签名的 required 模式必须真正验证，不能仅存在签名。
+- 更新/回滚预检全部路径，拒绝盘符、UNC、越界、ADS 和链接，避免部分写入后才发现非法路径；诊断默认不附带含 prompt 的原始日志。
+- 普通线程超时等待收尾后报告，不再返回后继续后台改文件，也不自动重试超时节点；这不等于安全强杀。Data 节点纳入副作用检查点。
+- 批量批准改动不再把冲突冒充全部成功；修复本轮新 Session 改动引入的 HTTP 启动导入遮蔽回归。
+- 升级兼容的前端依赖；本轮 `npm audit` 从 4 项告警降到 0。
+- 窄屏浏览器实测修复普通 Flow 的控制栏覆盖试跑按钮：配置栏参与正常布局，不再按固定 top 偏移叠放；离线试跑、9 个事件、保存录制与节点输出回放实际操作通过。
+
+### 验证与限制
+
+- 无凭据、loopback-only 隔离源码回归：**915 passed、3 skipped、258 subtests passed**；Node **133 passed**；干净 npm 安装和 TypeScript/Vite 构建通过。
+- 不含前端/API 的核心导出执行通过：**313 passed、1 skipped、37 subtests passed**；模块加载检查禁止回引 UI/API。
+- 实际打开本机完整 IDE：文件树、编辑器、Chat 连通、Flow/版本列表和内嵌 Workbench 正常；隔离 Workbench 核对首页、Build、Identity、工具搜索和 Session 配置界面。
+- 浏览器实操创建 Session、Fork、改显示名、勾选两个会话并进行 Rule-based Merge 均成功，来源会话保留，合并结果显示双亲血缘。此项使用空的合成会话，验证管理流程；非空消息合并内容由自动化回归覆盖，不冒充真实模型多轮验收。
+- 详细范围、首次失败与未测项见 [本轮验证记录](docs/RELEASE_VERIFICATION_20261125.json)。未进行付费模型、SSH/WSL、真实 Docker、全部原生编辑手势、SFT/RL 的重新认证，不宣称所有功能 100% 正常。
+- Git 取消跟踪 1,738 个 vendored Meilisearch 文件，本机参考副本保留；密钥、Session、日志、依赖和大体积实验产物仍被忽略。小型已审查历史实验报告保留，避免破坏已有证据引用。
+- 之后每次开发/合并同时维护本日志与状态总览；功能分支需满足各自任务单再解除 main 门禁。
+
 ## 2026-11-23 · 功能成熟度独立审查（非发布认证）
 
 - 按当前工作树完成七大板块的功能盘点、关键源码/测试交叉检查与成熟度分级；
@@ -95,8 +130,9 @@ For installation, see [README](README.md). For source ownership, see
 
 ### 发布验证
 
-本节在发布前以实际回归结果补全。自动化测试、真实浏览器验收、模型实跑
-和外部环境验收分别记录，不将一种检查等同于另一种。
+这批改动随后纳入 2026-11-25 的 main 收敛验收，结果见本文件最新记录与
+[机器可读验证](docs/RELEASE_VERIFICATION_20261125.json)。自动化测试、真实浏览器验收、
+模型实跑和外部环境验收分别记录，不将一种检查等同于另一种。
 
 ### 仍需继续的工作
 

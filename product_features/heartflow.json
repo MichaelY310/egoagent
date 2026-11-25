@@ -1,0 +1,1 @@
+{"id":"heartflow","enabled":false,"depends":[],"routes":["flow"],"api_prefixes":["/api/heart-flow","/api/heartflow","/api/flow-relay"],"flows":[],"flow_patterns":[],"acceptance":"Independent removable demo, coherent session handoff and user validation of cognitive-load benefit."}

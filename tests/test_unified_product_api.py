@@ -12,6 +12,7 @@ def _write(path: Path, value: dict) -> None:
 
 
 def test_dataset_and_governance_routes_use_the_same_workspace_services(tmp_path, monkeypatch):
+    monkeypatch.setattr('product_features.disabled_api', lambda path: None)
     manager = TaskBenchManager(
         tmp_path,
         task_dir=tmp_path / "task_bench" / "tasks",

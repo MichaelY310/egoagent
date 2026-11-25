@@ -19,6 +19,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import Sidebar from './components/Sidebar';
+import { routeEnabled, featureEnabled } from './productFeatures';
 import CookbookRecipe from './components/CookbookRecipe';
 import FlowRunViewer from './components/FlowRunViewer';
 import { configToFlow, layoutFlowNodes } from './flowGraph';
@@ -124,9 +125,9 @@ const IDLE_EXECUTION_STATE: ExecutionState = {
   node_traces: [],
 };
 
-const STUDIO_TABS: Array<{ id: TabType; icon: string; label: string; detail: string; group: 'primary' | 'manage' | 'system' }> = [
-  { id: 'home', icon: '⌂', label: 'Home', detail: '构建、评测、改进与发布', group: 'primary' },
-  { id: 'harness', icon: '◇', label: 'Build', detail: 'Identity + EGO + DAG', group: 'primary' },
+const ALL_STUDIO_TABS: Array<{ id: TabType; icon: string; label: string; detail: string; group: 'primary' | 'manage' | 'system' }> = [
+  { id: 'home', icon: '⌂', label: 'Home', detail: '本地代码助手与工作流', group: 'primary' },
+  { id: 'harness', icon: '◇', label: 'Build', detail: 'Flow + Identity + 工具', group: 'primary' },
   { id: 'identity', icon: '◎', label: 'Identity', detail: '角色、Ego 与能力', group: 'primary' },
   { id: 'tools', icon: '⚒', label: '工具与 Skills', detail: '查看来源、编辑源码、配置 Identity 能力', group: 'primary' },
   { id: 'tasks', icon: '▦', label: 'Evaluate', detail: '任务、数据集、回放与评分', group: 'primary' },
@@ -147,6 +148,7 @@ const STUDIO_TABS: Array<{ id: TabType; icon: string; label: string; detail: str
   { id: 'settings', icon: '⚙', label: 'Settings', detail: '模型与 Workbench 设置', group: 'system' },
 ];
 
+const STUDIO_TABS = ALL_STUDIO_TABS.filter(item => routeEnabled(item.id));
 const DEFAULT_TAB_META = STUDIO_TABS[0];
 
 const STUDIO_TAB_IDS = new Set<TabType>(STUDIO_TABS.map((item) => item.id));
@@ -390,7 +392,8 @@ export default function App() {
   const restoredBuilder = restoredBuilderRef.current;
   const restoredView = useRef({ session: loadWorkbenchSession(), native: hasRestoredIdeSession() }).current;
   const explicitInitialNavigation = !restoredView.native && Boolean(INITIAL_EDIT_HARNESS || INITIAL_LINK_RUN_ID);
-  const [tab, setTab] = useState<TabType>(readInitialTab);
+  const [tab, setTabState] = useState<TabType>(readInitialTab);
+  const setTab = useCallback((next: TabType) => setTabState(routeEnabled(next) ? next : 'home'), []);
   const [observationTarget, setObservationTarget] = useState(restoredView.session.observation?.albumRunId || '');
   const [theme, setTheme] = useState<WorkbenchTheme>(readWorkbenchTheme);
   const [runtimeOnline, setRuntimeOnline] = useState<boolean | null>(null);
@@ -592,6 +595,7 @@ export default function App() {
   useEffect(() => applyWorkbenchTheme(theme), [theme]);
 
   const refreshInterruptedRuns = useCallback(async () => {
+    if (!featureEnabled('background')) return;
     try {
       const response = await api.listInterruptedRuns();
       setInterruptedRuns(Array.isArray(response?.runs) ? response.runs : []);

@@ -22,6 +22,7 @@ function editor(id, tab = 'id', superego = {}) {
     if (name === 'react/jsx-runtime') return jsx;
     if (name === '../api/client') return { listIdentities: async () => [], saveIdentity: async (name, data) => { saved = { name, data }; } };
     if (name === './ToolLibrary') return { default: () => null, __esModule: true };
+    if (name === '../productFeatures') return { featureEnabled: () => false };
     throw Error(name);
   } };
   const source = fs.readFileSync(path.join(__dirname, '../harness_editor/src/components/IdentityManager.tsx'), 'utf8');

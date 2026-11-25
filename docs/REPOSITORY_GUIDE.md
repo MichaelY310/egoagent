@@ -87,6 +87,13 @@ API.
 
 ## Development history
 
+[PROJECT_STATUS.md](../PROJECT_STATUS.md) is the current product and branch map.
+`product_features/*.json` owns the default release surface (not a security
+sandbox); frontend builds and backend catalogs/API guards read the same policy.
+Feature code can remain tracked but unavailable in main. Each feature branch
+has a focused `docs/development/<feature>.md` acceptance checklist. Merge only
+after updating status, the append-only development log and verification scope.
+
 [PROGRESS.md](../PROGRESS.md) is the maintained chronological log. Dated release
 checks remain in `docs/DEVELOPMENT_STATUS_*.md`; they describe their own test
 scope and must not be read as a guarantee that all features or model behaviors

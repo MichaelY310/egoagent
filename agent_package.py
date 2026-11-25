@@ -254,6 +254,8 @@ def inspect_package(path: Any, *, signing_key: bytes | None = None, require_sign
             signature_status = "present-unverified"
     elif require_signature:
         raise PackageError("a trusted signature is required")
+    if require_signature and signature_status != "verified":
+        raise PackageError("a trusted verification key is required to verify the signature")
     return {"path": str(archive_path), "sha256": _sha256(archive_path.read_bytes()), "size": archive_path.stat().st_size, "files": len(manifest["files"]), "signature_status": signature_status, "manifest": manifest}
 
 

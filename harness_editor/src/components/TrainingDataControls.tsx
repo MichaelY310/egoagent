@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { featureEnabled } from '../productFeatures';
 import {
   exportTrainingDataset,
   getTrainingAnnotations,
@@ -30,7 +31,7 @@ export function useSessionAnnotations(session: string) {
   const [error, setError] = useState('');
 
   const reload = useCallback(async () => {
-    if (!session) { setAnnotations([]); return; }
+    if (!session || !featureEnabled('training')) { setAnnotations([]); return; }
     setLoading(true); setError('');
     try {
       const result = await getTrainingAnnotations({ session });
@@ -100,6 +101,7 @@ export function TrainingFeedback({ session, targetType, targetId, sourceHash, an
   };
 
   const stop = (event: React.SyntheticEvent) => event.stopPropagation();
+  if (!featureEnabled('training')) return null;
   return <div onClick={stop} onMouseDown={stop} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, position: 'relative', opacity: saving ? 0.65 : 1, flexShrink: 0 }}>
     <button type="button" disabled={saving} aria-label="点赞" title="好结果：可用于正向 SFT / KTO" onClick={() => void persist({ rating: annotation?.rating === 'up' ? 'neutral' : 'up' })} style={{ ...button, color: annotation?.rating === 'up' ? '#89d185' : '#888', background: annotation?.rating === 'up' ? '#17351f' : button.background }}>👍</button>
     <button type="button" disabled={saving} aria-label="点踩" title="坏结果：不进入正向 SFT，可用于 KTO 或与同 prompt 点赞结果组成 DPO" onClick={() => void persist({ rating: annotation?.rating === 'down' ? 'neutral' : 'down' })} style={{ ...button, color: annotation?.rating === 'down' ? '#f48771' : '#888', background: annotation?.rating === 'down' ? '#431f1f' : button.background }}>👎</button>

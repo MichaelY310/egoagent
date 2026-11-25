@@ -289,10 +289,13 @@ def create_diagnostics_bundle(root: Path | str) -> Path:
         archive.writestr("diagnostics.json", json.dumps(_redact(product_diagnostics(root), secrets), ensure_ascii=False, indent=2))
         archive.writestr("product-settings.json", json.dumps(_redact(settings, secrets), ensure_ascii=False, indent=2))
         for log_root in (root / ".runtime-logs", root / "harness_editor" / "logs"):
-            if not log_root.is_dir() or not settings["privacy"].get("diagnostic_logs", True):
+            # Raw logs can contain arbitrary prompts; redacting keys cannot
+            # remove those reliably. Inclusion requires explicit consent.
+            if (not log_root.is_dir() or not settings["privacy"].get("diagnostic_logs", True)
+                    or not settings["privacy"].get("include_prompts", False)):
                 continue
             for log in sorted(log_root.rglob("*")):
-                if not log.is_file() or log.stat().st_size > 2_000_000:
+                if not log.is_file() or not log.resolve().is_relative_to(root) or log.stat().st_size > 2_000_000:
                     continue
                 try:
                     content = log.read_text(encoding="utf-8", errors="replace")
@@ -303,13 +306,27 @@ def create_diagnostics_bundle(root: Path | str) -> Path:
 
 
 def _archive_member(name: str) -> str:
-    value = str(name).replace("\\", "/").lstrip("/")
+    value = str(name).replace("\\", "/")
     path = PurePosixPath(value)
-    if not value or path.is_absolute() or ".." in path.parts:
+    if (not value or path.is_absolute() or ".." in path.parts or ":" in value
+            or any(part.endswith((".", " ")) for part in path.parts)):
         raise ProductRuntimeError(f"Unsafe update archive path: {name}")
     if path.parts[0] in UPDATE_EXCLUDES or any(part in {".git", "__pycache__"} for part in path.parts):
         raise ProductRuntimeError(f"Update archive targets protected runtime data: {name}")
     return path.as_posix()
+
+
+def _update_target(root: Path, relative: str) -> Path:
+    target = root / _archive_member(relative)
+    if not target.resolve().is_relative_to(root.resolve()):
+        raise ProductRuntimeError(f"Unsafe update target: {relative}")
+    # Even an in-root symlink makes rollback ambiguous; reject all links.
+    for part in (target, *target.parents):
+        if part == root:
+            break
+        if part.is_symlink() or (hasattr(part, "is_junction") and part.is_junction()):
+            raise ProductRuntimeError(f"Unsafe update link: {relative}")
+    return target
 
 
 def apply_local_update(root: Path | str, archive_path: Path | str) -> dict[str, Any]:
@@ -329,17 +346,22 @@ def apply_local_update(root: Path | str, archive_path: Path | str) -> dict[str, 
             if manifest.get("format") != UPDATE_MANIFEST:
                 raise ProductRuntimeError("Unsupported update manifest")
             members = []
+            seen = set()
             total = 0
             for info in archive.infolist():
                 if info.is_dir() or info.filename == manifest_name:
                     continue
                 relative = _archive_member(info.filename)
+                _update_target(root, relative)
+                if relative.casefold() in seen or (info.external_attr >> 16) & 0o170000 == 0o120000:
+                    raise ProductRuntimeError(f"Unsafe duplicate or symlink update member: {relative}")
+                seen.add(relative.casefold())
                 total += info.file_size
                 if info.file_size > 32 * 1024 * 1024 or total > 256 * 1024 * 1024:
                     raise ProductRuntimeError("Update archive exceeds safety limits")
                 members.append((relative, info))
             for relative, info in members:
-                target = root / relative
+                target = _update_target(root, relative)
                 if target.exists():
                     backup = rollback_root / "files" / relative
                     backup.parent.mkdir(parents=True, exist_ok=True)
@@ -348,7 +370,7 @@ def apply_local_update(root: Path | str, archive_path: Path | str) -> dict[str, 
                 else:
                     created.append(relative)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                temporary = target.with_suffix(target.suffix + ".update-tmp")
+                temporary = _update_target(root, relative + "." + uuid.uuid4().hex + ".update-tmp")
                 temporary.write_bytes(archive.read(info))
                 temporary.replace(target)
         rollback_manifest = {
@@ -360,12 +382,12 @@ def apply_local_update(root: Path | str, archive_path: Path | str) -> dict[str, 
         if (rollback_root / "files").is_dir():
             for backup in (rollback_root / "files").rglob("*"):
                 if backup.is_file():
-                    target = root / backup.relative_to(rollback_root / "files")
+                    target = _update_target(root, backup.relative_to(rollback_root / "files").as_posix())
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(backup, target)
         for relative in created:
             try:
-                (root / relative).unlink()
+                _update_target(root, relative).unlink()
             except OSError:
                 pass
         raise
@@ -396,18 +418,26 @@ def rollback_update(root: Path | str, rollback_id: str) -> dict[str, Any]:
     root = Path(root).resolve()
     if Path(str(rollback_id)).name != str(rollback_id):
         raise ProductRuntimeError("Invalid rollback id")
+    if not re.fullmatch(r"rollback-[A-Za-z0-9_-]+", str(rollback_id)):
+        raise ProductRuntimeError("Invalid rollback id")
     rollback_root = root / ".egoagent" / "updates" / rollback_id
+    if not rollback_root.resolve().is_relative_to(root):
+        raise ProductRuntimeError("Unsafe rollback directory")
     manifest_path = rollback_root / "rollback.json"
     if not manifest_path.is_file():
         raise ProductRuntimeError(f"Rollback not found: {rollback_id}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    # Validate the entire plan before changing any file.
+    for relative in [*manifest.get("replaced", []), *manifest.get("created", [])]:
+        _update_target(root, relative)
+        _update_target(rollback_root / "files", relative)
     for relative in manifest.get("replaced", []):
-        backup = rollback_root / "files" / _archive_member(relative)
-        target = root / _archive_member(relative)
+        backup = _update_target(rollback_root / "files", relative)
+        target = _update_target(root, relative)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(backup, target)
     for relative in manifest.get("created", []):
-        target = root / _archive_member(relative)
+        target = _update_target(root, relative)
         if target.is_file():
             target.unlink()
     manifest["rolled_back_at"] = time.time()

@@ -86,6 +86,7 @@ class ProductRuntimeTests(unittest.TestCase):
             os.environ["DIAGNOSTIC_TEST_API_KEY"] = secret
             (logs / "app.log").write_text(f"request authorization={secret}", encoding="utf-8")
             try:
+                save_product_settings(root, {"privacy": {"include_prompts": True}})
                 report = product_diagnostics(root)
                 self.assertIn("checks", report)
                 bundle = create_diagnostics_bundle(root)

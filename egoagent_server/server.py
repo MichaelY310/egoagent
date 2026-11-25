@@ -512,14 +512,14 @@ def _cap_chat_agent_tokens(agent, multi_agent=False, configured_limit=_DEFAULT_C
         agent.llm.max_tokens = cap
     return agent
 
-def _build_chat_harness(messages, harness_name="adaptive_code_agent", identity_name="deepseek_operator", workspace=None):
+def _build_chat_harness(messages, harness_name="code_agent_fast", identity_name="adaptive_deepseek_coder", workspace=None):
     """Build one chat Harness identically for sync and streaming adapters."""
     from harness import Harness
 
     try:
-        harness_name = validate_resource_segment(harness_name or "adaptive_code_agent", label="harness name")
+        harness_name = validate_resource_segment(harness_name or "code_agent_fast", label="harness name")
     except UnsafeResourcePath:
-        harness_name = "adaptive_code_agent"
+        harness_name = "code_agent_fast"
     try:
         identity_name = validate_resource_segment(identity_name or "deepseek_operator", label="identity name")
     except UnsafeResourcePath:
@@ -532,6 +532,8 @@ def _build_chat_harness(messages, harness_name="adaptive_code_agent", identity_n
         identity_path = IDENTITY_DIR / "deepseek_operator"
 
     hconfig = json.loads((harness_path / "config.json").read_text(encoding="utf-8"))
+    from product_features import require_flow
+    require_flow(harness_path.name, hconfig)
     configured_limit = _configured_chat_token_limit(hconfig)
     workspace_path = Path(workspace).resolve() if workspace else None
     slots = hconfig.get("slots", {})
@@ -580,7 +582,7 @@ def _build_chat_harness(messages, harness_name="adaptive_code_agent", identity_n
 
 def _run_dag_completion(
     messages,
-    harness_name="adaptive_code_agent",
+    harness_name="code_agent_fast",
     identity_name="deepseek_operator",
     stream=False,
     workspace=None,
@@ -760,7 +762,7 @@ def _execute_durable_run(record, emit, is_cancelled):
     """Execute one leased run through the same PipelineRunner as every UI/API."""
     from pipeline_engine import PipelineRunner
     payload = record.payload
-    harness_name = str(payload.get("harness", "adaptive_code_agent"))
+    harness_name = str(payload.get("harness", "code_agent_fast"))
     identity_name = str(payload.get("identity", "deepseek_operator"))
     messages = payload.get("messages", [])
     if not isinstance(messages, list):
@@ -1351,6 +1353,11 @@ class APIHandler(BaseHTTPRequestHandler):
             self.send_header("Vary", "Origin")
 
     def _guard_browser_request(self, *, require_json=False):
+        from product_features import disabled_api
+        feature = disabled_api(urlparse(self.path).path)
+        if feature and self.command != 'OPTIONS':
+            self._send_error(f"Feature '{feature}' is not released on main. See PROJECT_STATUS.md for its development branch.", 403)
+            return False
         if self.command != 'OPTIONS' and not remote_request_authorized(self.headers):
             self._send_error('Remote authentication required. Open this connection from the local EgoAgent window.', 401)
             return False
@@ -1392,6 +1399,9 @@ class APIHandler(BaseHTTPRequestHandler):
     def _resource_path(root, *segments, label="resource"):
         """Resolve public resource ids through the shared confinement rule."""
 
+        if Path(root).resolve() == HARNESS_DIR.resolve() and segments:
+            from product_features import require_flow
+            require_flow(unquote(str(segments[0])))
         return resolve_resource_path(
             root,
             *(unquote(str(segment)) for segment in segments),
@@ -1638,6 +1648,11 @@ class APIHandler(BaseHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         path = parsed_url.path
 
+        if path == '/api/product/features':
+            from product_features import manifests, enabled
+            self._send_json({name: enabled(name) for name in manifests()})
+            return
+
         if handle_remote_api(self, path, 'GET'):
             return
 
@@ -1813,6 +1828,8 @@ class APIHandler(BaseHTTPRequestHandler):
                         cfg = json.loads((d / "config.json").read_text(encoding="utf-8"))
                         slots = cfg.get("slots", {})
                         catalog = classify_harness(d.name, cfg)
+                        if catalog.get("catalog_visibility") == "unreleased":
+                            continue
                         result.append({
                             "name": d.name,
                             "description": cfg.get("description", ""),
@@ -1915,8 +1932,11 @@ class APIHandler(BaseHTTPRequestHandler):
             self._send_json(config)
 
         elif path == "/api/identities":
+            from product_features import identity_blocker
             identities = []
             for d in sorted(IDENTITY_DIR.iterdir(), key=lambda x: x.name):
+                if identity_blocker(d.name):
+                    continue
                 if d.is_dir() and (d / "id.json").exists():
                     try:
                         id_data = json.loads((d / "id.json").read_text(encoding="utf-8"))
@@ -3127,12 +3147,23 @@ class APIHandler(BaseHTTPRequestHandler):
         if path == "/api/sessions/create":
             body = self._read_body()
             try:
+                agent_config = body.get("agent_config") if isinstance(body.get("agent_config"), dict) else None
+                if isinstance(body.get("flow_selection"), dict):
+                    selection = body["flow_selection"]
+                    name = self._resource_name(selection.get("harness"), "harness name")
+                    flow_dir = self._resource_path(HARNESS_DIR, name, label="harness path")
+                    version_dir, version = _resolve_harness_version_dir(flow_dir, selection.get("version") or "latest")
+                    config = json.loads((version_dir / "config.json").read_text(encoding="utf-8"))
+                    from product_features import require_flow
+                    require_flow(name, config)
+                    saved = saved_flow_configuration(config, name)
+                    agent_config = {"harness": name, "harness_version": version, **saved, "debug_mode": "auto"}
                 workspace = Path(str(body.get("workspace") or _PROJECT_ROOT_FOR_IMPORTS)).expanduser().resolve()
                 if not workspace.is_dir():
                     raise ValueError(f"Workspace does not exist: {workspace}")
                 result = SessionBranchService(SESSIONS_DIR, workspace=workspace).create(
                     destination_name=body.get("name") or body.get("destination"),
-                    agent_config=body.get("agent_config") if isinstance(body.get("agent_config"), dict) else None,
+                    agent_config=agent_config,
                 )
                 title = str(body.get("title") or "").strip()
                 _project_portfolio().register_project(workspace, touch=False)
@@ -3370,7 +3401,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/runs":
             body = self._read_body()
-            harness_name = self._resource_name(body.get("harness", "adaptive_code_agent"), "harness name")
+            harness_name = self._resource_name(body.get("harness", "code_agent_fast"), "harness name")
             identity_name = self._resource_name(body.get("identity", "deepseek_operator"), "identity name")
             harness_config = self._resource_path(
                 HARNESS_DIR, harness_name, "config.json", label="harness path"
@@ -4001,11 +4032,14 @@ class APIHandler(BaseHTTPRequestHandler):
             elif file_filter:
                 # Accept all pending changes for a specific file
                 accepted = []
+                failed = []
                 for c in get_changes():
                     if c["file_path"] == file_filter and c["status"] in ("pending", "partial"):
-                        accept_change(c["index"])
-                        accepted.append(c["index"])
-                self._send_json({"ok": True, "accepted": accepted})
+                        if accept_change(c["index"]):
+                            accepted.append(c["index"])
+                        else:
+                            failed.append({"index": c["index"], "detail": get_last_operation_error()})
+                self._send_json({"ok": not failed, "accepted": accepted, "failed": failed}, 409 if failed else 200)
             else:
                 self._send_error("Provide 'index' or 'file'", 400)
 
@@ -4330,10 +4364,10 @@ class APIHandler(BaseHTTPRequestHandler):
             stream = body.get("stream", False)
 
             # Extract harness/identity from body fields or model name
-            harness_name = body.get("harness", "adaptive_code_agent")
+            harness_name = body.get("harness", "code_agent_fast")
             identity_name = body.get("identity", "deepseek_operator")
             workspace = body.get("workspace")
-            if harness_name == "adaptive_code_agent" and ":" in model:
+            if harness_name == "code_agent_fast" and ":" in model:
                 parts = model.split(":")
                 if len(parts) >= 2:
                     harness_name = parts[1]
@@ -4839,6 +4873,8 @@ def _run_harness_in_thread_bound(
         live_harness_dir = resolve_resource_path(HARNESS_DIR, safe_harness_name, label="harness path")
         harness_dir, resolved_harness_version = _resolve_harness_version_dir(live_harness_dir, harness_version or "latest")
         harness_config = json.loads((harness_dir / "config.json").read_text(encoding="utf-8"))
+        from product_features import require_flow
+        require_flow(safe_harness_name, harness_config)
         configured_limit = _configured_chat_token_limit(harness_config)
         for slot_name, identity_path in agents_dict.items():
             full_identity = (app_root / identity_path).resolve()
@@ -5227,8 +5263,9 @@ def main():
     print(f"[API Server] WS:   ws://localhost:{ws_port}")
     print(f"[API Server] Harness dir: {HARNESS_DIR}")
     print(f"[API Server] Identity dir: {IDENTITY_DIR}")
-    durable_worker = _start_durable_run_worker()
-    print(f"[API Server] Durable run worker: {durable_worker.owner}")
+    from product_features import enabled
+    durable_worker = _start_durable_run_worker() if enabled('background') else None
+    print(f"[API Server] Durable run worker: {durable_worker.owner if durable_worker else 'disabled in this release'}")
 
     ws_capacity = threading.BoundedSemaphore(64)
 
@@ -5257,7 +5294,8 @@ def main():
     except KeyboardInterrupt:
         print("\n[API Server] Shutting down...")
     finally:
-        durable_worker.stop(timeout=2)
+        if durable_worker is not None:
+            durable_worker.stop(timeout=2)
         httpd.server_close()
         ws_sock.close()
 

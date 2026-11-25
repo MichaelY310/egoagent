@@ -8,6 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from unittest.mock import patch
 
 from harness import Session
 
@@ -21,6 +22,9 @@ from harness_editor import server as server_module
 
 class TrainingDataApiTests(unittest.TestCase):
     def setUp(self):
+        gate = patch('product_features.disabled_api', return_value=None)
+        gate.start()
+        self.addCleanup(gate.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.temp_root = Path(self.temporary.name)
         self.sessions = self.temp_root / "sessions"

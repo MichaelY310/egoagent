@@ -2017,7 +2017,12 @@ class Agent:
             except Exception as e:
                 result = f"Tool {tool_name} error: {str(e)}"
         elif found and found[0] == "knowledge":
-            result = found[1].render()
+            from harness import get_current_run_context
+            active_run = get_current_run_context()
+            try:
+                result = found[1].render(secret_view=getattr(active_run, "secret_view", None))
+            except (PermissionError, KeyError) as error:
+                result = f"Tool {tool_name} error: {error}"
         else:
             result = f"Tool not found: {tool_name}"
 
@@ -2031,6 +2036,10 @@ class Agent:
         if self.hooks["post_tool_hook"]:
             self.hooks["post_tool_hook"](agent=self, tool_name=tool_name, arguments=arguments, result=result)
 
+        from harness import get_current_run_context
+        active_run = get_current_run_context()
+        if active_run is not None:
+            result = active_run.secret_view.redact_value(result)
         raw_result = copy.deepcopy(result)
         if max_result_chars is not None:
             limit = max(1, int(max_result_chars))

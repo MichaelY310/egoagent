@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as api from '../api/client';
+import { featureEnabled } from '../productFeatures';
 
 const card: React.CSSProperties = { background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 };
 const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '7px 8px', border: '1px solid var(--border)', borderRadius: 5, background: 'var(--input-background)', color: 'var(--text-primary)', fontSize: 11 };
@@ -29,7 +30,7 @@ export default function ProductSetupPanel() {
 
   const refresh = async () => {
     const [nextSettings, nextDiagnostics, nextRollbacks] = await Promise.all([
-      api.getProductSettings(), api.getProductDiagnostics(), api.listProductRollbacks(),
+      api.getProductSettings(), api.getProductDiagnostics(), featureEnabled('deployment') ? api.listProductRollbacks() : Promise.resolve([]),
     ]);
     setSettings(nextSettings); setDiagnostics(nextDiagnostics); setRollbacks(nextRollbacks);
   };
@@ -96,12 +97,12 @@ export default function ProductSetupPanel() {
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button style={button} disabled={busy} onClick={() => void refresh()}>Run checks again</button><button style={button} disabled={busy} onClick={() => void act(api.createDiagnosticsBundle, (result) => `Redacted diagnostics created: ${result.path}`)}>Create diagnostics ZIP</button></div>
       </details>
 
-      <details style={{ ...card, marginTop: 12 }}>
+      {featureEnabled('deployment') && <details style={{ ...card, marginTop: 12 }}>
         <summary style={{ color: '#dbeafe', cursor: 'pointer', fontSize: 12 }}>4. Offline update & rollback</summary>
         <p style={{ color: '#94a3b8', fontSize: 10, lineHeight: 1.5 }}>Updates are explicit local archives with an ego.update.v1 manifest. Runtime data and secrets are protected. Every update creates a rollback snapshot first.</p>
         <div style={{ display: 'flex', gap: 7 }}><input style={input} value={updateArchive} onChange={(e) => setUpdateArchive(e.target.value)} placeholder="Absolute path to update .zip" /><button disabled={busy || !updateArchive.trim()} style={button} onClick={() => { if (window.confirm('Apply this local update and restart services afterwards?')) void act(() => api.applyProductUpdate(updateArchive.trim()), (result) => `Updated ${result.files} files. Rollback: ${result.rollback_id}`); }}>Apply update</button></div>
         <div style={{ display: 'grid', gap: 5, marginTop: 9 }}>{rollbacks.map((item) => <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 7, background: 'var(--surface-sunken)', borderRadius: 5, fontSize: 10 }}><span style={{ flex: 1, color: 'var(--text-muted)' }}>{item.id} · {item.version || 'unknown version'} · {item.replaced?.length || 0} replaced</span><button style={{ ...button, color: '#cf222e' }} disabled={busy || item.rolled_back_at} onClick={() => { if (window.confirm(`Rollback ${item.id}?`)) void act(() => api.rollbackProductUpdate(item.id), () => `Rollback restored. Restart services to load the previous version.`); }}>{item.rolled_back_at ? 'rolled back' : 'Rollback'}</button></div>)}</div>
-      </details>
+      </details>}
       {message && <div style={{ marginTop: 10, color: /error|missing|failed|not found/i.test(message) ? '#fca5a5' : '#93c5fd', fontSize: 11, wordBreak: 'break-word' }}>{message}</div>}
     </section>
   );

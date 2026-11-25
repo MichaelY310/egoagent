@@ -15,7 +15,7 @@ import subprocess
 
 
 CORE_PACKAGES = {"egoagent_core", "llm", "self_evolution", "task_bench", "tabletop"}
-ASSET_ROOTS = {"identity", "harness", ".environment", "environment", "capability_packs"}
+ASSET_ROOTS = {"identity", "harness", ".environment", "environment", "capability_packs", "product_features"}
 EXCLUDED_PARTS = {
     "__pycache__", "node_modules", ".git", ".versions", ".egoagent", "sessions",
     "data", "_runs", "snapshots", ".env", ".env.local", ".runtime", ".quarantine",

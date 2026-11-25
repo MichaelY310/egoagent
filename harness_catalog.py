@@ -114,6 +114,9 @@ def classify_harness(name: str, config: Mapping[str, Any] | None = None) -> dict
     start = str(pipeline.get("start") or "")
     runnable = bool(nodes and start and start in nodes)
     visibility = str(override.get("visibility") or ("internal" if internal else "public"))
+    from product_features import flow_blocker
+    if flow_blocker(name, config):
+        visibility = "unreleased"
 
     return {
         "catalog_category": category,

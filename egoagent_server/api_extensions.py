@@ -581,6 +581,11 @@ def handle_api_request(method: str, path: str, body: Dict = None) -> tuple:
     """
     body = body or {}
 
+    from product_features import disabled_api
+    feature = disabled_api(path)
+    if feature:
+        return {"error": f"Unreleased feature: {feature}; see PROJECT_STATUS.md"}, 403
+
     if path.startswith("/api/observations/"):
         from flow_observation import observation_store
         try:

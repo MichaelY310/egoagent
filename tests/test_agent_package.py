@@ -6,6 +6,7 @@ import threading
 import unittest
 import urllib.request
 import zipfile
+from unittest.mock import patch
 from pathlib import Path
 
 from agent_package import (
@@ -159,7 +160,8 @@ class LocalRegistryTests(unittest.TestCase):
         self.assertFalse(version_satisfies("2.0.0", "^1.2.0"))
         self.assertTrue(version_satisfies("0.3.5", ">=0.3.0"))
 
-    def test_http_package_workflow_packs_lists_installs_and_uninstalls(self):
+    @patch('product_features.disabled_api', return_value=None)
+    def test_http_package_workflow_packs_lists_installs_and_uninstalls(self, _development_branch_gate):
         from harness_editor import server as server_module
 
         identity = self.install_root / "identity" / "http_identity"

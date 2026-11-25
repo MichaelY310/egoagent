@@ -1,0 +1,1 @@
+{"id":"deployment","enabled":false,"depends":[],"routes":["packages"],"api_prefixes":["/api/packages","/api/package","/api/product/update","/api/product/rollback"],"flows":[],"flow_patterns":[],"acceptance":"Trusted signature, adversarial archive validation, install/rollback and clean-machine distribution tests."}

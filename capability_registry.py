@@ -447,7 +447,10 @@ class CapabilityRegistry:
         discovered: list[Capability] = []
         identity_root = self.project_root / "identity"
         if identity_root.is_dir():
+            from product_features import identity_blocker
             for identity_dir in sorted(identity_root.iterdir(), key=lambda item: item.name.casefold()):
+                if identity_blocker(identity_dir.name):
+                    continue
                 if not identity_dir.is_dir() or not (identity_dir / "id.json").is_file():
                     continue
                 meta = _read_json(identity_dir / "id.json")
@@ -490,6 +493,9 @@ class CapabilityRegistry:
                 if not config_path.is_file():
                     continue
                 config = _read_json(config_path)
+                from product_features import flow_blocker
+                if flow_blocker(harness_dir.name, config, root=harness_root):
+                    continue
                 pipeline = config.get("pipeline") if isinstance(config.get("pipeline"), dict) else {}
                 nodes = pipeline.get("nodes") if isinstance(pipeline.get("nodes"), dict) else {}
                 discovered.append(
@@ -742,6 +748,13 @@ class CapabilityRegistry:
                 self._public_row(row, include_search_text=_include_search_text)
                 for row in connection.execute(sql, params)
             ]
+        # Re-check old persisted indexes too; a release gate may have changed
+        # since discovery, without any source file changing.
+        from product_features import flow_blocker, identity_blocker
+        items = [item for item in items if item.get("kind") != "harness" or not
+                 flow_blocker(Path(item.get("path", item["name"])).name, root=self.project_root / "harness")]
+        items = [item for item in items if item.get("kind") != "identity" or not
+                 identity_blocker(Path(item.get("path", item["name"])).name)]
         if not _deduplicate:
             return items
         logical: list[dict[str, Any]] = []
@@ -769,7 +782,15 @@ class CapabilityRegistry:
                 """,
                 (capability_id, str(self.workspace)),
             ).fetchone()
-        return self._public_row(row) if row else None
+        if not row:
+            return None
+        item = self._public_row(row)
+        from product_features import flow_blocker, identity_blocker
+        if item.get("kind") == "identity" and identity_blocker(Path(item.get("path", item["name"])).name):
+            return None
+        if item.get("kind") == "harness" and flow_blocker(Path(item.get("path", item["name"])).name, root=self.project_root / "harness"):
+            return None
+        return item
 
     def find_by_path(self, path: str | Path) -> dict[str, Any] | None:
         self._ensure_index()

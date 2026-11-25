@@ -4,7 +4,7 @@ try {
   const apiBase = document.body.dataset.api.replace(/\/$/, '');
   const wsUrl = document.body.dataset.ws.replace(/\/$/, '');
   const saved = vscode.getState() || {};
-  const DEFAULT_CODE_HARNESS = 'code_agent_auto';
+  const DEFAULT_CODE_HARNESS = 'code_agent_fast';
 
   const state = {
     harnesses: [],
@@ -2486,6 +2486,12 @@ async function request(path, options = {}) {
   $('createCheckpoint').addEventListener('click', createCheckpoint);
   const openWorkbench = (tab, detail = {}) => vscode.postMessage({ type: 'openWorkbench', tab, ...detail });
   $('workbenchQuick')?.addEventListener('click', () => openWorkbench('home'));
+  if ($('remoteQuick')) {
+    $('remoteQuick').hidden = true;
+    fetch(apiBase + '/api/product/features').then(response => response.json()).then(features => {
+      $('remoteQuick').hidden = features.remote !== true;
+    }).catch(() => {});
+  }
   $('remoteQuick')?.addEventListener('click', () => vscode.postMessage({ type: 'openRemoteWorkspace' }));
   $('openSessionPortfolio')?.addEventListener('click', () => openWorkbench('sessions'));
   $('linkSessionWorkbench')?.addEventListener('click', async () => {

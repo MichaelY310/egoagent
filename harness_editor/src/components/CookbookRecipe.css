@@ -25,14 +25,13 @@
 
 /* Recipe text participates in layout instead of sitting below floating Build
    controls. The canvas retains its own positioning context for overlays. */
-.builder-canvas-stage { display: contents; }
-.flow-area.has-cookbook { display: flex; flex-direction: column; overflow: hidden; }
-.flow-area.has-cookbook > .builder-context-bar { position: relative; inset: auto; flex: 0 0 auto; height: auto; flex-wrap: wrap; margin: 8px 10px 0; }
+.flow-area { display: flex; flex-direction: column; overflow: hidden; }
+.flow-area > .builder-context-bar { position: relative; inset: auto; flex: 0 0 auto; height: auto; flex-wrap: wrap; margin: 8px 10px 0; }
 .flow-area.has-cookbook .builder-harness-picker { max-width: none; flex-basis: 100%; }
-.flow-area.has-cookbook > .builder-canvas-stage { display: block; position: relative; flex: 1; min-height: 120px; }
-.flow-area.has-cookbook .builder-canvas-stage > .toolbar { top: 8px; max-width: calc(100% - 20px); flex-wrap: wrap; }
+.flow-area > .builder-canvas-stage { display: block; position: relative; flex: 1; min-height: 120px; }
+.flow-area .builder-canvas-stage > .toolbar { top: 8px; max-width: calc(100% - 20px); flex-wrap: wrap; }
 .flow-area.has-cookbook .builder-canvas-stage > .flow-observer { height: 100%; }
 .flow-area.has-cookbook .live-agent-architecture { top: 58px; max-height: calc(100% - 90px); }
-.builder-linked > .builder-canvas-stage > .flow-observer { position: absolute; inset: 74px 0 0; height: auto; z-index: 4; }
+.builder-linked > .builder-canvas-stage > .flow-observer { position: absolute; inset: 0; height: 100%; z-index: 4; }
 .builder-linked.has-cookbook > .builder-canvas-stage > .flow-observer { inset: 0; height: 100%; }
 .builder-linked > .builder-canvas-stage > .builder-execution-toolbar { display: none; }

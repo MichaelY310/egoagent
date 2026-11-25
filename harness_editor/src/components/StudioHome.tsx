@@ -1,141 +1,61 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as api from '../api/client';
-import cookbook from '../cookbookCatalog.json';
+import { API_BASE } from '../api/runtime';
+import allRecipes from '../cookbookCatalog.json';
+import { flowEnabled, routeEnabled } from '../productFeatures';
+import type { WorkbenchRoute } from '../workbenchSession';
 import './CookbookRecipe.css';
 
-type Destination = 'harness' | 'tasks' | 'evolution' | 'packages' | 'changes' | 'sessions' | 'coc';
-
-interface StudioHomeProps {
-  onNavigate: (destination: Destination) => void;
+interface Props {
+  onNavigate: (destination: WorkbenchRoute) => void;
   onOpenHarness: (name: string) => void;
 }
+const destinations: Array<[WorkbenchRoute, string, string]> = [
+  ['harness', 'Build · 编排助手', '选择 Flow，在右侧配置 Identity 与能力，保存版本后在 Chat 使用。'],
+  ['identity', 'Identity · 定义行为', '配置模型、角色、Ego 与 Superego；不配置模型时继承全局设置。'],
+  ['tools', '工具与 Skills · 复用能力', '查看工具来源与说明，在 IDE 打开源码；为 Identity 选择能力。'],
+  ['sessions', 'Sessions · 管理项目', '打开、重命名、Fork 或合并会话；项目与对话历史分别保存。'],
+  ['changes', 'Changes · 审阅改动', '检查 Agent 已应用的修改，逐段保留或拒绝。'],
+  ['observe', '运行相簿 · 观察与回放', '查看 Flow 节点输入输出和历史运行；回放不会再次执行工具。'],
+  ['tasks', 'Evaluate · 开发中', '任务环境与可复现评分；仅在对应开发分支开放。'],
+  ['evolution', 'Improve · 开发中', '候选优化与证据验证；实验结果不等于稳定增益。'],
+  ['settings', 'Settings · 连接模型', '设置模型服务、审批策略和诊断。API 密钥只保存在本地。'],
+];
 
-interface RecentRun {
-  id?: string;
-  task_id?: string;
-  status?: string;
-  created_at?: number;
-  completed_at?: number;
-  evaluation?: { score?: number; pass_score?: number; checks?: Array<{ id?: string; passed?: boolean; summary?: string }> };
-  selection?: { harness?: string; identity?: string };
-}
-
-export default function StudioHome({ onNavigate, onOpenHarness }: StudioHomeProps) {
-  const [runs, setRuns] = useState<RecentRun[]>([]);
-  const [proposals, setProposals] = useState<Array<Record<string, any>>>([]);
-  const [workspace, setWorkspace] = useState<{ workspace?: string; name?: string }>({});
+export default function StudioHome({ onNavigate, onOpenHarness }: Props) {
+  const [workspace, setWorkspace] = useState('');
   const [error, setError] = useState('');
-
+  const [available, setAvailable] = useState<Set<string>>(new Set());
   useEffect(() => {
-    Promise.all([api.listTaskBenchRuns(), api.listEvolutionProposals(), api.getWorkspace()])
-      .then(([loadedRuns, loadedProposals, currentWorkspace]) => {
-        setRuns(Array.isArray(loadedRuns) ? loadedRuns.slice(0, 8) : []);
-        setProposals(Array.isArray(loadedProposals) ? loadedProposals : []);
-        setWorkspace(currentWorkspace || {});
-      })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+    let current = true;
+    Promise.all([api.getWorkspace(), fetch(`${API_BASE}/api/harnesses`).then(async response => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json() as Promise<string[]>;
+    })]).then(([context, names]) => { if (current) { setWorkspace(context.name || context.workspace || ''); setAvailable(new Set(names)); } })
+      .catch(reason => { if (current) setError(String(reason)); });
+    return () => { current = false; };
   }, []);
-
-  const terminalRuns = useMemo(() => runs.filter((run) => ['passed', 'failed', 'error', 'timeout', 'stopped'].includes(run.status || '')), [runs]);
-  const failedRuns = useMemo(() => terminalRuns.filter((run) => run.status !== 'passed'), [terminalRuns]);
-  const passedRuns = terminalRuns.filter((run) => run.status === 'passed');
-  const trusted = proposals.filter((proposal) => proposal.status === 'trusted').length;
-  const experimental = proposals.filter((proposal) => ['experimental', 'quarantined'].includes(proposal.status)).length;
-  const latestFailure = failedRuns[0];
-
-  const evolveLatestFailure = () => {
-    if (latestFailure) {
-      const failedChecks = latestFailure.evaluation?.checks?.filter((check) => !check.passed) || [];
-      localStorage.setItem('evolution_observations', [
-        `Task Bench run ${latestFailure.id || 'unknown'} failed.`,
-        `Task: ${latestFailure.task_id || 'unknown'}.`,
-        `Harness: ${latestFailure.selection?.harness || 'unknown'}; Identity: ${latestFailure.selection?.identity || 'unknown'}.`,
-        ...failedChecks.map((check) => `Failed check ${check.id || 'unknown'}: ${check.summary || 'no summary'}`),
-      ].join('\n'));
-    }
-    onNavigate('evolution');
-  };
-
+  const recipes = allRecipes.filter(item => flowEnabled(item.name) && available.has(item.name));
   return <main className="studio-home">
-    <section className="studio-home-hero">
-      <div>
-        <span className="studio-eyebrow">{workspace.name || 'Local workspace'}</span>
-        <h1>Build an agent. Prove it works. Put it to work.</h1>
-        <p>日常使用保持简单；只有观察到失败时，才把一次运行提升为可复现实验，再决定是否进化与发布。</p>
-      </div>
-      <div className="studio-home-actions">
-        <button className="primary" onClick={() => onNavigate('harness')}>打开 Agent Builder</button>
-        <button onClick={() => onNavigate('tasks')}>运行一个 Task</button>
-        <button onClick={() => onOpenHarness('cookbook_01_react')}>Cookbook · 从 ReAct 开始</button>
-      </div>
-    </section>
-
-    <section className="cookbook-catalog" aria-label="Cookbook 课程目录">
-      <h2>Agent Cookbook · {cookbook.length} 个可运行 Flow</h2>
-      <p>先学最小 ReAct，再按需要选择分支。每关都标明前置课程、示例输入和可观察的结果。</p>
-      <div className="cookbook-chapters">{[...new Set(cookbook.map(item => item.chapter))].map(chapter => <details key={chapter}>
-        <summary>{chapter} · {cookbook.filter(item => item.chapter === chapter).length} 关</summary>
-        {cookbook.filter(item => item.chapter === chapter).map(item => <button key={item.name} onClick={() => onOpenHarness(item.name)}>
-          <b>{String(item.step).padStart(2, '0')} · {item.title}</b><span>{item.added}</span>
-        </button>)}
+    <section className="studio-home-hero"><div>
+      <span className="studio-eyebrow">{workspace || 'Local workspace'}</span>
+      <h1>你的代码助手，你定义的工作流。</h1>
+      <p>在 Chat 处理当前项目，用 Build 定义助手，用运行相簿了解每一步。主产品只展示已开放的功能。</p>
+    </div><div className="studio-home-actions">
+      <button className="primary" onClick={() => onOpenHarness('code_agent_fast')}>打开推荐代码助手</button>
+      <button onClick={() => onNavigate('settings')}>配置模型</button>
+      <button onClick={() => onOpenHarness('cookbook_01_react')}>从最小 ReAct 开始</button>
+    </div></section>
+    {error && <div className="studio-home-error">连接失败：{error}</div>}
+    <section className="studio-home-grid">{destinations.filter(([route]) => routeEnabled(route)).map(([route, title, detail]) =>
+      <article className="studio-home-card" key={route}><header><h2>{title}</h2></header><p>{detail}</p>
+        <button onClick={() => onNavigate(route)}>打开</button></article>)}</section>
+    <section className="cookbook-catalog" aria-label="Cookbook 课程目录"><h2>循序渐进的 Flow 示例 · {recipes.length}</h2>
+      <p>每关都有简短说明、输入示例和可观察的结果；尚未开放的课程及其依赖不展示。</p>
+      <div className="cookbook-chapters">{[...new Set(recipes.map(item => item.chapter))].map(chapter => <details key={chapter}>
+        <summary>{chapter}</summary>{recipes.filter(item => item.chapter === chapter).map(item =>
+          <button key={item.name} onClick={() => onOpenHarness(item.name)}><b>{item.step} · {item.title}</b><span>{item.added}</span></button>)}
       </details>)}</div>
-      <small>参考 Claude Agent SDK Cookbook、官方 research-agent 与 LangGraph 工作流模式。MCP 服务集成、云部署、视觉模型是独立扩展，不冒充已完成课程。</small>
-    </section>
-
-    <section className="studio-journey" aria-label="Agent lifecycle">
-      <button onClick={() => onNavigate('harness')}><span>1</span><b>Build</b><small>Identity + EGO + DAG</small></button>
-      <i>→</i>
-      <button onClick={() => onNavigate('tasks')}><span>2</span><b>Evaluate</b><small>数据集、回放、确定性评分</small></button>
-      <i>→</i>
-      <button onClick={evolveLatestFailure}><span>3</span><b>Improve</b><small>仅对真实失败提出最小改动</small></button>
-      <i>→</i>
-      <button onClick={() => onNavigate('packages')}><span>4</span><b>Deploy</b><small>版本化能力包与回滚</small></button>
-    </section>
-
-    {error && <div className="studio-home-error">Runtime 暂不可用：{error}</div>}
-
-    <section className="studio-home-grid">
-      <article className="studio-home-card run-card">
-        <header><div><span className="studio-eyebrow">Evidence</span><h2>最近评测</h2></div><button onClick={() => onNavigate('tasks')}>全部运行</button></header>
-        <div className="studio-metrics">
-          <div><strong>{terminalRuns.length}</strong><span>已完成</span></div>
-          <div className="good"><strong>{passedRuns.length}</strong><span>通过</span></div>
-          <div className={failedRuns.length ? 'bad' : ''}><strong>{failedRuns.length}</strong><span>需调查</span></div>
-        </div>
-        {runs.length ? <div className="studio-run-list">{runs.slice(0, 4).map((run) => <button key={run.id} onClick={() => onNavigate('tasks')}>
-          <span className={`studio-run-dot ${run.status || ''}`} />
-          <div><b>{run.task_id || 'Untitled task'}</b><small>{run.selection?.harness || 'harness'} · {run.selection?.identity || 'identity'}</small></div>
-          <em>{run.evaluation?.score == null ? run.status : `${Math.round(run.evaluation.score * 100)}%`}</em>
-        </button>)}</div> : <div className="studio-empty-state">还没有评测记录。先跑一个 starter task，DAG 轨迹、分数和产物会留在这里。</div>}
-      </article>
-
-      <article className="studio-home-card signal-card">
-        <header><div><span className="studio-eyebrow">Evolution signal</span><h2>{latestFailure ? '有一个失败值得调查' : '暂时无需进化'}</h2></div><span className={`studio-signal ${latestFailure ? 'attention' : ''}`}>{latestFailure ? 'Review' : 'Stable'}</span></header>
-        {latestFailure ? <>
-          <p><b>{latestFailure.task_id}</b> 在 {latestFailure.selection?.harness || 'selected harness'} 上未通过。先复现和诊断；系统不会因一次失败自动永久修改 Agent。</p>
-          <div className="studio-card-actions"><button className="primary" onClick={evolveLatestFailure}>从这次失败创建实验</button><button onClick={() => onNavigate('sessions')}>查看证据</button></div>
-        </> : <>
-          <p>继续正常使用 Agent。失败、回归或重复的人工纠正出现时，Studio 会把它变成候选实验，而不是偷偷改写你的 Agent。</p>
-          <div className="studio-card-actions"><button onClick={() => onNavigate('tasks')}>建立基线</button></div>
-        </>}
-      </article>
-
-      <article className="studio-home-card compact-card">
-        <header><div><span className="studio-eyebrow">Promotion</span><h2>演进状态</h2></div><button onClick={() => onNavigate('evolution')}>进入实验室</button></header>
-        <div className="studio-metrics two"><div><strong>{experimental}</strong><span>隔离实验</span></div><div className="good"><strong>{trusted}</strong><span>已验证</span></div></div>
-        <p>只有 validation、held-out 与 regression 证据都通过的候选才进入 trusted；其余保持隔离或回滚。</p>
-      </article>
-
-      <article className="studio-home-card play-card">
-        <header><div><span className="studio-eyebrow">Play · Multi-agent</span><h2>CoC 跑团实验桌</h2></div><span className="studio-signal">2 scenarios</span></header>
-        <p>先车一张可跨团复用的人物卡 Identity。KP 与两名 AI 调查员在 DAG 中协作；数值与物品 Tool 由受限事务持久更新。</p>
-        <div className="studio-card-actions"><button className="primary" onClick={() => onNavigate('coc')}>人物卡与开团</button><button onClick={() => onOpenHarness('coc_lightless_beacon')}>快速打开模组</button></div>
-      </article>
-
-      <article className="studio-home-card compact-card">
-        <header><div><span className="studio-eyebrow">Review</span><h2>可逆是默认行为</h2></div><button onClick={() => onNavigate('changes')}>审阅改动</button></header>
-        <p>文件修改、Identity/Skill 安装、Harness 结构变化和能力包发布都有单独的审阅、版本与恢复路径。</p>
-      </article>
     </section>
   </main>;
 }

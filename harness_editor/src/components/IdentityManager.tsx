@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as api from "../api/client";
 import ToolLibrary from './ToolLibrary';
+import { featureEnabled } from '../productFeatures';
 
 interface IdData {
   name: string;
@@ -345,7 +346,7 @@ export default function IdentityManager() {
       <div style={{ width: 280, borderRight: "1px solid #333", padding: 12, overflowY: "auto", flexShrink: 0 }}>
         <h3 style={{ margin: "0 0 8px", fontSize: 14, color: "#aaa" }}>🤖 Identities</h3>
 
-        <div style={{ padding: 9, marginBottom: 10, border: "1px solid #0ea5e955", background: "#082f4933", borderRadius: 7 }}>
+        {featureEnabled('evolution') && <div style={{ padding: 9, marginBottom: 10, border: "1px solid #0ea5e955", background: "#082f4933", borderRadius: 7 }}>
           <div style={{ color: "#7dd3fc", fontSize: 12, fontWeight: 700, marginBottom: 5 }}>✨ 一句话创建完整 Agent</div>
           <textarea
             value={agentDescription}
@@ -364,7 +365,7 @@ export default function IdentityManager() {
             创建 Identity + Skills + Harness
           </button>
           {createdHarness && <div style={{ color: "#86efac", fontSize: 10, marginTop: 5 }}>可在 Harness 编排中加载：{createdHarness}</div>}
-        </div>
+        </div>}
 
         <div style={{ marginBottom: 8 }}>
           <input

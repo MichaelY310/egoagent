@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { HarnessConfig } from '../types';
 import './CookbookRecipe.css';
-import catalog from '../cookbookCatalog.json';
+import allRecipes from '../cookbookCatalog.json';
+import { flowEnabled } from '../productFeatures';
+const catalog = allRecipes.filter(item => flowEnabled(item.name));
 
 export default function CookbookRecipe({ recipe, disabled, onOpen }: {
   recipe: NonNullable<HarnessConfig['cookbook']>;
@@ -27,7 +29,7 @@ export default function CookbookRecipe({ recipe, disabled, onOpen }: {
             </optgroup>)}
           </select>
         </label>
-        {recipe.based_on && <button disabled={disabled} onClick={() => onOpen(recipe.based_on!)}>
+        {recipe.based_on && flowEnabled(recipe.based_on) && <button disabled={disabled} onClick={() => onOpen(recipe.based_on!)}>
           基于 {catalog.find(item => item.name === recipe.based_on)?.title || recipe.based_on}
         </button>}
       </div>
@@ -48,8 +50,8 @@ export default function CookbookRecipe({ recipe, disabled, onOpen }: {
           catch { setCopied('请选中上方文本复制'); }
         }}>复制示例</button><span role="status">{copied}</span>
         <small>各关独立可运行；新增能力基于标明的前置课程，不要求把全部功能堆在一个 Agent。</small>
-        {recipe.previous && <button disabled={disabled} onClick={() => onOpen(recipe.previous!)}>← 上一关</button>}
-        {recipe.next && <button disabled={disabled} onClick={() => onOpen(recipe.next!)}>下一关 →</button>}
+        {recipe.previous && flowEnabled(recipe.previous) && <button disabled={disabled} onClick={() => onOpen(recipe.previous!)}>← 上一关</button>}
+        {recipe.next && flowEnabled(recipe.next) && <button disabled={disabled} onClick={() => onOpen(recipe.next!)}>下一关 →</button>}
       </footer>
     </div>
   </details>;

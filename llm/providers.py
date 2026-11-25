@@ -59,12 +59,8 @@ class AnthropicCompatibleLLM(CustomLLM):
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
-        configured_env = str(config.get("api_key_env") or "ANTHROPIC_API_KEY")
-        self.api_key = (
-            os.environ.get(configured_env, "").strip()
-            or os.environ.get("ANTHROPIC_API_KEY", "").strip()
-            or str(config.get("api_key") or "").strip()
-        )
+        # CustomLLM's resolver enforces explicit credentials and endpoint origin.
+        # Never replace its result with an unrelated global provider secret.
         self.anthropic_version = str(config.get("anthropic_version") or "2023-06-01")
 
     def _headers(self):

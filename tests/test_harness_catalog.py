@@ -14,7 +14,7 @@ class HarnessCatalogTests(unittest.TestCase):
     def test_known_product_flows_are_system(self):
         item = classify_harness("adaptive_code_agent", config())
         self.assertEqual(item["catalog_category"], "system")
-        self.assertEqual(item["catalog_visibility"], "public")
+        self.assertEqual(item["catalog_visibility"], "unreleased")
         self.assertTrue(item["runnable"])
 
     def test_components_remain_runtime_available_but_hidden_from_main_picker(self):

@@ -1,0 +1,1 @@
+{"id":"background","enabled":false,"depends":[],"routes":["background"],"api_prefixes":["/api/runs"],"flows":["cookbook_10_durable"],"flow_patterns":[],"acceptance":"No omitted large files interpreted as deletions; cancellation, interrupted recovery and conflict-safe handoff."}

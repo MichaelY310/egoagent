@@ -139,6 +139,10 @@ async function openWorkspaceWindow(url, label) {
 
 async function openRemoteWorkspaces() {
   try {
+    if (!runtime.id && !await remoteFeatureEnabled()) {
+      vscode.window.showInformationMessage('SSH / WSL 尚未在 main 开放，请使用 codex/feature-remote 开发分支。');
+      return;
+    }
     if (runtime.id) {
       const action = await vscode.window.showInformationMessage(`当前运行位置：${runtime.label}`, { modal: true,
         detail: '文件、终端、Agent、Flow 和 Session 保存在此目标环境。返回本机不停止运行；断开连接请在本机 SSH/WSL 菜单选择此连接。' }, '返回本机');
@@ -179,12 +183,20 @@ async function openRemoteWorkspaces() {
   } catch (error) { vscode.window.showErrorMessage(`SSH/WSL：${error.message || error}`); }
 }
 
+async function remoteFeatureEnabled() {
+  try {
+    const response = await authenticatedFetch(backendUrl() + '/api/product/features', { signal: AbortSignal.timeout(5000) });
+    return response.ok && (await response.json()).remote === true;
+  } catch (_) { return false; }
+}
+
 function registerRemoteWorkspaces(context) {
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1000);
   status.text = runtime.id ? `$(remote) ${runtime.label}` : '$(remote) SSH / WSL';
   status.tooltip = runtime.id ? '文件、终端和 Agent 均在此目标环境执行；点击返回本机' : '连接远程项目：WSL 或 SSH';
   status.command = 'egoagent.openRemoteWorkspace';
-  status.show();
+  if (runtime.id) status.show();
+  else void remoteFeatureEnabled().then(enabled => { if (enabled) status.show(); });
   context.subscriptions.push(status, vscode.commands.registerCommand('egoagent.openRemoteWorkspace', openRemoteWorkspaces));
 }
 

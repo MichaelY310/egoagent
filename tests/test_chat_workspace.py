@@ -12,10 +12,10 @@ class ChatWorkspaceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             harness, slots = _build_chat_harness([], workspace=directory)
 
-            self.assertEqual(harness.config["name"], "adaptive_code_agent")
+            self.assertEqual(harness.config["name"], "code_agent_fast")
             self.assertEqual(set(slots), {"agent", "governor"})
             self.assertTrue(
-                all(agent.identity.ID["name"] == "deepseek_operator" for agent in harness.agents.values())
+                all(agent.identity.ID["name"] == "adaptive_deepseek_coder" for agent in harness.agents.values())
             )
 
     def test_openai_compatible_chat_builds_agent_in_requested_workspace(self):
@@ -36,7 +36,8 @@ class ChatWorkspaceTests(unittest.TestCase):
             for agent in harness.agents.values():
                 self.assertEqual(Path(agent.workspace).resolve(), workspace)
 
-    def test_adaptive_code_agent_explicitly_omits_per_response_token_cap(self):
+    @patch('product_features.require_flow')
+    def test_adaptive_code_agent_explicitly_omits_per_response_token_cap(self, _development_branch_gate):
         with tempfile.TemporaryDirectory() as directory:
             harness, _slots = _build_chat_harness(
                 [],

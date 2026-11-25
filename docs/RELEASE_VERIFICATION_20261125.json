@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-25",
+  "health": "AMBER",
+  "scope": "Curated local developer product, not an untrusted-code or cross-platform stable-release certification",
+  "baseline_audit": "FEATURE_MATURITY_AUDIT_20261123_ZH.md",
+  "baseline_snapshot": "9b2f6d8",
+  "verification": {
+    "python": {"passed": 915, "skipped": 3, "subtests_passed": 258, "seconds": 190.73, "external_network": "disabled for Python test socket connections", "real_model_calls": false},
+    "node": {"passed": 133, "failed": 0},
+    "frontend": {"clean_npm_ci": true, "typescript_vite_build": true, "modules": 257, "vite": "6.4.6", "npm_audit_vulnerabilities": 0, "rebuild": "hashed JS/CSS match; index.html differs only in CRLF/LF"},
+    "headless_export": {"passed": 313, "skipped": 1, "subtests_passed": 37, "public_exports_imported": true, "ui_and_server_imports_forbidden": true, "actual_model_free_flow_executed": true},
+    "python_skips": ["test_import_rejects_symlinks_when_supported", "test_absolute_traversal_and_symlink_escape_are_denied", "test_real_container_runtime_when_explicit_image_is_available"],
+    "browser_checked": ["Curated Home and More navigation", "Build loads cookbook_01_react and typed sockets with saved Identity", "cookbook_reader Identity opens without join crash", "Tool library searches read_file with distinct sources", "Session creation dialog selects only Flow and version", "Full local Void IDE loads folder/editor/native Chat and populated Harness versions", "Integrated Workbench opens from native Chat", "Narrow Build Run button was covered by wrapped header; fixed and clicked successfully", "Model-free release_ui_smoke executed one output node with 9 recorded events and no model or tool calls", "Saved full run to album, reopened recording, selected node-output event and verified exact output without reexecution"],
+    "session_ui": {"create": true, "fork": true, "rename": true, "rule_based_merge": true, "source_preserved_and_lineage_visible": true, "fixture": "empty synthetic sessions; nonempty merge semantics covered by automated tests, not this browser smoke"},
+    "not_revalidated": ["paid model end-to-end quality", "all editor Accept/Reject/undo gestures in a real model run", "WebView2 clipboard and desktop reinstall", "fresh-machine full Void runtime installation", "real SSH and WSL", "real Docker isolation", "external browser automation", "embedding retrieval quality", "SFT or RL frameworks"]
+  },
+  "audit_followup": {
+    "parallel_authority_inheritance": "fixed and regression tested",
+    "knowledge_env_authorization": "scoped SecretView required; redaction before trace",
+    "anthropic_credential_override": "fixed; explicit credential and provider origin preserved",
+    "windows_update_path_escape": "fixed; all paths prevalidated and symlinks/drive/UNC/ADS rejected",
+    "required_signature_unverified": "fixed; trusted key and successful verification required",
+    "diagnostic_prompt_exclusion": "raw logs excluded unless include_prompts explicitly enabled",
+    "thread_timeout_side_effect": "mitigated: drain before reporting failure, no automatic timeout retry; not hard cancellation",
+    "evaluation_evolution_training_background_semantics": "unfinished paths disabled in main; branch acceptance work remains"
+  },
+  "regression_history": [
+    {"attempt": 1, "passed": 897, "failed": 7, "reason": "old defaults and development-only HTTP tests hit new product gates; added explicit main-gate tests and separated development-module tests"},
+    {"attempt": 2, "passed": 906, "failed": 7, "reason": "local import shadowed saved_flow_configuration in HTTP start plus one stale UI assertion; real startup regression fixed"},
+    {"attempt": 3, "passed": 915, "failed": 0, "skipped": 3}
+  ],
+  "local_evidence": {
+    "directory": "tmp/release-20261125 (ignored, not distributed)",
+    "python_source_archive_sha256": "9E665AE32731D2488302584802F9F5AC241194D92B0ED7A5FC42F7B9F8B1F39B",
+    "python_junit_sha256": "B107BCA9C0ECE2C1ECC6D1283CEC1F75684D7E0B344688DB2C35F5356198AA30",
+    "note": "Python source archive precedes final documentation, the native remote-status visibility fix and Build CSS layout fix; Node tests and frontend build rerun after these frontend changes. Raw tests use synthetic data, not user sessions."
+  }
+}

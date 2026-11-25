@@ -49,4 +49,6 @@ def resolve_connection(config: Mapping, environ: Mapping) -> dict[str, str]:
         api_key = _text(environ.get("EGOAGENT_LLM_API_KEY"))
     if not api_key and matching_provider:
         api_key = _text(environ.get(matching_provider[2]))
+    if not api_key and origin == _origin("https://api.anthropic.com"):
+        api_key = _text(environ.get("ANTHROPIC_API_KEY"))
     return {"base_url": base_url, "model": model, "api_key": api_key}

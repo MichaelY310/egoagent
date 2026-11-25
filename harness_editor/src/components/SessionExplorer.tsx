@@ -17,6 +17,7 @@ import {
 } from "../api/client";
 import { WORKSPACE } from "../api/runtime";
 import { openWorkspaceInIde } from "../ideBridge";
+import { featureEnabled } from '../productFeatures';
 
 interface SessionInfo {
   name: string;
@@ -69,6 +70,7 @@ interface AnalyzeMessage {
 }
 
 export default function SessionExplorer() {
+  const selectionRequest = useRef(0);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [projects, setProjects] = useState<ProjectPortfolioItem[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
@@ -121,7 +123,7 @@ export default function SessionExplorer() {
       })) as SessionInfo[]);
       setSelectedProject((current) => current || projectData.find((project) => project.current)?.id || 'all');
       try {
-        const marked = await getTrainingAnnotations({ target_type: "session" });
+        const marked = featureEnabled('training') ? await getTrainingAnnotations({ target_type: "session" }) : { annotations: [] };
         setSessionAnnotations(marked.annotations);
       } catch (reason) {
         console.warn("Failed to fetch session annotations:", reason);
@@ -169,6 +171,7 @@ export default function SessionExplorer() {
   }, [analyzeChatMessages]);
 
   const selectSession = async (name: string) => {
+    const request = ++selectionRequest.current;
     setSelected(name);
     setOpenSessions((current) => [...current.filter((item) => item !== name), name].slice(-12));
     void updatePortfolioSession(name, { last_opened_at: Date.now() / 1000 }).catch(() => undefined);
@@ -181,18 +184,20 @@ export default function SessionExplorer() {
       const msgsRes = await fetch(`${BASE}/api/session/${encodeURIComponent(name)}/messages`);
       if (msgsRes.ok) {
         const msgsData = await msgsRes.json();
+        if (request !== selectionRequest.current) return;
         setMessages(Array.isArray(msgsData) ? msgsData : (msgsData.messages || []));
       }
       // 尝试加载缓存的评估报告（如果之前 analyze 过）
       const cachedRes = await fetch(`${BASE}/api/session/${encodeURIComponent(name)}/cached-report`);
       if (cachedRes.ok) {
         const cachedData = await cachedRes.json();
+        if (request !== selectionRequest.current) return;
         if (cachedData.report) setEvalReport(cachedData);
       }
     } catch (e) {
       console.error("Failed to load session:", e);
     }
-    setLoading(false);
+    if (request === selectionRequest.current) setLoading(false);
   };
 
   const triggerAnalyze = async () => {
@@ -613,7 +618,7 @@ export default function SessionExplorer() {
               <div style={{ display: "flex", flexShrink: 0, background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 4, overflow: "hidden" }}>
                 {selectedInfo?.has_trajectory && <button type="button" onClick={() => setDetailMode("replay")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "replay" ? "white" : "var(--text-dim)", background: detailMode === "replay" ? "var(--focus)" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>精确回放</button>}
                 <button type="button" onClick={() => setDetailMode("messages")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "messages" ? "white" : "var(--text-dim)", background: detailMode === "messages" ? "var(--focus)" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>审计聊天</button>
-                <button type="button" onClick={() => setDetailMode("training")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "training" ? "white" : "var(--text-dim)", background: detailMode === "training" ? "var(--focus)" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>训练数据</button>
+                {featureEnabled('training') && <button type="button" onClick={() => setDetailMode("training")} style={{ padding: "5px 9px", border: 0, cursor: "pointer", color: detailMode === "training" ? "white" : "var(--text-dim)", background: detailMode === "training" ? "var(--focus)" : "transparent", fontSize: 10, whiteSpace: "nowrap", flexShrink: 0 }}>训练数据</button>}
               </div>
               <button
                 type="button"

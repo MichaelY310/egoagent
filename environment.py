@@ -11,7 +11,7 @@ from utils import load_script
 
 
 
-def render_knowledge_content(content: str) -> str:
+def render_knowledge_content(content: str, *, secret_view=None) -> str:
     """渲染 knowledge 模板变量：{{config.key}} 和 {{env.KEY}}"""
     from config import CONFIG
     def replacer(match):
@@ -21,7 +21,10 @@ def render_knowledge_content(content: str) -> str:
             return str(CONFIG.get(key, f"{{{{config.{key}}}}}"))
         elif expr.startswith("env."):
             key = expr[len("env."):]
-            return os.environ.get(key, f"{{{{env.{key}}}}}")
+            # Knowledge is data, not authority to read arbitrary host secrets.
+            if secret_view is None:
+                raise PermissionError(f"Knowledge environment access requires authorization: {key}")
+            return secret_view.resolve(key)
         return match.group(0)
     return re.sub(r"\{\{(.+?)\}\}", replacer, content)
 
@@ -82,8 +85,8 @@ class Knowledge:
         self.content = content
         self.source_path = str(Path(source_path).resolve()) if source_path else None
 
-    def render(self):
-        return render_knowledge_content(self.content)
+    def render(self, *, secret_view=None):
+        return render_knowledge_content(self.content, secret_view=secret_view)
 
 
 class Environment:

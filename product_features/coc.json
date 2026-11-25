@@ -1,0 +1,1 @@
+{"id":"coc","enabled":false,"depends":[],"routes":["coc"],"api_prefixes":["/api/coc"],"flows":[],"flow_patterns":["coc_*"],"acceptance":"Multi-round persistent character inventory and rule consistency, user participation and recovery tests.","identity_patterns":["coc_*"]}

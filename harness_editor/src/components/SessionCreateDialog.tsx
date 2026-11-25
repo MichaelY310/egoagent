@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createPortfolioSession, listHarnesses, listIdentities, loadHarness, type ProjectPortfolioItem } from '../api/client';
+import { createPortfolioSession, listHarnesses, listHarnessVersions, type HarnessVersion, type ProjectPortfolioItem } from '../api/client';
 
 type Props = {
   projects: ProjectPortfolioItem[];
@@ -25,31 +25,26 @@ export default function SessionCreateDialog({ projects, preferredProjectId, onCl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [harnesses, setHarnesses] = useState<string[]>([]);
-  const [identities, setIdentities] = useState<string[]>([]);
-  const [harness, setHarness] = useState('code_agent_auto');
-  const [identity, setIdentity] = useState('adaptive_deepseek_coder');
-  const [mode, setMode] = useState('agent');
-  const [slots, setSlots] = useState<string[]>(['agent']);
-  const [bindings, setBindings] = useState<Record<string, string>>({});
+  const [harness, setHarness] = useState('code_agent_fast');
+  const [versions, setVersions] = useState<HarnessVersion[]>([]);
+  const [version, setVersion] = useState('latest');
   const project = available.find((item) => item.id === projectId);
 
   useEffect(() => {
-    Promise.all([listHarnesses(), listIdentities()]).then(([nextHarnesses, nextIdentities]) => {
+    listHarnesses().then((nextHarnesses) => {
       setHarnesses(nextHarnesses);
-      setIdentities(nextIdentities);
-      if (!nextHarnesses.includes(harness)) setHarness(nextHarnesses.includes('code_agent_auto') ? 'code_agent_auto' : nextHarnesses[0] || '');
-      if (!nextIdentities.includes(identity)) setIdentity(nextIdentities.includes('adaptive_deepseek_coder') ? 'adaptive_deepseek_coder' : nextIdentities[0] || '');
+      if (!nextHarnesses.includes(harness)) setHarness(nextHarnesses.includes('code_agent_fast') ? 'code_agent_fast' : nextHarnesses[0] || '');
     }).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
   }, []);
 
   useEffect(() => {
     if (!harness) return;
-    loadHarness(harness).then((config) => {
-      const names = Object.keys(config?.slots || {});
-      setSlots(names.length ? names : ['agent']);
-      setBindings((current) => Object.fromEntries((names.length ? names : ['agent']).map((slot) => [slot, current[slot] || config?.slots?.[slot]?.identity || identity])));
-    }).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
-  }, [harness, identity]);
+    let active = true;
+    setVersions([]); setVersion('latest');
+    listHarnessVersions(harness).then(result => { if (active) setVersions(result.versions); })
+      .catch(reason => { if (active) setError(String(reason)); });
+    return () => { active = false; };
+  }, [harness]);
 
   const submit = async () => {
     if (!project) return;
@@ -60,12 +55,7 @@ export default function SessionCreateDialog({ projects, preferredProjectId, onCl
         name: name.trim() || undefined,
         title: title.trim() || undefined,
         workspace: project.workspace,
-        agent_config: harness && identity ? {
-          harness,
-          mode,
-          debug_mode: mode === 'debug' ? 'paused' : 'auto',
-          agents: Object.fromEntries(slots.map((slot) => [slot, `identity/${bindings[slot] || identity}`])),
-        } : undefined,
+        flow_selection: { harness, version },
       });
       onCreated(String(result.session));
     } catch (reason) {
@@ -100,17 +90,18 @@ export default function SessionCreateDialog({ projects, preferredProjectId, onCl
           <div style={{ color: 'var(--text-primary)', fontSize: 11, fontWeight: 600 }}>此 Session 的 Agent 配置</div>
           <div style={{ marginTop: 3, color: 'var(--text-dim)', fontSize: 10 }}>配置会随 Session 保存；切换到其他 Session 时不会被全局选择覆盖。</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 9, marginTop: 9 }}>
-            <label style={{ color: 'var(--text-dim)', fontSize: 10 }}>模式
-              <select value={mode} onChange={(event) => setMode(event.target.value)} style={fieldStyle}>
-                <option value="chat">Chat · 只读问答</option><option value="plan">Plan · 只读规划</option><option value="agent">Agent · 执行任务</option><option value="debug">Debug · 单步调试</option><option value="evolve">Evolve · 限域进化</option><option value="evaluate">Evaluate · 隔离评测</option>
-              </select>
-            </label>
             <label style={{ color: 'var(--text-dim)', fontSize: 10 }}>Harness
               <select value={harness} onChange={(event) => setHarness(event.target.value)} style={fieldStyle}>{harnesses.map((item) => <option key={item} value={item}>{item}</option>)}</select>
             </label>
+            <label style={{ color: 'var(--text-dim)', fontSize: 10 }}>Flow 版本
+              <select value={version} onChange={event => setVersion(event.target.value)} style={fieldStyle}>
+                <option value="latest">最新保存的版本</option>
+                {versions.map(item => <option key={item.id} value={item.id}>{item.label || item.id}</option>)}
+              </select>
+            </label>
           </div>
           <div style={{ display: 'grid', gap: 7, marginTop: 8 }}>
-            {slots.map((slot) => <label key={slot} style={{ display: 'grid', gridTemplateColumns: 'minmax(80px,.55fr) minmax(130px,1fr)', alignItems: 'center', gap: 8, color: 'var(--text-dim)', fontSize: 10 }}><span>{slot} Identity</span><select value={bindings[slot] || identity} onChange={(event) => { setBindings((current) => ({ ...current, [slot]: event.target.value })); if (slot === slots[0]) setIdentity(event.target.value); }} style={{ ...fieldStyle, marginTop: 0 }}>{identities.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>)}
+            <small>Identity 与运行策略从此版本读取；需要修改请到 Build 保存新版本。</small>
           </div>
         </div>
         {!available.length && <div style={{ color: '#f48771', fontSize: 11 }}>没有可用 Project。请先创建或注册一个 Project。</div>}

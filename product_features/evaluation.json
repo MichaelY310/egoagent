@@ -1,0 +1,1 @@
+{"id":"evaluation","enabled":false,"depends":[],"routes":["tasks"],"api_prefixes":["/api/task-bench","/api/experiments"],"flows":["cookbook_16_evaluator_optimizer"],"flow_patterns":[],"acceptance":"Real task provisioning, isolated scoring, replay and failure recovery; no placeholder evaluator."}
