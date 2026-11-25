@@ -39,6 +39,7 @@ to imply that an old experiment is part of the current product.
 - 详细范围、首次失败与未测项见 [本轮验证记录](docs/RELEASE_VERIFICATION_20261125.json)。未进行付费模型、SSH/WSL、真实 Docker、全部原生编辑手势、SFT/RL 的重新认证，不宣称所有功能 100% 正常。
 - Git 取消跟踪 1,738 个 vendored Meilisearch 文件，本机参考副本保留；密钥、Session、日志、依赖和大体积实验产物仍被忽略。小型已审查历史实验报告保留，避免破坏已有证据引用。
 - 之后每次开发/合并同时维护本日志与状态总览；功能分支需满足各自任务单再解除 main 门禁。
+- 发布代码 `8b4048c` 已快进并推送到 `MichaelY310/egoagent` 的 main；9 条 `codex/feature-*` 分支及 `9b2f6d8` 集成快照均已推送并核对远端哈希。各功能分支有独立任务单，当前不冒充已实现新修复；入口保持关闭。推送使用 MichaelY310 的 HTTPS 凭据，未用本机另一个 SSH 账号，也未 force-push。
 
 ## 2026-11-23 · 功能成熟度独立审查（非发布认证）
 

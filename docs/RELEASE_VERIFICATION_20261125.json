@@ -4,6 +4,13 @@
   "scope": "Curated local developer product, not an untrusted-code or cross-platform stable-release certification",
   "baseline_audit": "FEATURE_MATURITY_AUDIT_20261123_ZH.md",
   "baseline_snapshot": "9b2f6d8",
+  "publication": {
+    "repository": "https://github.com/MichaelY310/egoagent",
+    "product_code_commit": "8b4048ceba7d0a405380483874d0eaacf291994d",
+    "remote_refs_verified": true,
+    "feature_branch_commits": {"evaluation":"5e773f0", "evolution":"6b8465d", "research":"b6eb9a2", "training":"973e81b", "deployment":"1311859", "background":"541ffd4", "coc":"42f70aa", "heartflow":"fb11ace", "remote":"2d5e096"},
+    "note": "All feature branches originate at the product commit and add their own acceptance plan; source is retained but gated in main. Later documentation-only commits do not change tested product code."
+  },
   "verification": {
     "python": {"passed": 915, "skipped": 3, "subtests_passed": 258, "seconds": 190.73, "external_network": "disabled for Python test socket connections", "real_model_calls": false},
     "node": {"passed": 133, "failed": 0},

@@ -13,9 +13,9 @@
 - [x] 保存完整整合快照 `codex/archive-integrated-20261125`，保留他人的整理。
 - [x] 修复凭据、Knowledge、并行继承、更新包、签名、诊断隐私边界并补回归测试；线程超时改为等待收尾，仍不具备强杀保证。
 - [x] 收紧主产品导航、API 和 Flow 依赖；未完成部分默认不可进入。
-- [ ] 为每个开发功能创建分支，记录解除门禁的条件。
+- [x] 为 9 组开发功能创建独立分支，各自提交任务单，记录解除门禁的条件。
 - [x] 隔离环境重跑测试、构建、启动和前端操作；记录未能覆盖的边界。
-- [ ] 更新 main、推送并核对远端提交。
+- [x] 更新 main，推送全部功能分支及集成快照，并用远端引用核对提交哈希。
 
 ## 功能与分支
 
@@ -52,6 +52,18 @@
 - 开发分支仍默认关闭开关，避免把创建分支误当作功能已通过验收。开发时可在该分支开启所需开关并重新打包；Evolution/Research 必须同时满足 Evaluate 依赖。达标的 PR 才能在 main 开放。
 - 产品门禁不是安全沙箱：受信任的开发者仍可从 Python SDK 使用底层模块。不要把它作为隔离恶意代码的权限边界。
 - 每次合并同时更新本文件、`PROGRESS.md`、验证记录；写明失败/跳过项。修 bug 优先合 main 后再合回开发分支，不批量覆盖彼此变更。
+
+本轮产品代码提交为 `8b4048c`，9 条功能分支以它为共同起点。以下任务单在对应分支，不在 main 中重复维护：
+[Evaluation](https://github.com/MichaelY310/egoagent/blob/codex/feature-evaluation/docs/development/evaluation.md) ·
+[Evolution](https://github.com/MichaelY310/egoagent/blob/codex/feature-evolution/docs/development/evolution.md) ·
+[Research](https://github.com/MichaelY310/egoagent/blob/codex/feature-research/docs/development/research.md) ·
+[Training](https://github.com/MichaelY310/egoagent/blob/codex/feature-training/docs/development/training.md) ·
+[Deployment](https://github.com/MichaelY310/egoagent/blob/codex/feature-deployment/docs/development/deployment.md) ·
+[Background](https://github.com/MichaelY310/egoagent/blob/codex/feature-background/docs/development/background.md) ·
+[CoC](https://github.com/MichaelY310/egoagent/blob/codex/feature-coc/docs/development/coc.md) ·
+[Heart Flow](https://github.com/MichaelY310/egoagent/blob/codex/feature-heartflow/docs/development/heartflow.md) ·
+[Remote](https://github.com/MichaelY310/egoagent/blob/codex/feature-remote/docs/development/remote.md)。
+当前各分支只新增了各自的开发/验收清单，功能实现仍与这一 main 起点相同；后续修复才在对应分支独立演进。
 
 ## 本轮验证
 
