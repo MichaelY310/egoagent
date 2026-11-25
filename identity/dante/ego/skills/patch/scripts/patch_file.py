@@ -49,11 +49,7 @@ def patch_file(file_path: str, old_string: str, new_string: str, replace_all: bo
 
     # Record change for tracking
     try:
-        import sys as _sys
-        _ct_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "..", "..", "harness_editor")
-        if os.path.isdir(_ct_path) and _ct_path not in _sys.path:
-            _sys.path.insert(0, _ct_path)
-        from change_tracker import record_change
+        from egoagent_core.change_tracker import record_change
         record_change(file_path, content, new_content, "patch_file")
     except Exception:
         pass

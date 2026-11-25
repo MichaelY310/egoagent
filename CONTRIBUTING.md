@@ -7,11 +7,11 @@ implementation into several Identities.
 ## Development setup
 
 ```bash
-python -m pip install -r requirements.txt
-python -m unittest discover -s tests
-cd harness_editor
-npm install
-npm run build
+python -m pip install -r requirements-dev.txt
+python -m pytest tests -q
+npm --prefix harness_editor ci
+npm --prefix harness_editor run build
+node --test tests/*.test.cjs
 ```
 
 Run the integrated product from the repository root:
@@ -27,6 +27,11 @@ and the Void server on port 8869 are implementation details.
 
 - Runtime and orchestration: root Python modules such as `agent.py`,
   `pipeline_engine.py`, `harness.py`, and `run_coordinator.py`.
+- Shared application services: `egoagent_core/`. Core must never import a UI
+  or server package. New callers can use its public SDK exports.
+- HTTP/WebSocket adapters: `egoagent_server/`; run with `python -m egoagent_server`.
+  Python files in `harness_editor/` are compatibility aliases only. Do not add
+  implementation there or create a second module-level state store.
 - Reusable behavior: `capability_packs/`; inherit a pack instead of copying its
   Skills into multiple Identities.
 - Persona and policy: `identity/<name>/id.json` and its `ego/` or `superego/`.
@@ -39,16 +44,20 @@ and the Void server on port 8869 are implementation details.
 - Experiments: `experiments/`, with durable summaries in
   `experiments/results/`. Do not put experiment snapshots in runtime modules.
 
-`meilisearch/` is a vendored upstream source tree. It is not EgoAgent runtime
-code and must not be edited as part of product changes.
+`meilisearch/`, if present, is an ignored local upstream reference checkout, not
+EgoAgent runtime code or an installation dependency. Do not commit it again.
 
 ## Quality gates
 
 Before opening a change:
 
 1. Run the focused tests for the changed component.
-2. Run `python -m unittest discover -s tests` for runtime changes.
-3. Run `npm run build` for Workbench changes.
+2. Run `python -m pytest tests -q` for runtime changes. For dependency changes,
+   also export with `scripts/export_core.py --with-tests` and run
+   `python -I scripts/verify_headless.py --tests` inside the exported tree.
+3. Run `npm --prefix harness_editor ci`, `npm --prefix harness_editor run build`
+   and the Node tests for Workbench/Chat changes. On PowerShell versions that
+   do not expand the test glob, use the explicit file list shown in README.
 4. For UI work, exercise the feature through port 8880, including empty,
    loading, error, and recovery states.
 5. Keep provider keys in environment variables. Never commit `.env.local`,

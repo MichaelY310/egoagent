@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -12,7 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from environment import load_tool_from_dir
-from harness_editor import change_tracker
+from egoagent_core import change_tracker
 from pipeline_schema import validate_pipeline
 
 
@@ -26,6 +27,7 @@ def call_tool(name: str, arguments: dict, context: dict):
 
 
 class CodexRuntimeCapabilityTests(unittest.TestCase):
+    @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "unit-test-not-a-real-key"})
     def test_codex_identity_and_flow_are_valid_and_expose_runtime_tools(self):
         from agent import Agent
 
@@ -35,6 +37,7 @@ class CodexRuntimeCapabilityTests(unittest.TestCase):
         names = {agent._short_name(name) for name in agent.tools}
         self.assertTrue({"apply_patch", "exec_command", "write_stdin", "update_plan"}.issubset(names))
 
+    @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "unit-test-not-a-real-key"})
     def test_arc_long_horizon_flow_is_valid_and_exposes_only_adapter_capabilities(self):
         from agent import Agent
 

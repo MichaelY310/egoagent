@@ -1,0 +1,15 @@
+{
+  "name": "headless_hello",
+  "description": "Offline smoke Flow: runs without a model, server or frontend.",
+  "slots": {},
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "hello",
+    "workspace_preview": false,
+    "max_steps": 3,
+    "nodes": {
+      "hello": {"id": "hello", "op": "输出", "record": true, "value": "EgoAgent core is running without a frontend.", "edges": []}
+    }
+  }
+}

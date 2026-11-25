@@ -1,0 +1,5 @@
+# Headless runtime: no Node.js, IDE runtime or HTTP server installation needed.
+pyyaml
+requests
+websocket-client
+tomli>=2; python_version < "3.11"

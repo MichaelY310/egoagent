@@ -11,7 +11,7 @@
 | 代码问答、修改、命令执行；逐块 Accept / Refuse；Tab 灰字补全 | IDE → Chat / 文件编辑器 |
 | 多项目、多 Session；改名、分叉、合并；逐轮记录配置 | Chat / Workbench → Sessions |
 | 可循环 Flow、子 Flow、输入输出绑定、版本、连线编辑与自动排版 | Workbench → Build |
-| Identity / Ego / Superego、工具、Skill、Knowledge；文字和语义能力搜索 | Workbench → Identity / 能力库 |
+| Identity / Ego / Superego、工具、Skill、Knowledge；文字和语义能力搜索 | Workbench → Identity / 工具与 Skills / 能力库 |
 | 上下文压缩、结果裁剪、记忆；按需委派和复用能力进化 | Code Agent 系列 Flow |
 | Chat 与 Task 统一运行可视化、节点输入输出、子运行、录制相簿与事件回放 | Chat → 观察 / Workbench → 观察与回放 |
 | 选择 Task、准备本地或容器环境、评分与对比 | Workbench → Task Bench |
@@ -20,6 +20,10 @@
 权限审批与沙箱可配置。**Workspace Guard 不是操作系统隔离**；全自动审批也不等于安全。只在信任的项目中运行 Agent。容器需另装 Docker，挂载目录中的改动仍可能影响宿主文件。
 
 ## 安装共同依赖
+
+只需要 Agent / Flow / 实验，不需要界面？看 [纯核心使用与分层说明](docs/HEADLESS_CORE_ZH.md)。
+`python -m egoagent_core` 可独立运行；`scripts/export_core.py` 可导出不含前端和服务器的源码目录。
+下面是**带 UI 的完整产品**安装方式。
 
 需要 Git、Python **3.10+**、Node.js **20+**。下面以 Windows PowerShell 为例：
 
@@ -38,7 +42,13 @@ Linux 上用 `python3 -m venv .venv`，后续 Python 路径替换为 `.venv/bin/
 
 **完整 IDE** 还需要与操作系统匹配的 Void Web 运行时，放在 `void-web/`（包含 `out/server-main.js`、`out/vs/`、`extensions/` 和运行依赖；通常还带 `node.exe` 或 `node`）。运行时不在本仓库，**目前没有已验证的一键下载/安装流程**；仅克隆仓库不足以启动完整 IDE。普通桌面 Void 安装包不能直接替代 Web 运行时。
 
-已有运行时后，在仓库根目录运行：
+已有运行时后，可选择以下启动方式：
+
+Windows 也可以执行一次 `.\desktop\install-browser.ps1`，在桌面创建 **EgoAgent 浏览器版** 快捷方式。
+以后双击会自动启动或复用后台，等待 IDE/API 就绪后打开默认浏览器，不打开桌面版窗口，也不需要保留终端。
+关闭浏览器不会停止后台；启动失败会弹窗提示，日志在 `.runtime/desktop/browser-launcher.log` 和 `services.log`。
+
+或者手动启动：
 
 ```powershell
 .\.venv\Scripts\python.exe start-all.py
@@ -49,7 +59,7 @@ Linux 上用 `python3 -m venv .venv`，后续 Python 路径替换为 `.venv/bin/
 **没有 Void 运行时？** 可以先使用独立 Workbench，体验 Flow / Identity / Task / 回放（不含完整 IDE 编辑器与原生 Chat）：
 
 ```powershell
-.\.venv\Scripts\python.exe harness_editor/server.py
+.\.venv\Scripts\python.exe -m egoagent_server
 ```
 
 打开 **http://127.0.0.1:8765/**。也需要先完成前端 build。不要与完整服务重复启动，否则端口会冲突。
@@ -69,10 +79,13 @@ Linux 上用 `python3 -m venv .venv`，后续 Python 路径替换为 `.venv/bin/
 ## 第一次使用
 
 1. 在 **Workbench → Settings** 配置模型服务地址、模型名、API Key，并测试连接。密钥保存在被 Git 忽略的 `.env.local`，不要写入 Flow 或 Identity；也可参考 [.env.example](.env.example)。没有模型服务时可编辑图和运行离线测试，但不能真正进行 AI 对话/补全。
-2. IDE 打开项目，展开 **Chat → Agent 配置**，选择 `code_agent_auto`，默认 Identity 为 `adaptive_deepseek_coder`。只读问题选 Chat，允许修改时选 Agent。
+   **Identity 的 Base URL / model 显式配置优先，分别留空才继承全局设置。** 自定义地址连接失败会报错，不会悄悄切换模型。不同服务的密钥用 `llm.api_key_env` 指定环境变量；全局密钥仅用于对应服务地址，不自动发给其他服务器。
+2. 在 **Workbench → Build → 配置 → 角色与 Identity** 为 Flow 的角色选择 Identity，并设置运行策略后保存。`code_agent_auto` 已包含角色绑定；未绑定的旧模板需要在这里补齐。`test_bot` 是固定脚本测试角色，不调用真实模型。
+   IDE 打开项目，展开 **Chat → 选择 Flow**，只选择 Harness 和 Flow 版本。Chat 与 Build 独立试跑均读取该版本保存的 Identity 和运行策略，不再提供默认 Identity、模式或逐角色覆盖。修改配置后保存新版本，在 Chat 切换版本，下一条消息才使用它；工作区审批和沙箱不会因此解除。
 3. 发送“只读说明这个项目的入口和测试命令，不要修改文件”。需要写代码时再下达修改任务，并审阅改动。
 4. 点击 Chat 的 **观察**，将 Build 链接到该 Session；此时图只读。解锁并确认退出链接后才能编辑/独立试跑，不会暂停 Chat 中的 Agent。
 5. 低开销任务选 `code_agent_fast`；长程复用任务选 `code_agent_long`；多个独立子系统选 `code_agent_team`。不保证每次触发进化或委派。详见 [Code Agent 配置](docs/CODE_AGENT_PROFILES_ZH.md)。
+6. 学习组装从 Build 的 `cookbook_01_react` 开始；24 个递进示例覆盖自定义工具、Identity、审批、子 Flow、压缩、恢复、并行委派、记忆与进化。每个示例附简短说明。**工具与 Skills** 可检索工具、查看参数和源码；在 IDE 中点编辑会打开源文件。在 Identity 中选择启动时加载的能力，重新创建或加载 Agent 后生效，不是安全白名单。
 
 Tab 补全：输入后等待灰字，`Tab` 接受、`Esc` 取消、`Ctrl+Z` 撤销。详见 [自动补全](docs/AUTOCOMPLETE_ZH.md)。SSH / WSL 从 IDE 的 **SSH / WSL** 入口连接，目标环境需另配依赖与模型：[远程使用](docs/REMOTE_WORKSPACES_ZH.md)。
 
@@ -82,7 +95,7 @@ Tab 补全：输入后等待灰字，`Tab` 接受、`Esc` 取消、`Ctrl+Z` 撤�
 - **自进化与副本 Flow**：结构修改、Skill 创建、验证与回滚机制已实现；稳定收益和通用热替换仍需验证。保存新版本不等于自动热替换正在执行的节点。
 - **评测与训练**：Task、轨迹导出和适配器可用；大规模 benchmark、分布式 RL 和各训练框架完整兼容性仍属实验范围。
 - **远程与兼容性**：SSH 需预先配置免交互认证；不自动同步不同机器的 Session/密钥。未覆盖所有浏览器、模型及系统组合。
-- 低完成度的强制新手教程已移除，保留手动文档与演示素材。进度与本轮验证见 [开发状态](docs/DEVELOPMENT_STATUS_20260930.md)。
+- 低完成度的强制新手教程已移除；Cookbook 是可编辑的 Flow 示例，不是强制点击向导。最新进度见 [开发日志](PROGRESS.md)，历史发布检查见 [2026-09-30 开发状态](docs/DEVELOPMENT_STATUS_20260930.md)。
 
 ## 开发与验证
 
@@ -96,7 +109,7 @@ npm --prefix harness_editor run package:extension
 
 `package:extension` 构建并同步 Workbench 到扩展；更改后重新加载 IDE。后端变更需重启服务。不要提交密钥、Session、轨迹、远程令牌和 `.runtime/`。
 
-核心目录：`harness/`（Flow）、`identity/`（角色与能力）、`harness_editor/`（API + React）、`void_extension/`（IDE 集成）、`desktop/`（桌面壳）、`task_bench/`（任务）、`tests/`（回归）。
+核心：`egoagent_core/` + 根目录 Python 运行时、`llm/`、`task_bench/`、`self_evolution/`；定义资源：`harness/`、`identity/`、`capability_packs/`。可选 API：`egoagent_server/`。可删除的界面：`harness_editor/`（React，旧 Python 路径仅兼容转发）、`void_extension/`（IDE 集成）、`desktop/`（桌面壳）。核心不导入 UI / API，分层回归见 `tests/test_core_separation.py`。
 
 更多：[Flow 设计](docs/DAG_AUTHORING_MODEL.md) · [Task 格式](docs/TASK_BENCH.md) · [观察与回放](docs/UNIFIED_FLOW_OBSERVATION_ZH.md) · [手动演示指南](docs/VIDEO_SERIES_MASTER_GUIDE_ZH.md)
 

@@ -89,6 +89,7 @@ void-web.tar.gz
 
 # === EgoAgent runtime data ===
 .runtime/
+.runtime-logs/
 .egoagent/
 .egoagent_checkpoints/
 # Immutable Flow snapshots are runtime/session data, not source definitions.
@@ -107,6 +108,12 @@ experiments/archive/*.zip
 # Publish reviewed reports explicitly; never sweep raw runs into a release.
 experiments/product_code_agent_acceptance/results/
 experiments/evocert_real_pilot/results/
+experiments/harness_edit_diagnostic_20261012/results/
+# Generated, task-specific experiment skills are local evidence, not default tools.
+identity/adaptive_deepseek_coder/ego/skills/normalize_bundle_json/
+identity/adaptive_deepseek_coder/ego/skills/normalize_customer_record/
+identity/adaptive_deepseek_coder/ego/skills/normalize_telemetry_event/
+identity/experiment_adaptive_evolver/ego/skills/normalize_quasar_release_v3/
 # Generated installation connection details may include a remote access token.
 void_extension/egoagent-dag-chat/connection-runtime.js
 

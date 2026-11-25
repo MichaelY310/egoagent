@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api/client';
+import cookbook from '../cookbookCatalog.json';
+import './CookbookRecipe.css';
 
 type Destination = 'harness' | 'tasks' | 'evolution' | 'packages' | 'changes' | 'sessions' | 'coc';
 
@@ -64,7 +66,20 @@ export default function StudioHome({ onNavigate, onOpenHarness }: StudioHomeProp
       <div className="studio-home-actions">
         <button className="primary" onClick={() => onNavigate('harness')}>打开 Agent Builder</button>
         <button onClick={() => onNavigate('tasks')}>运行一个 Task</button>
+        <button onClick={() => onOpenHarness('cookbook_01_react')}>Cookbook · 从 ReAct 开始</button>
       </div>
+    </section>
+
+    <section className="cookbook-catalog" aria-label="Cookbook 课程目录">
+      <h2>Agent Cookbook · {cookbook.length} 个可运行 Flow</h2>
+      <p>先学最小 ReAct，再按需要选择分支。每关都标明前置课程、示例输入和可观察的结果。</p>
+      <div className="cookbook-chapters">{[...new Set(cookbook.map(item => item.chapter))].map(chapter => <details key={chapter}>
+        <summary>{chapter} · {cookbook.filter(item => item.chapter === chapter).length} 关</summary>
+        {cookbook.filter(item => item.chapter === chapter).map(item => <button key={item.name} onClick={() => onOpenHarness(item.name)}>
+          <b>{String(item.step).padStart(2, '0')} · {item.title}</b><span>{item.added}</span>
+        </button>)}
+      </details>)}</div>
+      <small>参考 Claude Agent SDK Cookbook、官方 research-agent 与 LangGraph 工作流模式。MCP 服务集成、云部署、视觉模型是独立扩展，不冒充已完成课程。</small>
     </section>
 
     <section className="studio-journey" aria-label="Agent lifecycle">

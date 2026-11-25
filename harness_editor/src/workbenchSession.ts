@@ -1,8 +1,8 @@
 import type { HarnessConfig } from './types';
 import { WORKSPACE, canonicalWorkspace } from './api/runtime';
-import { postToIde, type IdeContextItem } from './ideBridge';
+import { postToIde, readIdeWorkbenchSession, writeIdeWorkbenchSession, type IdeContextItem } from './ideBridge';
 
-export type WorkbenchRoute = 'home' | 'observe' | 'harness' | 'ir' | 'tasks' | 'research' | 'background' | 'library' | 'packages' | 'changes' | 'checkpoints' | 'identity' | 'environment' | 'sessions' | 'settings' | 'evolution' | 'coc' | 'flow' | 'more';
+export type WorkbenchRoute = 'home' | 'observe' | 'harness' | 'ir' | 'tasks' | 'research' | 'background' | 'library' | 'tools' | 'packages' | 'changes' | 'checkpoints' | 'identity' | 'environment' | 'sessions' | 'settings' | 'evolution' | 'coc' | 'flow' | 'more';
 
 export interface BuilderDraft {
   config: HarnessConfig;
@@ -11,6 +11,20 @@ export interface BuilderDraft {
   selectedEdgeId?: string | null;
   showOutput?: boolean;
   outputView?: 'conversation' | 'timeline';
+  harnessVersion?: string;
+  viewport?: { x: number; y: number; zoom: number };
+  showPalette?: boolean;
+  showInspector?: boolean;
+  panelLayoutVersion?: 1;
+  showMinimap?: boolean;
+  showLiveArchitecture?: boolean;
+  locked?: boolean;
+}
+
+/** Migrate the old IDE-only collapsed defaults once, then remember user choices. */
+export function builderPanelVisibility(draft?: BuilderDraft): { palette: boolean; inspector: boolean } {
+  if (draft?.panelLayoutVersion !== 1) return { palette: true, inspector: true };
+  return { palette: draft.showPalette ?? true, inspector: draft.showInspector ?? true };
 }
 
 export interface EvaluationSelection {
@@ -40,6 +54,7 @@ export interface WorkbenchSession {
   workspace: string;
   route?: WorkbenchRoute;
   builder?: BuilderDraft;
+  observation?: { linkedRunId?: string; replayRunId?: string; albumRunId?: string };
   evaluation?: EvaluationSelection;
   evolution?: EvolutionSelection;
   handoff?: { items: IdeContextItem[]; updatedAt: number };
@@ -47,6 +62,16 @@ export interface WorkbenchSession {
 }
 
 const STORAGE_PREFIX = 'egoagent.workbench.v1:';
+
+function validSession(value: unknown): value is WorkbenchSession {
+  if (!value || typeof value !== 'object') return false;
+  const session = value as Partial<WorkbenchSession>;
+  return session.version === 1 && canonicalWorkspace(session.workspace) === canonicalWorkspace(WORKSPACE);
+}
+
+export function hasRestoredIdeSession(): boolean {
+  return validSession(readIdeWorkbenchSession());
+}
 
 function storageKey(): string {
   return `${STORAGE_PREFIX}${encodeURIComponent(canonicalWorkspace(WORKSPACE) || 'standalone')}`;
@@ -58,15 +83,11 @@ export function loadWorkbenchSession(): WorkbenchSession {
     workspace: WORKSPACE,
     updatedAt: 0,
   };
-  try {
-    const raw = window.localStorage.getItem(storageKey());
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as Partial<WorkbenchSession>;
-    if (parsed.version !== 1) return fallback;
-    return { ...fallback, ...parsed, workspace: WORKSPACE };
-  } catch {
-    return fallback;
-  }
+  let local: unknown;
+  try { local = JSON.parse(window.localStorage.getItem(storageKey()) || 'null'); } catch { /* blocked/quota */ }
+  const candidates = [readIdeWorkbenchSession(), window.__EGOAGENT_WORKBENCH__?.workbenchSession, local]
+    .filter(validSession).sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
+  return { ...fallback, ...candidates[0], workspace: WORKSPACE };
 }
 
 export function updateWorkbenchSession(patch: Partial<Omit<WorkbenchSession, 'version' | 'workspace' | 'updatedAt'>>): WorkbenchSession {
@@ -86,6 +107,7 @@ export function updateWorkbenchSession(patch: Partial<Omit<WorkbenchSession, 've
   } catch {
     // Persistence is optional; a storage quota failure must never block a run.
   }
+  writeIdeWorkbenchSession(next);
   return next;
 }
 

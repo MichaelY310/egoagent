@@ -1,0 +1,55 @@
+{
+  "study": "Real harness edit scope diagnostic",
+  "created_date": "2026-10-12",
+  "status": "registered before running any counterfactual tests",
+  "questions": [
+    "Do released evolutionary edits have sufficient parent, child and outcome provenance for component-wise counterfactual evaluation?",
+    "In a chronological sample of real upstream harness changes, are multiple component edits necessary to pass the upstream regression tests?",
+    "Does an outcome-blind dependency-based scope selector improve on fixed grouping after counting scope size?"
+  ],
+  "evidence_tiers": {
+    "A": "Solver task outcomes under parent, single-component and joint variants, using the same tasks and model budget.",
+    "B": "Unmodified upstream regression tests executed on component subsets of real upstream commits. This measures maintenance correctness, NOT solver benchmark improvement or RSI.",
+    "C": "Static dependencies, patch co-occurrence and published aggregate scores. These do NOT establish causal necessity."
+  },
+  "evolution_sources": [
+    "https://github.com/IQuestLab/ModularRSI",
+    "https://github.com/stanford-iris-lab/meta-harness-tbench2-artifact",
+    "https://github.com/jennyzzt/dgm",
+    "https://github.com/facebookresearch/Hyperagents"
+  ],
+  "dgm_sample": {
+    "source": "Official DGM README linked public swe_results.zip",
+    "archive_file_id": "1QzSJkIpYYOtv_kNrC-fEvpW-M3rMm8tk",
+    "archive_size": 1010489591,
+    "selection": "First 40 timestamp-sorted candidate directories in swe_dgm with metadata.json. Keep failures and missing patches. Do not use ablation run directories as additional independent samples.",
+    "counterfactual_limit": "A candidate beating its parent does not establish necessity of its component combination. Such a claim needs subset executions; otherwise report only co-editing and observed parent/child scores."
+  },
+  "upstream_regression_sample": {
+    "repository": "https://github.com/SWE-agent/mini-swe-agent",
+    "head": "04d809ceab9df28f9adaed044884180159172930",
+    "order": "first-parent history, newest first, maximum 120 commits inspected",
+    "limit": 12,
+    "include": "Non-merge commits with semantic changes to src/minisweagent Python code and changes to upstream Python tests. Select before observing test outcomes.",
+    "exclude": "Pure documentation, formatting, packaging/version-only changes; record reasons. No exclusion based on success, component count or observed interaction.",
+    "evaluation": "All changed upstream test files, identical child-version tests for every production-code subset; report test collection/import errors separately.",
+    "component_rule": "Fixed existing source directory boundaries: agents, models, environments, run, config, utils, core. No splitting modules to manufacture interactions.",
+    "matrix": "Exhaust all changed-component subsets if k <= 4. For k > 4 record unsupported matrix instead of selective testing.",
+    "host_tests": "Only after source review for dangerous external actions; no network/model credentials in test processes, isolated source copy and local temp HOME.",
+    "scope_arms": {
+      "single": "Smallest singleton covering the primary changed component, seed identified by largest AST-level source change (path tie break).",
+      "fixed": "Predeclared groups: runtime={agents,models,environments,core}; support={run,config,utils}. Select the group containing the same primary component.",
+      "adaptive_static": "Outcome-blind direct production dependency closure on the same primary component, considering imports and explicit class/protocol references; source-only, no test outcomes, no tuned grouping.",
+      "oracle": "All changed production components, upper bound only; not a deployable selection policy."
+    }
+  },
+  "limits": {"download_mb": 512, "large_archive_access": "range reads only unless whole archive is under limit", "max_matrix_cells": 192, "per_cell_timeout_seconds": 120},
+  "interpretation": [
+    "A multi-file or multi-component patch is not evidence that its changes are all needed.",
+    "Subset import incompatibility is recorded separately from behavioral synergy.",
+    "If fixed grouping passes the same cases as adaptive grouping, no claim of adaptive correctness benefit is permitted.",
+    "A deterministic dependency heuristic is not a trained organization agent.",
+    "Do not report regression-test replay as a completed live improver or solver-task comparison.",
+    "Keep negative, unsupported, environment-failed, and no-op cases in the ledger."
+  ]
+}

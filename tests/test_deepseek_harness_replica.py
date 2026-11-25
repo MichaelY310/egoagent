@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -120,6 +121,7 @@ class RepeatingToolAgent(OneToolAgent):
 
 
 class DeepSeekHarnessReplicaTests(unittest.TestCase):
+    @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "unit-test-not-a-real-key"})
     def test_shipped_flow_components_and_identity_are_valid(self):
         for name in ("component_repeat_tool_guard", "component_tool_result_pruner", "deepseek_harness_replica"):
             config = json.loads((ROOT / "harness" / name / "config.json").read_text(encoding="utf-8"))

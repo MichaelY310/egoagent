@@ -1,0 +1,18 @@
+{
+  "name": "cookbook_calculator",
+  "role": "报价计算专家。计算必须使用 quote_total，不读文件或执行进程。",
+  "description": "报价计算专家。计算必须使用 quote_total，不读文件或执行进程。",
+  "personality": {
+    "language": "简体中文"
+  },
+  "ego_inherits": [
+    "@pack/cookbook_utilities"
+  ],
+  "llm": {
+    "type": "custom_llm",
+    "base_url": "",
+    "model": "",
+    "max_tokens": 2048,
+    "temperature": 0.2
+  }
+}

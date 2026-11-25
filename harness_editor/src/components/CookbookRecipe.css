@@ -1,0 +1,38 @@
+.cookbook-recipe { flex: 0 0 auto; max-height: 35vh; overflow: auto; border-bottom: 1px solid var(--vscode-panel-border, #8885); background: var(--vscode-editor-background, transparent); color: var(--vscode-foreground, inherit); font-size: 12px; }
+.cookbook-recipe summary { cursor: pointer; padding: 10px 14px; }
+.cookbook-recipe summary span { margin-left: 14px; opacity: .65; }
+.cookbook-recipe-body { padding: 0 14px 10px; }
+.cookbook-recipe-body p { margin: 0 0 8px; line-height: 1.5; }
+.cookbook-recipe-columns { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(200px, 1fr); gap: 16px; }
+.cookbook-recipe textarea { display: block; width: 100%; box-sizing: border-box; resize: vertical; margin-top: 5px; color: inherit; background: transparent; border: 1px solid var(--vscode-panel-border, #8885); border-radius: 5px; padding: 6px; font: inherit; }
+.cookbook-recipe select { display: block; width: 100%; margin-top: 5px; font: inherit; color: inherit; background: var(--vscode-dropdown-background, transparent); }
+.cookbook-recipe footer { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.cookbook-recipe footer small { flex: 1; opacity: .65; }
+.cookbook-recipe button { color: inherit; background: transparent; border: 1px solid var(--vscode-panel-border, #8885); border-radius: 5px; padding: 4px 8px; cursor: pointer; }
+.cookbook-recipe button:disabled { opacity: .4; cursor: not-allowed; }
+.cookbook-navigation { display: flex; gap: 12px; align-items: end; margin-bottom: 10px; }
+.cookbook-navigation label { min-width: 180px; flex: 1; }
+.cookbook-catalog { padding: 18px; border: 1px solid var(--vscode-panel-border, #8885); border-radius: 10px; margin: 18px 0; }
+.cookbook-catalog h2 { font-size: 18px; margin: 0 0 8px; }
+.cookbook-catalog p, .cookbook-catalog small { opacity: .8; line-height: 1.6; }
+.cookbook-chapters { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+.cookbook-chapters details { border: 1px solid var(--vscode-panel-border, #8885); border-radius: 6px; }
+.cookbook-chapters summary { padding: 12px; cursor: pointer; }
+.cookbook-chapters button { display: flex; flex-direction: column; gap: 5px; text-align: left; width: 100%; padding: 12px; color: inherit; background: transparent; border: none; border-top: 1px solid var(--vscode-panel-border, #8885); cursor: pointer; }
+.cookbook-chapters button:hover { background: var(--vscode-list-hoverBackground, #8882); }
+.cookbook-chapters button span { font-size: 12px; opacity: .75; line-height: 1.5; }
+@media (max-width: 800px) { .cookbook-recipe-columns { grid-template-columns: 1fr; } }
+
+/* Recipe text participates in layout instead of sitting below floating Build
+   controls. The canvas retains its own positioning context for overlays. */
+.builder-canvas-stage { display: contents; }
+.flow-area.has-cookbook { display: flex; flex-direction: column; overflow: hidden; }
+.flow-area.has-cookbook > .builder-context-bar { position: relative; inset: auto; flex: 0 0 auto; height: auto; flex-wrap: wrap; margin: 8px 10px 0; }
+.flow-area.has-cookbook .builder-harness-picker { max-width: none; flex-basis: 100%; }
+.flow-area.has-cookbook > .builder-canvas-stage { display: block; position: relative; flex: 1; min-height: 120px; }
+.flow-area.has-cookbook .builder-canvas-stage > .toolbar { top: 8px; max-width: calc(100% - 20px); flex-wrap: wrap; }
+.flow-area.has-cookbook .builder-canvas-stage > .flow-observer { height: 100%; }
+.flow-area.has-cookbook .live-agent-architecture { top: 58px; max-height: calc(100% - 90px); }
+.builder-linked > .builder-canvas-stage > .flow-observer { position: absolute; inset: 74px 0 0; height: auto; z-index: 4; }
+.builder-linked.has-cookbook > .builder-canvas-stage > .flow-observer { inset: 0; height: 100%; }
+.builder-linked > .builder-canvas-stage > .builder-execution-toolbar { display: none; }

@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "frozen_at": "2026-09-08",
+  "purpose": "Pre-registered, workspace-real capability retrieval matrix. Queries describe intent rather than copying only canonical names.",
+  "cases": [
+    {
+      "id": "tool_search_existing",
+      "kind": "tool",
+      "query": "在自己重新发明能力之前，先搜索已有的工具、技能、知识、身份与 Flow",
+      "expected_names": ["search_capabilities"]
+    },
+    {
+      "id": "tool_activate_result",
+      "kind": "tool",
+      "query": "Make one result returned by the local capability library available on the next reasoning step",
+      "expected_names": ["activate_capability"]
+    },
+    {
+      "id": "tool_reuse_discovery",
+      "kind": "tool",
+      "query": "find reusable abilities in the current workspace before creating a duplicate",
+      "expected_names": ["search_capabilities"]
+    },
+    {
+      "id": "skill_patch_workspace",
+      "kind": "skill",
+      "query": "apply a Codex-style patch that can add update delete or move several workspace files",
+      "expected_names": ["apply_patch"]
+    },
+    {
+      "id": "skill_cited_web",
+      "kind": "skill",
+      "query": "search the public internet and return citation-ready source URLs without requiring an API key",
+      "expected_names": ["web_search"]
+    },
+    {
+      "id": "skill_regex_files",
+      "kind": "skill",
+      "query": "find regular-expression matches in repository files with paths and line numbers",
+      "expected_names": ["search_files"]
+    },
+    {
+      "id": "knowledge_secret_protocol",
+      "kind": "knowledge",
+      "query": "protocol to follow when maintenance input contains credentials access tokens or secret-like fixtures",
+      "expected_names": ["release_privacy_protocol"]
+    },
+    {
+      "id": "knowledge_rust",
+      "kind": "knowledge",
+      "query": "local knowledge base for the Rust programming language",
+      "expected_names": ["rust"]
+    },
+    {
+      "id": "knowledge_harness_slots",
+      "kind": "knowledge",
+      "query": "learn the available harness templates, their slots, and how to create a harness",
+      "expected_names": ["harness_guide"]
+    },
+    {
+      "id": "identity_adaptive_coder",
+      "kind": "identity",
+      "query": "production DeepSeek Flash software engineer with repository editing, durable memory, isolated delegation and reusable skill evolution",
+      "expected_names": ["adaptive_deepseek_coder"]
+    },
+    {
+      "id": "identity_privacy_guard",
+      "kind": "identity",
+      "query": "review whether an action might expose passwords API keys or private information before execution",
+      "expected_names": ["privacy_guard"]
+    },
+    {
+      "id": "identity_browser_operator",
+      "kind": "identity",
+      "query": "iterative browser operator grounded in the current page observation that verifies state changes",
+      "expected_names": ["browser_operator"]
+    },
+    {
+      "id": "flow_fast_code",
+      "kind": "harness",
+      "query": "fast coding agent for a small well-scoped edit with bounded edit-test retries",
+      "expected_names": ["code_agent_fast"]
+    },
+    {
+      "id": "flow_context_compactor",
+      "kind": "harness",
+      "query": "reusable subflow for passive token-pressure compression of conversation history",
+      "expected_names": ["component_context_compactor"]
+    },
+    {
+      "id": "flow_deepseek_runtime",
+      "kind": "harness",
+      "query": "DeepSeek core runtime with a persistent tool loop, exact trajectory, checkpoints and approvals",
+      "expected_names": ["deepseek_harness_replica"]
+    }
+  ]
+}

@@ -2,12 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from harness_editor.background_workspace import (
+from egoagent_core.background_workspace import (
     apply_handoff,
     create_isolated_workspace,
     preview_handoff,
 )
-from harness_editor.change_tracker import clear_changes, configure_store, get_changes
+from egoagent_core.change_tracker import clear_changes, configure_store, get_changes
 
 
 class BackgroundWorkspaceTests(unittest.TestCase):

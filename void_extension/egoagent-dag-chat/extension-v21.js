@@ -1461,7 +1461,7 @@ function buildInlineHunks(document, selection, instruction) {
   }];
 }
 
-async function captureEditorContext() {
+async function captureEditorContext({ includeLanguageFeatures = true } = {}) {
   const editor = vscode.window.activeTextEditor;
   const defaultFolder = vscode.workspace.workspaceFolders?.[0];
   if (!editor) return {
@@ -1472,16 +1472,17 @@ async function captureEditorContext() {
   const document = editor.document;
   let symbols = [];
   try {
-    const documentSymbols = await vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider', document.uri) || [];
+    const documentSymbols = includeLanguageFeatures
+      ? await vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider', document.uri) || [] : [];
     symbols = documentSymbols.slice(0, 30).map((symbol) => ({ name: symbol.name, kind: vscode.SymbolKind[symbol.kind] || symbol.kind, line: (symbol.range?.start?.line || 0) + 1 }));
   } catch {}
   if (!symbols.length) symbols = extractLocalSymbols(document).slice(0, 30);
   const position = editor.selection.active;
-  const [definitionResult, referenceResult] = await Promise.allSettled([
+  const [definitionResult, referenceResult] = await Promise.allSettled(includeLanguageFeatures ? [
     vscode.commands.executeCommand('vscode.executeDefinitionProvider', document.uri, position),
     vscode.commands.executeCommand('vscode.executeReferenceProvider', document.uri, position),
-  ]);
-  const locations = (result) => (result.status === 'fulfilled' && Array.isArray(result.value) ? result.value : [])
+  ] : []);
+  const locations = (result) => (result?.status === 'fulfilled' && Array.isArray(result.value) ? result.value : [])
     .slice(0, 30)
     .map((location) => {
       const uri = location.uri || location.targetUri;
@@ -1596,8 +1597,11 @@ class DagChatViewProvider {
           await Promise.all([this.refreshAIStatus(), this.refreshBackendReviewState(), refreshWorkbenchRuntimeStatus()]);
           return;
         }
-        if (message.type === 'openWorkbench' || message.type === 'openStudio') return openWorkbench(message.tab || 'home', { linkRunId: message.linkRunId });
+        if (message.type === 'openWorkbench' || message.type === 'openStudio') return openWorkbench(message.tab || 'home', {
+          linkRunId: message.linkRunId, harness: message.harness, harnessVersion: message.harnessVersion,
+        });
         if (message.type === 'openRemoteWorkspace') return remoteWorkspaces.openRemoteWorkspaces();
+        if (message.type === 'openProjectFolder') return vscode.commands.executeCommand('workbench.action.files.openFolder');
         if (message.type === 'notifyError') return vscode.window.showErrorMessage(message.message || 'EgoAgent request failed');
         if (message.type === 'requestEditorContext') return this.sendEditorContext(message.requestId);
         if (message.type === 'attachTerminalContext') return vscode.commands.executeCommand('egoagent.attachTerminalSelectionToChat');
@@ -1819,7 +1823,8 @@ class DagChatViewProvider {
     this.view?.webview.postMessage({
       type: 'editorContext',
       requestId,
-      context: await captureEditorContext(),
+      // Submission must not wait for a language server just to learn the folder.
+      context: await captureEditorContext({ includeLanguageFeatures: !requestId }),
     });
   }
 
@@ -2083,30 +2088,28 @@ class DagChatViewProvider {
   <body data-api="${escapeHtml(backendUrl)}" data-ws="${escapeHtml(wsUrl)}" data-api-token="${escapeHtml(remoteWorkspaces.accessToken)}"><script src="${media}/remote-network.js"></script><script src="${media}/vendor/markdown-it.umd.min.js?v=15.0.2"></script><script src="${media}/markdown.js?v=1"></script>
   <header class="topbar"><div class="brand"><span class="brand-mark">E</span><span>EgoAgent</span><span class="local-badge">AI + LOCAL 0.21.24</span></div><div class="topbar-actions"><button id="remoteQuick" class="workbench-link" title="打开 SSH 或 WSL 项目；文件、终端和 Agent 一起切换">SSH / WSL</button><button id="workbenchQuick" class="workbench-link" title="在编辑区打开 Agent Workbench">Workbench</button><div id="connection" class="connection offline"><span></span>连接中</div></div></header>
   <details id="agentConfigDetails" class="agent-config">
-    <summary><span>Agent 配置</span><small id="agentConfigSummary">同一 Session 可逐轮切换 · 加载中…</small></summary>
+    <summary><span>选择 Flow</span><small id="agentConfigSummary">加载中…</small></summary>
   <section class="selectors">
-<label>模式<select id="modeSelect" aria-label="运行模式"><option value="chat">Chat · 只读问答</option><option value="plan">Plan · 只读规划</option><option value="agent">Agent · 执行任务</option><option value="debug">Debug · 复现修复</option><option value="evolve">Evolve · 限域进化</option><option value="evaluate">Evaluate · 评测权限</option></select></label>
-    <label>搜索 Harness<input id="harnessFilter" type="search" placeholder="例如 aider / research / browser" autocomplete="off"></label>
     <label>Harness<select id="harnessSelect" aria-label="Harness"></select></label>
     <label>Flow 版本<select id="harnessVersionSelect" aria-label="Flow 版本"></select></label>
     <div id="flowVersionNotice" class="harness-meta" hidden></div>
-    <div class="harness-options"><small>内部组件仅在 Build 中作为 SubFlow 复用</small><span id="harnessCount"></span></div>
-    <label>默认 Identity<select id="identitySelect" aria-label="默认 Identity"></select></label>
-    <div id="harnessMeta" class="harness-meta"></div><details id="bindingsDetails"><summary>Agent 绑定与 DAG</summary><div id="slotBindings" class="slot-bindings"></div><div id="dagNodes" class="dag-nodes"></div></details>
+    <div class="harness-options"><small>Identity 与运行配置统一在 Build 中保存</small><button id="editSelectedFlow" type="button">在 Build 中编辑</button></div>
+    <div id="harnessMeta" class="harness-meta"></div>
   </section></details>
   <div class="session-strip" aria-label="当前项目的 Agent Sessions"><div id="sessionTabs" class="session-tabs"><span class="session-empty">新 Session</span></div><button id="newSession" class="new-session" title="在当前项目新建独立 Session" aria-label="新建 Session">＋</button><button id="openSessionPortfolio" class="new-session" title="打开跨项目 Session Portfolio" aria-label="打开 Session Portfolio">▥</button><button id="linkSessionWorkbench" class="new-session observe-session-button" title="在 Build 中只读观察当前 Session" aria-label="在 Build 中观察当前 Session" disabled>观察</button></div>
   <div id="sessionContextMenu" class="session-context-menu" role="menu" hidden><button data-session-action="rename" role="menuitem">重命名</button><button data-session-action="observe" role="menuitem">在 Build 中观察</button><button data-session-action="fork" role="menuitem">Fork Session</button><button data-session-action="stop" role="menuitem">结束运行</button><button data-session-action="delete" class="danger" role="menuitem">移到回收站</button></div>
   <nav class="tabs" aria-label="EgoAgent views"><button class="tab active" data-tab="chat">对话</button><button class="tab" data-tab="changes">改动 <span id="pendingBadge" class="count-badge">0</span></button><button class="tab" data-tab="context">上下文</button></nav>
   <button id="workbenchStatus" class="workbench-status" hidden><span class="workbench-status-dot"></span><strong>Agent 就绪</strong><small></small></button>
+  <div class="chat-workspace" id="chatWorkspace"><span id="chatWorkspaceLabel">正在读取项目…</span><button id="openProjectFolder" title="选择 Agent 可以读取和修改的项目文件夹">打开项目</button></div>
   <div class="approval-controls"><button id="approvalMode" title="只影响当前 Session 的工具审批，不会关闭沙箱或解除禁止规则">工具审批：手动审批</button><small id="approvalModeHint">高风险操作需要你确认</small></div>
   <dialog id="approvalModeDialog" aria-labelledby="approvalModeTitle"><h3 id="approvalModeTitle">自动批准当前 Session 的工具操作？</h3><p>后续工具权限请求（包括当前等待的请求）将自动批准，可能修改文件、执行命令或访问网络。Host / Workspace guard 模式下命令以你的账号运行，并非操作系统沙箱。</p><p>明确禁止的操作、只读模式、文件访问边界和容器限制仍然生效。Flow 的人工审核/输入节点仍需你回答。只对当前 Session 生效，可随时切回手动。</p><div class="approval-actions"><button id="cancelAutoApproval">保持手动</button><button id="confirmAutoApproval">确认自动批准</button></div></dialog>
   <main>
-    <section id="chatTab" class="tab-panel active"><div id="messages" class="messages"><div id="emptyState" class="empty-state"><div class="empty-icon">⌁</div><strong>用自己的 DAG 开始工作</strong><span>聊天、补全、编辑与审查优先使用已配置模型；服务不可用时自动回退本地能力。</span></div></div>
+    <section id="chatTab" class="tab-panel active"><div id="messages" class="messages"><div id="emptyState" class="empty-state"><div class="empty-icon">⌁</div><strong>选择 Flow，开始对话</strong><span>运行你在 Build 中配置并保存的 Harness。模型、Identity 和流程均来自所选版本。</span></div></div>
       <div id="contextChips" class="context-chips"></div><div class="composer"><div id="prompt" class="composer-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="给 DAG Agent 一个任务… 可粘贴或拖入文件 / 选区"></div><div id="agentActivity" class="agent-activity idle" role="status" aria-live="polite" aria-busy="false"><span class="agent-activity-indicator" aria-hidden="true"></span><span id="composerHint">就绪 · 发送消息开始</span><button id="stopCurrentRun" class="agent-stop" title="停止当前 Session" hidden>停止</button></div><div class="composer-actions"><div class="context-picker-wrap"><button id="attachContext" class="icon-button" title="插入结构化上下文">＠</button><div id="contextPicker" class="context-picker" hidden><button data-attach-kind="file"><strong>@file</strong><small>当前文件</small></button><button data-attach-kind="selection"><strong>@selection</strong><small>当前选区</small></button><button data-attach-kind="workspace"><strong>@workspace</strong><small>当前项目代码地图</small></button><button data-attach-kind="terminal"><strong>@terminal</strong><small>当前终端选区</small></button></div></div><span class="composer-meta">Enter 发送 · Shift+Enter 换行</span><button id="send" class="primary">发送</button></div></div>
     </section>
     <section id="changesTab" class="tab-panel"><div class="change-toolbar"><button id="mockChanges" class="primary">✦ AI 多段改动</button><button id="inlineEdit">AI 内联编辑</button><button id="localReview">AI 代码审查</button><button id="refreshChanges">↻</button></div><div id="changeSummary" class="context-summary"></div><div id="reviewIssues" class="review-issues"></div><div id="changeList" class="change-list"><div class="muted">尚无改动</div></div></section>
     <section id="contextTab" class="tab-panel"><div class="context-actions workbench-actions"><button id="openWorkbench">工作台</button><button id="openHarnessBuilder">DAG 构建</button><button id="openEvaluation">评测</button><button id="openEvolution">进化</button><button id="openSecurity">安全设置</button></div><div class="context-actions"><button id="refreshContext">↻ 刷新</button><button id="createCheckpoint">＋ 检查点</button><button id="codeMap">代码地图</button><button id="previewApp">应用预览</button><button id="commitMessage">提交消息</button></div><div id="editorContext" class="editor-context"></div><div id="contextSummary" class="context-summary"></div><details open><summary>本轮上下文计划</summary><div id="contextPlan" class="context-list"><div class="muted">发送消息后显示自动选择、排除原因与 token 预算。</div></div></details><details><summary>记忆</summary><div id="memoryList" class="context-list"></div></details><details><summary>项目规则 / AGENTS.md</summary><div id="rulesList" class="context-list"></div></details><details><summary>检查点</summary><div id="checkpointsList" class="context-list"></div></details><details><summary>历史 Sessions</summary><div id="sessionsList" class="context-list"></div></details></section>
-  </main><dialog id="attachmentEditor" class="attachment-editor" aria-labelledby="attachmentEditorTitle"><form method="dialog"><header><div><strong id="attachmentEditorTitle">文本附件</strong><small id="attachmentEditorMeta"></small></div><button id="attachmentEditorClose" value="cancel" title="关闭" aria-label="关闭">×</button></header><textarea id="attachmentEditorContent" spellcheck="false" aria-label="附件内容"></textarea><footer><span id="attachmentEditorNotice">修改只会更新本次尚未发送的上下文。</span><button id="attachmentEditorCancel" value="cancel">取消</button><button id="attachmentEditorSave" value="default" class="primary">保存</button></footer></form></dialog><div id="toast" class="toast" role="status"></div><script src="${media}/chat.js?v=51"></script></body></html>`;
+  </main><dialog id="attachmentEditor" class="attachment-editor" aria-labelledby="attachmentEditorTitle"><form method="dialog"><header><div><strong id="attachmentEditorTitle">文本附件</strong><small id="attachmentEditorMeta"></small></div><button id="attachmentEditorClose" value="cancel" title="关闭" aria-label="关闭">×</button></header><textarea id="attachmentEditorContent" spellcheck="false" aria-label="附件内容"></textarea><footer><span id="attachmentEditorNotice">修改只会更新本次尚未发送的上下文。</span><button id="attachmentEditorCancel" value="cancel">取消</button><button id="attachmentEditorSave" value="default" class="primary">保存</button></footer></form></dialog><div id="toast" class="toast" role="status"></div><script src="${media}/chat.js?v=52"></script></body></html>`;
   }
 }
 
@@ -2119,12 +2122,25 @@ let workbenchStatusItem;
 let pendingWorkbenchHandoff;
 let workbenchRuntimeStatus = { running: false, scope: 'builder', status: 'idle', evolutionProposals: 0, online: false };
 
-const WORKBENCH_TABS = new Set(['home', 'harness', 'ir', 'tasks', 'research', 'background', 'library', 'packages', 'changes', 'checkpoints', 'identity', 'environment', 'sessions', 'settings', 'evolution', 'coc', 'flow']);
-const WORKBENCH_ROUTE_LABELS = { home: 'Home', harness: 'Build', tasks: 'Evaluate', evolution: 'Improve', library: 'Library', packages: 'Deploy', flow: 'Heart Flow' };
+const WORKBENCH_TABS = new Set(['home', 'harness', 'observe', 'more', 'ir', 'tasks', 'research', 'background', 'library', 'tools', 'packages', 'changes', 'checkpoints', 'identity', 'environment', 'sessions', 'settings', 'evolution', 'coc', 'flow']);
+const WORKBENCH_ROUTE_LABELS = { home: 'Home', harness: 'Build', identity: 'Identity', tools: '工具与 Skills', observe: '运行相簿', more: 'More', tasks: 'Evaluate', evolution: 'Improve', library: 'Library', packages: 'Deploy', flow: 'Heart Flow' };
 
 function workbenchWorkspaceKey() {
   const workspace = normalizedFsPath(vscode.workspace.workspaceFolders?.[0]?.uri) || 'standalone';
   return `egoagent.workbench.route:${workspace}`;
+}
+
+function validWorkbenchSession(session) {
+  const canonical = (value) => {
+    const path = String(value || '').replaceAll('\\', '/').replace(/^\/([A-Za-z]:\/)/, '$1').replace(/\/+$/, '');
+    return /^[A-Za-z]:\//.test(path) ? path.toLowerCase() : path;
+  };
+  return session?.version === 1 && canonical(session.workspace) === canonical(fsPathForBackend(vscode.workspace.workspaceFolders?.[0]?.uri));
+}
+
+function savedWorkbenchSession() {
+  const session = workbenchContext?.workspaceState.get(`${workbenchWorkspaceKey()}:session`);
+  return validWorkbenchSession(session) ? session : undefined;
 }
 
 function pendingWorkbenchChanges() {
@@ -2204,6 +2220,10 @@ function getWorkbenchUrl(backendUrl, tab, options = {}) {
   const workspace = fsPathForBackend(vscode.workspace.workspaceFolders?.[0]?.uri);
   if (workspace) url.searchParams.set('workspace', workspace);
   if (options.linkRunId) url.searchParams.set('link_run', String(options.linkRunId));
+  if (options.harness) {
+    url.searchParams.set('edit_harness', String(options.harness));
+    url.searchParams.set('edit_version', String(options.harnessVersion || 'latest'));
+  }
   return url.toString();
 }
 
@@ -2234,6 +2254,9 @@ async function renderWorkbench(panel, tab, options = {}) {
       wsBase: wsUrl,
       tab,
       linkRunId: options.linkRunId ? String(options.linkRunId) : '',
+      editHarness: options.harness ? String(options.harness) : '',
+      editVersion: String(options.harnessVersion || 'latest'),
+      workbenchSession: options.restoredSession || savedWorkbenchSession(),
     }).replaceAll('<', '\\u003c');
     const csp = [
       "default-src 'none'",
@@ -2300,6 +2323,9 @@ function openWorkbench(requestedTab, options = {}) {
     if (options.linkRunId) {
       postWorkbenchShellMessage({ type: 'link-session', runId: String(options.linkRunId) });
     }
+    if (options.harness) {
+      postWorkbenchShellMessage({ type: 'edit-flow', harness: String(options.harness), version: String(options.harnessVersion || 'latest') });
+    }
     if (pendingWorkbenchHandoff) {
       postWorkbenchShellMessage({ type: 'context-handoff', items: pendingWorkbenchHandoff });
       pendingWorkbenchHandoff = undefined;
@@ -2318,11 +2344,26 @@ function openWorkbench(requestedTab, options = {}) {
       vscode.Uri.joinPath(workbenchContext.extensionUri, 'media'),
     ],
   });
-  workbenchPanel.webview.onDidReceiveMessage(async (message) => {
+  const panel = workbenchPanel;
+  bindWorkbenchPanel(panel);
+  void renderWorkbench(panel, tab, options);
+  void workbenchContext?.workspaceState.update(workbenchWorkspaceKey(), tab);
+  return panel;
+}
+
+// Both a newly opened editor and a deserialized editor use the same handlers.
+// Restoring a tab must not create a second panel, start a run, or steal focus.
+function bindWorkbenchPanel(panel) {
+  workbenchPanel = panel;
+  panel.webview.onDidReceiveMessage(async (message) => {
     if (message?.source !== 'egoagent-workbench') return;
+    if (message.type === 'session-state' && validWorkbenchSession(message.session)) {
+      await workbenchContext?.workspaceState.update(`${workbenchWorkspaceKey()}:session`, message.session);
+      return;
+    }
     if (message.type === 'route-change' && WORKBENCH_TABS.has(message.tab)) {
       workbenchTab = message.tab;
-      workbenchPanel.title = `EgoAgent · ${WORKBENCH_ROUTE_LABELS[workbenchTab] || 'Workbench'}`;
+      panel.title = `EgoAgent · ${WORKBENCH_ROUTE_LABELS[workbenchTab] || 'Workbench'}`;
       void workbenchContext?.workspaceState.update(workbenchWorkspaceKey(), workbenchTab);
       if (pendingWorkbenchHandoff) {
         postWorkbenchShellMessage({ type: 'context-handoff', items: pendingWorkbenchHandoff });
@@ -2354,7 +2395,17 @@ function openWorkbench(requestedTab, options = {}) {
       }
       return;
     }
-    if (message.type === 'open-file') void openWorkbenchFile(message);
+    if (message.type === 'open-file') {
+      try {
+        await openWorkbenchFile(message);
+        if (message.requestId) postWorkbenchShellMessage({ type: 'request-result', requestId: message.requestId, ok: true, value: true });
+      } catch (error) {
+        const detail = error?.message || String(error);
+        if (message.requestId) postWorkbenchShellMessage({ type: 'request-result', requestId: message.requestId, ok: false, error: detail });
+        else void vscode.window.showErrorMessage(`无法打开文件：${detail}`);
+      }
+      return;
+    }
     if (message.type === 'open-workspace') void openWorkbenchWorkspace(message);
     if (message.type === 'pick-project-folder') {
       try {
@@ -2374,10 +2425,21 @@ function openWorkbench(requestedTab, options = {}) {
       }
     }
   });
-  workbenchPanel.onDidDispose(() => { workbenchPanel = undefined; workbenchTab = 'home'; });
-  void renderWorkbench(workbenchPanel, tab, options);
-  void workbenchContext?.workspaceState.update(workbenchWorkspaceKey(), tab);
-  return workbenchPanel;
+  panel.onDidDispose(() => {
+    if (workbenchPanel === panel) { workbenchPanel = undefined; workbenchTab = 'home'; }
+  });
+}
+
+async function restoreWorkbenchPanel(panel, state) {
+  const session = validWorkbenchSession(state?.workbenchSession) ? state.workbenchSession : savedWorkbenchSession();
+  const route = session?.route || workbenchContext?.workspaceState.get(workbenchWorkspaceKey(), 'home');
+  workbenchTab = WORKBENCH_TABS.has(route) ? route : 'home';
+  panel.webview.options = {
+    enableScripts: true,
+    localResourceRoots: ['workbench', 'media'].map((name) => vscode.Uri.joinPath(workbenchContext.extensionUri, name)),
+  };
+  bindWorkbenchPanel(panel);
+  await renderWorkbench(panel, workbenchTab, { restoredSession: session });
 }
 
 async function openCodeMap() {
@@ -2470,6 +2532,9 @@ function activate(context) {
   workbenchContext = context;
   workbenchProvider = provider;
   workbenchReviewManager = reviewManager;
+  context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('egoagent.workbench', {
+    deserializeWebviewPanel: restoreWorkbenchPanel,
+  }));
   workbenchStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 78);
   workbenchStatusItem.command = 'egoagent.openWorkbench';
   context.subscriptions.push(workbenchStatusItem);

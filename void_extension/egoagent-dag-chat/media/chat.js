@@ -5,22 +5,28 @@ try {
   const wsUrl = document.body.dataset.ws.replace(/\/$/, '');
   const saved = vscode.getState() || {};
   const DEFAULT_CODE_HARNESS = 'code_agent_auto';
-  const DEFAULT_CODE_IDENTITY = 'adaptive_deepseek_coder';
 
   const state = {
     harnesses: [],
     harnessCatalog: [],
-    identities: [],
+    catalogLoaded: false,
+    catalogBusy: false,
+    catalogError: '',
+    catalogRetryAttempt: 0,
+    catalogRetryTimer: null,
+    catalogGeneration: 0,
     config: null,
     harness: saved.harness || DEFAULT_CODE_HARNESS,
     harnessVersion: saved.harnessVersion || 'latest',
     latestHarnessVersion: '',
     harnessVersions: [],
-    harnessFilter: saved.harnessFilter || '',
+    harnessFilter: '',
     showWorkers: saved.showWorkers === true,
-    identity: saved.identity || DEFAULT_CODE_IDENTITY,
-    bindings: saved.bindings || {},
-    mode: saved.mode || 'agent',
+    // Derived from the selected Flow version only. Ignore legacy Chat overrides.
+    identity: '',
+    bindings: {},
+    mode: 'agent',
+    configLoadGeneration: 0,
     approvalMode: saved.sessionConfigs?.[`session:${saved.sessionName}`]?.approvalMode === 'auto' ? 'auto' : 'manual',
     approvalModeTarget: null,
     running: false,
@@ -185,12 +191,8 @@ try {
     vscode.setState({
       harness: state.harness,
       harnessVersion: state.harnessVersion,
-      harnessVersion: state.harnessVersion,
       harnessFilter: state.harnessFilter,
       showWorkers: state.showWorkers,
-      identity: state.identity,
-      bindings: state.bindings,
-      mode: state.mode,
       sessionName: state.sessionName,
       configExpanded: state.configExpanded,
       sessionConfigs: state.sessionConfigs,
@@ -222,9 +224,15 @@ try {
     if (execution?.harness_version == null) {
       if (!state.runId || String(execution?.run_id || '') !== String(state.runId)) return false;
     } else if (String(execution.harness_version) !== String(state.harnessVersion || '')) return false;
-    if (String(execution?.mode || 'agent') !== String(state.mode || 'agent')) return false;
-    if (state.config && JSON.stringify(sortedRecord(execution?.agents)) !== JSON.stringify(sortedRecord(buildAgents()))) return false;
+    // A run's recorded configuration is immutable. Old sessions may have used
+    // legacy overrides; still display their real output, but never reuse those
+    // overrides when starting the next run (see executionUsesSavedFlow).
     return true;
+  }
+
+  function executionUsesSavedFlow(execution) {
+    return String(execution?.mode || 'agent') === String(state.config?.pipeline?.mode || 'agent')
+      && JSON.stringify(sortedRecord(execution?.agents)) === JSON.stringify(sortedRecord(buildAgents()));
   }
 
   function shouldAdoptExecutionSnapshot(currentRunId, execution) {
@@ -335,18 +343,9 @@ async function request(path, options = {}) {
   function renderAIStatus() {
     const badge = document.querySelector('.local-badge');
     if (!badge) return;
-    if (state.aiStatus?.configured) {
-      const health = state.aiStatus.health;
-      const capabilities = state.aiStatus.capabilities || {};
-      const available = Object.entries(capabilities).filter(([, enabled]) => enabled).map(([role]) => role);
-      badge.textContent = `${String(state.aiStatus.provider || 'AI').toUpperCase()}${health === false ? ' DEGRADED' : ''} · ${state.aiStatus.model || 'MODEL'}`;
-      badge.title = health === false
-        ? `模型探针失败；AI 请求已在发送前禁用，本地能力仍可用。${state.aiStatus.last_probe?.error || ''}`
-        : `模型功能已连接：${state.aiStatus.base_url || ''}${available.length ? `\n能力：${available.join(', ')}` : '\n尚未运行能力探针'}`;
-    } else {
-      badge.textContent = 'LOCAL FALLBACK';
-      badge.title = '模型未配置或后端不可用，编辑功能将使用本地降级能力';
-    }
+    // The global completion provider is NOT the provider used by this Flow.
+    badge.textContent = 'FLOW';
+    badge.title = '聊天模型和 Identity 来自所选 Flow 版本，在 Build 中配置';
   }
 
   function renderWorkbenchStatus() {
@@ -372,29 +371,110 @@ async function request(path, options = {}) {
     return values.map((value) => typeof value === 'string' ? value : value && value.name).filter(Boolean);
   }
 
-  async function loadCatalog() {
+  async function requestCatalog(path) {
+    // A stalled metadata request must not leave the selector spinning forever.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const [harnesses, identities, harnessCatalog] = await Promise.all([
-        request('/api/harnesses'),
-        request('/api/identities'),
-        request('/api/harnesses/detailed').catch(() => []),
-      ]);
+      const result = await request(path, { signal: controller.signal });
+      if (!result || typeof result !== 'object') throw new Error('服务未返回有效 JSON，请确认 EgoAgent 后端地址和服务状态。');
+      return result;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error('加载 Flow 超时（10 秒），将自动重试');
+      throw error;
+    } finally { clearTimeout(timer); }
+  }
+
+  function renderCatalogStatus() {
+    // Older restored webviews may still have the previous extension HTML.
+    let status = $('catalogStatus');
+    if (!status) {
+      const selectors = $('agentConfigDetails')?.querySelector('.selectors');
+      if (selectors) {
+        status = document.createElement('div');
+        status.id = 'catalogStatus';
+        status.className = 'harness-meta';
+        status.setAttribute('role', 'status');
+        selectors.appendChild(status);
+      }
+    }
+    if (status) {
+      status.hidden = !state.catalogError;
+      status.innerHTML = state.catalogError
+        ? '<span>' + escapeHtml(state.catalogError) + ' · 自动重试中</span> <button id="retryCatalog" type="button">立即重试</button>' : '';
+      $('retryCatalog')?.addEventListener('click', () => void loadCatalog(false));
+    }
+    if (!state.catalogLoaded) {
+      const select = $('harnessSelect');
+      select.disabled = true;
+      select.innerHTML = '<option value="">' + (state.catalogError ? '暂时无法加载 Harness，请重试' : '正在加载 Harness…') + '</option>';
+      $('harnessVersionSelect').disabled = true;
+      $('harnessVersionSelect').innerHTML = '<option value="">请先加载 Harness</option>';
+      $('agentConfigSummary').textContent = state.catalogError ? '加载失败 · 将自动重试' : '正在加载 Flow…';
+    } else {
+      $('harnessSelect').disabled = !state.harnesses.length;
+      $('harnessVersionSelect').disabled = !state.config;
+      if (!state.harnesses.length) {
+        $('harnessSelect').innerHTML = '<option value="">暂无 Harness，请在 Build 中创建</option>';
+      }
+    }
+  }
+
+  function scheduleCatalogRetry() {
+    if (state.catalogRetryTimer || state.catalogBusy) return;
+    const delay = Math.min(30000, 1000 * (2 ** Math.min(state.catalogRetryAttempt, 5)));
+    state.catalogRetryAttempt += 1;
+    state.catalogRetryTimer = setTimeout(() => {
+      state.catalogRetryTimer = null;
+      if (document.hidden) return; // visibilitychange resumes without polling hidden tabs.
+      void loadCatalog(false);
+    }, delay);
+  }
+
+  function recoverCatalog() {
+    if (!document.hidden && (!state.catalogLoaded || state.catalogError) && !state.catalogBusy) {
+      void loadCatalog(false);
+    }
+  }
+
+  async function loadCatalog(reloadConfig = true) {
+    if (state.catalogBusy) return;
+    state.catalogBusy = true;
+    const generation = ++state.catalogGeneration;
+    if (state.catalogRetryTimer) clearTimeout(state.catalogRetryTimer);
+    state.catalogRetryTimer = null;
+    renderCatalogStatus();
+    try {
+      const harnesses = await requestCatalog('/api/harnesses');
+      if (!Array.isArray(harnesses)) throw new Error('Harness 列表格式异常，未覆盖已有选择');
       state.harnesses = normalizeNames(harnesses);
-      state.harnessCatalog = Array.isArray(harnessCatalog) ? harnessCatalog : [];
-      state.identities = normalizeNames(identities);
+      state.catalogLoaded = true;
+      state.catalogError = '';
       if (!state.harness || !state.harnesses.includes(state.harness)) {
         state.harness = state.harnesses.includes(DEFAULT_CODE_HARNESS) ? DEFAULT_CODE_HARNESS : (state.harnesses[0] || '');
-      }
-      if (!state.identity || !state.identities.includes(state.identity)) {
-        state.identity = state.identities.includes(DEFAULT_CODE_IDENTITY) ? DEFAULT_CODE_IDENTITY : (state.identities[0] || '');
+        state.harnessVersion = 'latest';
+        state.harnessVersions = [];
+        state.config = null;
       }
       renderSelectors();
-      if (state.harness) await loadHarness(state.harness, state.harnessVersion || 'latest');
+      // Optional labels/descriptions must never block the names or selected Flow.
+      void requestCatalog('/api/harnesses/detailed').then(details => {
+        if (generation !== state.catalogGeneration || !Array.isArray(details)) return;
+        state.harnessCatalog = details;
+        renderSelectors();
+      }).catch(() => {});
+      if ((reloadConfig || !state.config) && state.harness) await loadHarness(state.harness, state.harnessVersion || 'latest');
+      state.catalogRetryAttempt = 0;
       setConnection(true, '已连接');
       persist();
     } catch (error) {
-      setConnection(false, '后端不可用');
-      toast('无法连接 EgoAgent：' + error.message, true);
+      state.catalogError = error.message || String(error);
+      // Keep any previously loaded choices and the user's draft/Session intact.
+      setConnection(false, 'Flow 加载失败');
+    } finally {
+      state.catalogBusy = false;
+      renderCatalogStatus();
+      if (state.catalogError) scheduleCatalogRetry();
     }
   }
 
@@ -424,39 +504,56 @@ async function request(path, options = {}) {
           return '<option value="' + escapeHtml(name) + '" title="' + escapeHtml(detail.description || '') + '">' + escapeHtml(label) + '</option>';
         }).join('') + '</optgroup>')
       .join('');
-    $('identitySelect').innerHTML = state.identities.map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>').join('');
     $('harnessSelect').value = state.harness;
-    $('identitySelect').value = state.identity;
-    $('harnessFilter').value = state.harnessFilter;
+    if ($('harnessFilter')) $('harnessFilter').value = state.harnessFilter;
     if ($('showWorkers')) $('showWorkers').checked = state.showWorkers;
     const visibleCount = groups.reduce((count, [, names]) => count + names.length, 0);
-    $('harnessCount').textContent = query
+    if ($('harnessCount')) $('harnessCount').textContent = query
       ? `${Math.min(visibleCount, state.harnesses.length)} / ${state.harnesses.length}`
       : `${state.harnesses.length} 个可运行`;
-    const modeLabel = ({ chat: 'Chat', plan: 'Plan', agent: 'Agent', debug: 'Debug', evolve: 'Evolve', evaluate: 'Evaluate' })[state.mode] || state.mode;
     const stableSessionId = state.sessionName || state.runId;
     const sessionLabel = stableSessionId ? `Session ${String(stableSessionId).slice(-6)}` : '新 Session';
     const versionLabel = state.harnessVersion ? ` · ${state.harnessVersion.slice(0, 9)}` : '';
-    $('agentConfigSummary').textContent = `${sessionLabel} · ${modeLabel} · ${state.harness || '未选 Harness'}${versionLabel} · ${state.identity || '未选 Identity'}`;
+    $('agentConfigSummary').textContent = `${sessionLabel} · ${state.harness || '未选 Harness'}${versionLabel}`;
+    renderCatalogStatus();
   }
 
   async function loadHarness(name, version = 'latest') {
+    const generation = ++state.configLoadGeneration;
     state.harness = name;
-    const index = await request('/api/harness-versions/' + encodeURIComponent(name));
+    state.config = null;
+    $('harnessMeta').textContent = '正在加载 Flow 配置…';
+    const index = await requestCatalog('/api/harness-versions/' + encodeURIComponent(name));
+    if (generation !== state.configLoadGeneration) return;
+    if (!Array.isArray(index.versions)) throw new Error('Flow 版本列表格式异常');
     state.harnessVersions = Array.isArray(index.versions) ? index.versions : [];
     state.latestHarnessVersion = String(index.latest || '');
     const resolvedVersion = version === 'latest' ? state.latestHarnessVersion : String(version || state.latestHarnessVersion);
+    if (!resolvedVersion) throw new Error('此 Flow 暂无可用版本，请在 Build 中保存后重试');
     state.harnessVersion = resolvedVersion;
-    state.config = version === 'latest'
-      ? await request('/api/harness/' + encodeURIComponent(name))
-      : await request('/api/harness-version/' + encodeURIComponent(name) + '/' + encodeURIComponent(resolvedVersion));
+    // Even "latest" must load its resolved snapshot, not a mutable live draft.
+    const config = await requestCatalog('/api/harness-version/' + encodeURIComponent(name) + '/' + encodeURIComponent(resolvedVersion));
+    if (generation !== state.configLoadGeneration) return;
+    if (!config.pipeline || typeof config.pipeline !== 'object' || Array.isArray(config.pipeline)) {
+      throw new Error('Flow 配置格式异常：缺少 pipeline');
+    }
+    state.config = config;
+    state.mode = String(config.pipeline?.mode || 'agent');
+    state.bindings = Object.fromEntries(Object.entries(config.slots || {}).filter(([, def]) => def.identity)
+      .map(([slot, def]) => [slot, String(def.identity).replace(/^identity\//, '')]));
+    state.identity = Object.values(state.bindings).join(', ');
     const description = state.config.description || '无描述';
     const nodeCount = Object.keys(state.config.pipeline?.nodes || {}).length;
-    $('harnessMeta').textContent = description + ' · ' + nodeCount + ' 个节点';
-    renderBindings();
-    renderDag();
+    let warning = '';
+    try { buildAgents(); } catch (error) { warning = error.message; }
+    const testing = Object.values(state.bindings).includes('test_bot');
+    $('harnessMeta').textContent = warning || (testing
+      ? '此 Flow 绑定了 test_bot（固定测试脚本，不调用真实模型）。请在 Build 修改 Identity 后保存。'
+      : description + ' · ' + nodeCount + ' 个节点');
+    $('harnessMeta').classList.toggle('configuration-warning', Boolean(warning || testing));
     renderSelectors();
     renderHarnessVersions();
+    renderSessionTabs();
     persist();
   }
 
@@ -479,46 +576,18 @@ async function request(path, options = {}) {
     });
   }
 
-  function renderBindings() {
-    const slots = state.config?.slots || {};
-    const entries = Object.entries(slots);
-    if (!entries.length) {
-      $('slotBindings').innerHTML = '<div class="muted">此 Harness 没有命名 slot，将使用默认 Identity。</div>';
-      return;
-    }
-    $('slotBindings').innerHTML = entries.map(([slot, def]) => {
-      const selected = state.bindings[slot] || (entries.length === 1 ? state.identity : (def.identity || state.identity));
-      const options = state.identities.map((name) => '<option value="' + escapeHtml(name) + '"' + (name === selected ? ' selected' : '') + '>' + escapeHtml(name) + '</option>').join('');
-      return '<label class="slot-row"><span title="' + escapeHtml(def.description || slot) + '">' + escapeHtml(slot) + (def.required ? ' *' : '') + '</span><select data-slot="' + escapeHtml(slot) + '">' + options + '</select></label>';
-    }).join('');
-    document.querySelectorAll('[data-slot]').forEach((select) => {
-      select.addEventListener('change', () => {
-        markConfigurationChange();
-        state.bindings[select.dataset.slot] = select.value;
-        persist();
-      });
-    });
-  }
-
-  function renderDag() {
-    const nodes = state.config?.pipeline?.nodes || {};
-    $('dagNodes').innerHTML = Object.entries(nodes).map(([id, node]) => {
-      const classes = ['dag-node'];
-      if (state.entered.has(id)) classes.push('entered');
-      if (state.currentNode === id) classes.push('current');
-      return '<span class="' + classes.join(' ') + '" title="' + escapeHtml(node.op || '') + '">' + escapeHtml(id) + '</span>';
-    }).join('');
-  }
-
   function buildAgents() {
+    if (!state.config) throw new Error('Flow 配置尚未加载，请稍后重试。');
     const slots = state.config?.slots || {};
-    const singleSlot = Object.keys(slots).length === 1;
+    const used = new Set(Object.values(state.config.pipeline?.nodes || {}).map((node) => node.agent).filter(Boolean));
     const agents = {};
+    const missing = [...used].filter((slot) => !slots[slot]);
     for (const [slot, def] of Object.entries(slots)) {
-      const identity = state.bindings[slot] || (singleSlot ? state.identity : (def.identity || state.identity));
-      if (def.required && !identity) throw new Error('必须为 slot “' + slot + '” 绑定 Identity');
-      agents[slot] = 'identity/' + (identity || slot);
+      const identity = String(def.identity || '').trim();
+      if (!identity && (def.required || used.has(slot))) missing.push(slot);
+      if (identity) agents[slot] = identity.startsWith('identity/') ? identity : 'identity/' + identity;
     }
+    if (missing.length) throw new Error('Flow 尚未配置 Identity：' + missing.join('、') + '。请在 Build → 角色与 Identity 中选择并保存新版本。');
     return agents;
   }
 
@@ -539,7 +608,7 @@ async function request(path, options = {}) {
     const runs = Array.isArray(state.liveRuns) ? state.liveRuns : [];
     const items = [];
     if (!state.runId) {
-      const draftTitle = `尚未启动的新 Session\n${state.mode || 'agent'} · ${state.harness || '未选 Harness'} · ${state.identity || '未选 Identity'}`;
+      const draftTitle = `尚未启动的新 Session\n${state.harness || '未选 Harness'} · 配置来自 Build 保存的 Flow 版本`;
       items.push('<span class="session-pill draft active" title="' + escapeHtml(draftTitle) + '"><i></i><span><b>新 Session</b><small>' + escapeHtml(state.harness || '未选 Harness') + '</small></span></span>');
     }
     runs.forEach((run) => {
@@ -723,16 +792,8 @@ async function request(path, options = {}) {
       state.configurationDirty = false;
       state.awaitingNewSession = false;
       const savedConfig = state.sessionConfigs[sessionConfigKey(runId)] || {};
-      state.mode = execution.mode || savedConfig.mode || 'agent';
-      const identities = Object.fromEntries(Object.entries(execution.agents || {}).map(([slot, value]) => [
-        slot,
-        String(value || '').replaceAll('\\', '/').split('/').filter(Boolean).pop() || '',
-      ]));
-      state.bindings = Object.keys(identities).length ? identities : { ...(savedConfig.bindings || {}) };
-      state.identity = Object.values(identities)[0] || savedConfig.identity || state.identity;
       state.showWorkers = savedConfig.showWorkers === true;
       await loadHarness(execution.harness || savedConfig.harness || state.harness, execution.harness_version || savedConfig.harnessVersion || 'latest');
-      $('modeSelect').value = state.mode;
       applyExecutionState(execution);
       persist();
       renderMessages({ forceBottom: true });
@@ -762,14 +823,13 @@ async function request(path, options = {}) {
     state.identity = nextConfig.identity;
     state.bindings = nextConfig.bindings;
     state.showWorkers = nextConfig.showWorkers;
-    $('modeSelect').value = state.mode;
     state.awaitingNewSession = true;
     state.liveRunsSignature = '';
     persist();
     renderSelectors();
     renderSessionTabs();
     $('prompt').focus();
-    toast(`已新建 Session · 继承 ${state.mode} / ${state.harness} / ${state.identity}`);
+    toast(`已新建 Session · 使用 ${state.harness} 的已保存配置`);
   }
 
   function activeReviewTransactionId() {
@@ -817,8 +877,8 @@ async function request(path, options = {}) {
   async function startExecution(silent = false, { initialInput = '', initialData = {} } = {}) {
     if (!state.harness) throw new Error('请先选择 Harness');
     const workspace = state.editorContext?.workspacePath || '';
-    if (!canonicalWorkspace(workspace)) throw new Error('Void 尚未提供当前工作区，请打开项目文件后重试');
-    const identityTargets = [...new Set(Object.values(buildAgents()).map((value) => String(value).replaceAll('\\', '/').split('/').filter(Boolean).pop()).filter(Boolean))];
+    if (!canonicalWorkspace(workspace)) throw new Error('尚未打开项目。请点击 Chat 中的“打开项目”选择文件夹，再发送消息。');
+    buildAgents(); // Fail before stopping an existing run if the Flow is incomplete.
     let existing = null;
     if (state.runId) {
       try {
@@ -829,7 +889,8 @@ async function request(path, options = {}) {
         if (Number(error?.status) !== 404) throw error;
       }
     }
-    const matchesCurrentConfiguration = existing && executionMatchesSelection(existing) && !state.configurationDirty;
+    const matchesCurrentConfiguration = existing && executionMatchesSelection(existing)
+      && executionUsesSavedFlow(existing) && !state.configurationDirty;
     if (matchesCurrentConfiguration && existing.running) {
       applyExecutionState(existing);
       return { ...existing, reused: true, initial_input_seeded: false };
@@ -848,13 +909,10 @@ async function request(path, options = {}) {
       body: JSON.stringify({
         harness: state.harness,
         harness_version: state.harnessVersion,
-        agents: buildAgents(),
         surface: 'chat',
         workspace,
-        mode: state.mode,
         approval_mode: state.approvalMode,
         approval_confirmed: state.approvalMode === 'auto',
-        mutation_targets: state.mode === 'evolve' ? [state.harness, ...identityTargets] : [],
         resume_session: resumeSession,
         initial_input: String(initialInput || ''),
         initial_data: initialData && typeof initialData === 'object' ? initialData : {},
@@ -1012,10 +1070,10 @@ async function request(path, options = {}) {
     const pastedContexts = state.pastedContexts.slice();
     const casualText = casualTurnText(text, pastedContexts);
     const requestText = casualText || text;
-    clearComposer();
-    addMessage('user', text, pastedContexts, agentConfigSnapshot());
     const commandMatch = /^\/(mock|review|edit|run|map|preview|commit)(?:\s+([\s\S]*))?$/i.exec(text);
     if (commandMatch) {
+      clearComposer();
+      addMessage('user', text, pastedContexts, agentConfigSnapshot());
       const command = commandMatch[1].toLowerCase();
       const argument = (commandMatch[2] || '').trim();
       if (command === 'mock') vscode.postMessage({ type: 'mockEdit', mode: argument || 'maintainability' });
@@ -1031,11 +1089,19 @@ async function request(path, options = {}) {
     }
     $('send').disabled = true;
     state.submitting = true;
-    currentProgressBubble(true);
-    setAgentActivity(state.running ? '正在把消息交给当前 DAG…' : '正在读取编辑器状态并启动 DAG…', 'running');
-    renderMessagesNow({ forceBottom: true });
+    setAgentActivity('正在确认当前项目…', 'running');
     try {
       await requestFreshEditorContext();
+      if (!canonicalWorkspace(state.editorContext?.workspacePath)) {
+        renderWorkspace();
+        setAgentActivity('请先打开项目 · 输入内容已保留', 'idle');
+        toast('点击“打开项目”选择文件夹，然后再次发送；不会使用其他项目作为默认目录');
+        return;
+      }
+      clearComposer();
+      addMessage('user', text, pastedContexts, agentConfigSnapshot());
+      currentProgressBubble(true);
+      renderMessagesNow({ forceBottom: true });
       setAgentActivity('正在准备已选内容和项目上下文…', 'running');
       const context = state.attachedContext;
       let contextBlock = '';
@@ -1561,7 +1627,6 @@ async function request(path, options = {}) {
       state.activityKind = 'running';
     }
     renderAgentActivity();
-    renderDag();
   }
 
   function renderAgentActivity() {
@@ -1598,6 +1663,7 @@ async function request(path, options = {}) {
         if (state.wsRetryTimer) clearTimeout(state.wsRetryTimer);
         state.wsRetryTimer = null;
         setConnection(true, '实时连接');
+        recoverCatalog();
         pollExecution(); // Recover messages produced before (re)subscription.
       });
       ws.addEventListener('message', (event) => {
@@ -1628,6 +1694,7 @@ async function request(path, options = {}) {
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
+    recoverCatalog();
     pollExecution();
     if (state.ws?.readyState === WebSocket.OPEN) return;
     if (state.wsRetryTimer) clearTimeout(state.wsRetryTimer);
@@ -1635,6 +1702,7 @@ async function request(path, options = {}) {
     state.wsRetryAttempt = 0;
     scheduleWebSocketReconnect(true);
   });
+  window.addEventListener('online', recoverCatalog);
 
   async function pollExecution() {
     if (state.pollBusy) return;
@@ -2051,7 +2119,18 @@ async function request(path, options = {}) {
     return item;
   }
 
+  function renderWorkspace() {
+    const path = String(state.editorContext?.workspacePath || '');
+    const label = $('chatWorkspaceLabel');
+    if (label) {
+      label.textContent = path ? '项目 · ' + path.replaceAll('\\', '/').split('/').filter(Boolean).at(-1) : '尚未打开项目 · 请先选择文件夹';
+      label.title = path || 'Agent 需要明确的项目目录，不会默认访问 EgoAgent 源码';
+    }
+    $('chatWorkspace')?.classList.toggle('missing', !path);
+  }
+
   function renderEditorContext() {
+    renderWorkspace();
     const context = state.editorContext;
     const contextEl = $('editorContext');
     if (contextEl) {
@@ -2110,7 +2189,7 @@ async function request(path, options = {}) {
     markConfigurationChange();
     try { await loadHarness(state.harness, selected); } catch (error) { toast(error.message, true); }
   });
-  $('harnessFilter').addEventListener('input', (event) => {
+  $('harnessFilter')?.addEventListener('input', (event) => {
     state.harnessFilter = event.target.value;
     renderSelectors();
     persist();
@@ -2118,16 +2197,6 @@ async function request(path, options = {}) {
   $('showWorkers')?.addEventListener('change', (event) => {
     state.showWorkers = event.target.checked;
     renderSelectors();
-    persist();
-  });
-  $('identitySelect').addEventListener('change', (event) => {
-    const selected = event.target.value;
-    markConfigurationChange();
-    const slots = Object.keys(state.config?.slots || {});
-    state.identity = selected;
-    if (slots.length === 1) state.bindings[slots[0]] = state.identity;
-    renderSelectors();
-    renderBindings();
     persist();
   });
   function renderApprovalMode() {
@@ -2159,6 +2228,7 @@ async function request(path, options = {}) {
     finally { button.disabled = false; }
   }
 
+  $('openProjectFolder')?.addEventListener('click', () => vscode.postMessage({ type: 'openProjectFolder' }));
   $('approvalMode')?.addEventListener('click', () => {
     const target = `${state.runId}:${state.sessionName}:${currentWorkspace()}`;
     if (state.approvalMode === 'auto') { void changeApprovalMode('manual', target); return; }
@@ -2172,23 +2242,6 @@ async function request(path, options = {}) {
   });
   renderApprovalMode();
 
-  $('modeSelect').value = state.mode;
-  $('modeSelect').addEventListener('change', (event) => {
-    const selected = event.target.value;
-    markConfigurationChange();
-    state.mode = selected;
-    renderSelectors();
-    persist();
-    const descriptions = {
-      chat: '只读问答：禁止写文件和运行进程',
-      plan: '只读规划：输出方案，不执行修改',
-      agent: '完整 Agent：按权限策略执行并记录改动',
-      debug: '调试：复现、修复并验证',
-      evolve: '进化：仅允许修改当前 Harness 和已绑定 Identity',
-      evaluate: '评测权限：仍使用当前项目；独立题目环境请打开 Workbench → Evaluate',
-    };
-    toast(descriptions[state.mode] || state.mode);
-  });
   $('agentConfigDetails').open = state.configExpanded;
   $('agentConfigDetails').addEventListener('toggle', () => {
     state.configExpanded = $('agentConfigDetails').open;
@@ -2460,6 +2513,9 @@ async function request(path, options = {}) {
   $('newSession')?.addEventListener('click', startFreshSession);
   $('openWorkbench')?.addEventListener('click', () => openWorkbench('home'));
   $('openHarnessBuilder')?.addEventListener('click', () => openWorkbench('harness'));
+  $('editSelectedFlow')?.addEventListener('click', () => openWorkbench('harness', {
+    harness: state.harness, harnessVersion: state.harnessVersion,
+  }));
   $('openEvaluation')?.addEventListener('click', () => openWorkbench('tasks'));
   $('openEvolution')?.addEventListener('click', () => openWorkbench('evolution'));
   $('openSecurity')?.addEventListener('click', () => openWorkbench('settings'));
@@ -2519,12 +2575,17 @@ async function request(path, options = {}) {
       state.workbenchStatus = message.status || state.workbenchStatus;
       renderWorkbenchStatus();
     }
-    if (message.type === 'harnessVersionCreated' && message.harness === state.harness) {
-      request('/api/harness-versions/' + encodeURIComponent(state.harness)).then((index) => {
+    if (message.type === 'harnessVersionCreated') {
+      // Newly created Flows must appear without refreshing the IDE. Keep the
+      // selected version pinned: saving in Build never silently changes Chat.
+      void loadCatalog(false);
+      const harness = message.harness;
+      if (harness === state.harness) request('/api/harness-versions/' + encodeURIComponent(harness)).then((index) => {
+        if (state.harness !== harness) return;
         state.harnessVersions = Array.isArray(index.versions) ? index.versions : [];
         state.latestHarnessVersion = String(index.latest || message.version || '');
         renderHarnessVersions();
-        if (state.harnessVersion !== state.latestHarnessVersion) toast('当前 Flow 已有新版本；可在 Agent 配置中切换');
+        if (state.harnessVersion !== state.latestHarnessVersion) toast('当前 Flow 已有新版本；可在“选择 Flow”中切换');
       }).catch(() => {});
     }
     if (message.type === 'contextPasteResolved') {

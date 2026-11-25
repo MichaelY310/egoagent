@@ -257,12 +257,12 @@ def start_backend_if_needed():
     if _port_is_open(BACKEND_PORT):
         return None
     kwargs = {
-        'cwd': str(ROOT_DIR / 'harness_editor'),
+        'cwd': str(ROOT_DIR),
         'env': os.environ.copy(),
     }
     if os.name == 'nt':
         kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    process = subprocess.Popen([sys.executable, 'server.py'], **kwargs)
+    process = subprocess.Popen([sys.executable, '-m', 'egoagent_server'], **kwargs)
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -410,7 +410,8 @@ def install_native_extension():
     properties = manifest['contributes']['configuration']['properties']
     properties['egoagent.backendUrl']['default'] = BACKEND_ORIGIN
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
-    runtime = {'backendUrl': BACKEND_ORIGIN, 'id': os.environ.get('EGOAGENT_REMOTE_ID', ''),
+    runtime = {'backendUrl': BACKEND_ORIGIN, 'webSocketUrl': f'ws://127.0.0.1:{_ports["WS"]}',
+               'id': os.environ.get('EGOAGENT_REMOTE_ID', ''),
                'label': os.environ.get('EGOAGENT_REMOTE_LABEL', '本机'),
                'managerUrl': os.environ.get('EGOAGENT_REMOTE_MANAGER_URL', 'http://127.0.0.1:8880/')}
     runtime['accessToken'] = os.environ.get('EGOAGENT_REMOTE_TOKEN', '')

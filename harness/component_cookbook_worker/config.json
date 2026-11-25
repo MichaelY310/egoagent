@@ -1,0 +1,95 @@
+{
+  "name": "component_cookbook_worker",
+  "description": "独立上下文的专业 ReAct worker；能力来自绑定的 Identity。",
+  "catalog": {
+    "category": "example",
+    "visibility": "internal"
+  },
+  "tags": [
+    "cookbook"
+  ],
+  "slots": {
+    "worker": {
+      "required": true,
+      "identity": "cookbook_files"
+    }
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "infer",
+    "max_steps": 25,
+    "max_node_steps": 1200,
+    "workspace_preview": false,
+    "mode": "agent",
+    "event_log": true,
+    "permissions": {
+      "defaults": {
+        "read": "allow",
+        "write": "allow",
+        "process": "deny",
+        "network": "allow",
+        "secret": "deny",
+        "mutation": "deny"
+      }
+    },
+    "context": {
+      "request": ""
+    },
+    "nodes": {
+      "infer": {
+        "op": "Agent",
+        "agent": "worker",
+        "tools": "all",
+        "hidden_tools": [
+          "search_capabilities",
+          "activate_capability"
+        ],
+        "max_tool_rounds": 5,
+        "instructions": "只完成委派给你的子任务。先取实际工具证据，最终简短报告结论、证据和未完成项。不要重复自我介绍。",
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "tools"
+          },
+          {
+            "condition": "has_text",
+            "to": "done"
+          }
+        ]
+      },
+      "tools": {
+        "op": "工具",
+        "agent": "worker",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "infer"
+          }
+        ]
+      },
+      "done": {
+        "op": "结束",
+        "edges": []
+      },
+      "worker_limit": {
+        "op": "输出",
+        "continue": true,
+        "record": true,
+        "value": "子 Agent 达到预算，未完成；请缩小子任务。",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "done"
+          }
+        ]
+      }
+    },
+    "data_links": [],
+    "budget": {
+      "max_model_calls": 6,
+      "max_tool_calls": 10
+    },
+    "budget_exceeded_to": "worker_limit"
+  }
+}

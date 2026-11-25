@@ -1,0 +1,631 @@
+[
+  {
+    "name": "cookbook_01_react",
+    "step": 1,
+    "total": 24,
+    "title": "ReAct：最小循环",
+    "added": "只有 输入→Agent→工具→Agent；没有工具调用时回到输入。",
+    "try": "你好",
+    "observe": "应只简短问候；再问“请只读列出当前目录的 Python 文件”，观察 infer→tools→infer。",
+    "examples": [
+      {
+        "label": "1 · 问候，不应搜索文件",
+        "text": "你好"
+      },
+      {
+        "label": "2 · 触发工具循环",
+        "text": "请只读列出当前目录的 Python 文件，不要修改文件。"
+      }
+    ],
+    "previous": null,
+    "next": "cookbook_02_tool",
+    "notes": "默认使用全局真实模型；无 API 会报错，不会切假模型。建议工作区：examples/cookbook/workspace。",
+    "chapter": "基础与上下文",
+    "based_on": null,
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  },
+  {
+    "name": "cookbook_02_tool",
+    "step": 2,
+    "total": 24,
+    "title": "添加自定义 Tool",
+    "added": "保留循环，给 Identity 的 EGO 增加 quote_total；schema 与实现分开。",
+    "try": "用 quote_total 算一下：3 件，每件 19.9 元，打九折。",
+    "observe": "展开工具结果，total 应为 53.73；工具在 capability_packs/cookbook_utilities。",
+    "examples": [
+      {
+        "label": "调用自定义工具",
+        "text": "用 quote_total 算一下：3 件，每件 19.9 元，打九折。"
+      }
+    ],
+    "previous": "cookbook_01_react",
+    "next": "cookbook_03_identity",
+    "notes": "",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_01_react",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  },
+  {
+    "name": "cookbook_03_identity",
+    "step": 3,
+    "total": 24,
+    "title": "配置 Identity / EGO / Superego",
+    "added": "只切换到 cookbook_mentor：中文、结论与证据、只读约束；URL/模型留空继承全局。",
+    "try": "用 quote_total 算一下：3 件，每件 19.9 元，打九折。",
+    "observe": "Build 的 agent 绑定为 cookbook_mentor；Identity 页可编辑 ID、EGO 与 Superego。",
+    "examples": [
+      {
+        "label": "观察 Identity 风格与证据要求",
+        "text": "用 quote_total 算一下：3 件，每件 19.9 元，打九折。"
+      }
+    ],
+    "previous": "cookbook_02_tool",
+    "next": "cookbook_04_approval",
+    "notes": "",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_02_tool",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  },
+  {
+    "name": "cookbook_04_approval",
+    "step": 4,
+    "total": 24,
+    "title": "人工审批与安全写入",
+    "added": "新增 /save 分支：预览上次回答，批准才写 .egoagent/cookbook/answer.txt；拒绝不写。",
+    "try": "先问：3 件19.9元打九折多少钱？\n等回答后单独发送：/save",
+    "observe": "先点拒绝确认无文件，再 /save 并批准；其余路径仍只读，不给模型 shell。",
+    "examples": [
+      {
+        "label": "1 · 先得到回答",
+        "text": "用 quote_total 算一下：3 件，每件 19.9 元，打九折。"
+      },
+      {
+        "label": "2 · 等回答后发送，先拒绝一次",
+        "text": "/save"
+      },
+      {
+        "label": "3 · 再发送，这次批准",
+        "text": "/save"
+      }
+    ],
+    "previous": "cookbook_03_identity",
+    "next": "cookbook_05_subflow",
+    "notes": "",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_03_identity",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  },
+  {
+    "name": "cookbook_05_subflow",
+    "step": 5,
+    "total": 24,
+    "title": "固定调用 SubFlow（非自主委派）",
+    "added": "新增 /review 分支，把本次请求交给复核子流程；仅回传结构化建议，主助手再回答。",
+    "try": "/review 我准备为报价函数补测试，应该覆盖哪些边界？",
+    "observe": "观察 review 子流程的 model→done；子模型只收到本次请求，不复制整个父 Session。",
+    "examples": [
+      {
+        "label": "调用复核 SubFlow",
+        "text": "/review 我准备为报价函数补测试，应该覆盖哪些边界？"
+      }
+    ],
+    "previous": "cookbook_04_approval",
+    "next": "cookbook_06_discovery",
+    "notes": "本关是显式 /review 路由，不是模型自主选择子 Agent；自主委派、并行、动态团队见13–15关。",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_04_approval",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  },
+  {
+    "name": "cookbook_06_discovery",
+    "step": 6,
+    "total": 24,
+    "title": "按需搜索与使用知识",
+    "added": "新增 /discover：搜索知识库，加载首个匹配的 Knowledge，再让模型使用；无结果不会编造。",
+    "try": "/discover cookbook_shipping_policy：折后商品150元，总付款多少？",
+    "observe": "观察 search→activate→infer→tools；应调用教学政策工具，得到162元；未把整个知识库写入 prompt。",
+    "examples": [
+      {
+        "label": "搜索并使用政策 Knowledge",
+        "text": "/discover cookbook_shipping_policy：折后商品150元，总付款多少？请读取政策再回答。"
+      }
+    ],
+    "previous": "cookbook_05_subflow",
+    "next": "cookbook_07_curation",
+    "notes": "",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_05_subflow",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  },
+  {
+    "name": "cookbook_07_curation",
+    "step": 7,
+    "total": 24,
+    "title": "定期精简上下文",
+    "added": "复用 Curator 子流程：积累5个可审阅旧轮次，普通模型决定保留/概括/移出；最近2轮受保护。",
+    "try": "依次发送7条独立消息：项目代号青松；输出应使用中文；今天天气不错；我喜欢咖啡；回到项目；报价总额53.73；记住哪些项目要求？",
+    "observe": "展开 curate→conversation_in/plan/conversation_out 看 decisions 和 stats。前端历史仍保留；无可删内容时也可不变。",
+    "examples": [
+      {
+        "label": "1 · 等上条回答后再发送",
+        "text": "项目代号青松。"
+      },
+      {
+        "label": "2 · 等上条回答后再发送",
+        "text": "项目验收命令是 python -m unittest。"
+      },
+      {
+        "label": "3 · 等上条回答后再发送",
+        "text": "无关闲聊，今天天气不错。"
+      },
+      {
+        "label": "4 · 等上条回答后再发送",
+        "text": "无关闲聊，我喜欢咖啡。"
+      },
+      {
+        "label": "5 · 等上条回答后再发送",
+        "text": "回到项目，不需要保留之前的闲聊。"
+      },
+      {
+        "label": "6 · 等上条回答后再发送",
+        "text": "报价总额53.73元。"
+      },
+      {
+        "label": "7 · 等上条回答后再发送",
+        "text": "你还记得哪些项目要求？"
+      },
+      {
+        "label": "8 · 等上条回答后再发送",
+        "text": "再确认一下项目代号和验收命令。"
+      }
+    ],
+    "previous": "cookbook_06_discovery",
+    "next": "cookbook_08_compaction",
+    "notes": "",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_06_discovery",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  },
+  {
+    "name": "cookbook_08_compaction",
+    "step": 8,
+    "total": 24,
+    "title": "超阈值才 Summarize",
+    "added": "推理前测 token 压力，超阈值才用普通模型压缩旧块。演示阈值4096，不是模型真实上限。",
+    "try": "粘贴3000字左右重复测试日志（开头注明：保留项目代号青松），请只记住结论。再连续问两轮简短问题，最后问项目代号。",
+    "observe": "观察 compact 的 pressure_due / pressure_ok；超阈值才进入 plan。查看 saved_tokens_estimated 和后续模型输入。最近2轮保护可能暂时不压缩。",
+    "examples": [
+      {
+        "label": "1 · 长日志（复制时自动生成400行）",
+        "text": "项目代号青松；验收命令 python -m unittest。以下是已结束的重复测试日志，请简短记住结论。",
+        "repeat_text": "INFO 重复测试已通过，无新增错误，保留项目约定即可。\n",
+        "repeat": 400
+      },
+      {
+        "label": "2 · 让日志移出最近两轮保护区",
+        "text": "今天只讨论项目，回答收到即可。"
+      },
+      {
+        "label": "3 · 继续一轮",
+        "text": "没有新增要求，回答收到即可。"
+      },
+      {
+        "label": "4 · 验证压缩后保留的事实",
+        "text": "项目代号和验收命令是什么？"
+      }
+    ],
+    "previous": "cookbook_07_curation",
+    "next": "cookbook_09_resume",
+    "notes": "",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_07_curation",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  },
+  {
+    "name": "cookbook_09_resume",
+    "step": 9,
+    "total": 24,
+    "title": "保存并继续 Session",
+    "added": "前面各关也保存聊天；本关每轮末显式存检查点，并演示继续同一 Session 的历史和状态。",
+    "try": "记住：项目代号青松，验收日期11月3日。\n本轮完成后刷新、打开同一 Session，再问：项目代号和验收日期是什么？",
+    "observe": "继续原 Session，不是新建；检查 resume_point 路径。恢复聊天不等于回滚文件，也不等于恢复执行指针。",
+    "examples": [
+      {
+        "label": "1 · 写入会话事实",
+        "text": "记住：项目代号青松，验收日期11月3日。"
+      },
+      {
+        "label": "2 · 刷新、回到同一 Session 后发送",
+        "text": "项目代号和验收日期是什么？"
+      }
+    ],
+    "previous": "cookbook_08_compaction",
+    "next": "cookbook_10_durable",
+    "notes": "",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_08_compaction",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  },
+  {
+    "name": "cookbook_10_durable",
+    "step": 10,
+    "total": 24,
+    "title": "Durable：执行边界恢复",
+    "added": "再启用每节点检查点和副作用前记录。从完成边界恢复不重做已提交节点；执行中状态不明时阻止盲目重试。",
+    "try": "先完成报价并 /save；检查运行记录的检查点和 saved 节点。中断恢复在隔离工作区验证。",
+    "observe": "比较 auto_checkpoint；已完成节点不重做，in-flight 写入需核实。不是任意外部副作用的 exactly-once 保证。",
+    "examples": [
+      {
+        "label": "1 · 跑一次有工具的任务",
+        "text": "用 quote_total 计算3件19.9元打九折的金额。"
+      },
+      {
+        "label": "2 · 审批后检查 durable 记录",
+        "text": "/save"
+      }
+    ],
+    "previous": "cookbook_09_resume",
+    "next": "cookbook_11_structured",
+    "notes": "恢复演示：python examples/cookbook/run.py --stage 10 --resume-checkpoint <已完成边界的检查点路径>。失败与已完成边界有确定性自动测试，不需要真的杀掉你的 IDE。",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_09_resume",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  },
+  {
+    "name": "cookbook_11_structured",
+    "step": 11,
+    "title": "结构化输出与失败重试",
+    "chapter": "控制与可靠性",
+    "based_on": "cookbook_03_identity",
+    "added": "在 ReAct 上增加 /extract：普通模型输出 JSON，schema 校验失败最多重试一次。",
+    "try": "/extract 提取报价需求：3件，每件19.9元，打九折。",
+    "observe": "extract 节点输出 quantity/unit_price/discount_percent；无效 JSON 不会流入后续节点。",
+    "notes": "",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/extract 提取报价需求：3件，每件19.9元，打九折。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_10_durable",
+    "next": "cookbook_12_planner"
+  },
+  {
+    "name": "cookbook_12_planner",
+    "step": 12,
+    "title": "计划与执行分离",
+    "chapter": "控制与可靠性",
+    "based_on": "cookbook_11_structured",
+    "added": "新增 /plan：先生成有边界的计划，再由原 ReAct 实际读取文件或使用工具。",
+    "try": "/plan 查看 quote.py 与 test_quote.py，指出测试缺口；只读，不运行进程。",
+    "observe": "plan 的结构化输出进入 support.plan；随后 infer/tools 是真正执行，不是把计划当答案。",
+    "notes": "",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/plan 查看 quote.py 与 test_quote.py，指出测试缺口；只读，不运行进程。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_11_structured",
+    "next": "cookbook_13_delegation"
+  },
+  {
+    "name": "cookbook_13_delegation",
+    "step": 13,
+    "title": "自主选择专业 Subagent",
+    "chapter": "多 Agent 协作",
+    "based_on": "cookbook_12_planner",
+    "added": "主模型可自行完成或委派给文件专家/报价专家；子 Agent 有独立 Identity、工具集和 Session。",
+    "try": "请委派给报价专家，用工具计算3件19.9元打九折的价格，再由你汇总。",
+    "observe": "dispatch 决定 self/files/calculator；delegate 生成真实 child Session。父模型只收到最终子结果。",
+    "notes": "问候应选择 self、不创建子 Agent。不能选择任意 Identity；路由 schema 有白名单。",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "请委派给报价专家，用工具计算3件19.9元打九折的价格，再由你汇总。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-agent-sdk-demos/tree/main/research-agent",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_12_planner",
+    "next": "cookbook_14_parallel_team"
+  },
+  {
+    "name": "cookbook_14_parallel_team",
+    "step": 14,
+    "title": "并行专家与汇总",
+    "chapter": "多 Agent 协作",
+    "based_on": "cookbook_13_delegation",
+    "added": "新增 /team：两个独立子 Agent 同时查文件和算报价，等待两者结束后汇总。",
+    "try": "/team 请文件专家读取 quote.py 并指出一个边界，报价专家计算3件19.9元打九折；汇总两份结果。",
+    "observe": "team 的 files/calculator 两个分支实时发事件；join 后 parent 只看到结果或明确的分支错误。",
+    "notes": "这是固定两专家并行；下一关才由模型决定任务数量。子 Agent 默认只读，不并发写文件。",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/team 请文件专家读取 quote.py 并指出一个边界，报价专家计算3件19.9元打九折；汇总两份结果。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-agent-sdk-demos/tree/main/research-agent",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_13_delegation",
+    "next": "cookbook_15_dynamic_team"
+  },
+  {
+    "name": "cookbook_15_dynamic_team",
+    "step": 15,
+    "title": "动态分解与 Map 子 Agent",
+    "chapter": "多 Agent 协作",
+    "based_on": "cookbook_14_parallel_team",
+    "added": "新增 /team-auto：模型生成1–3个专业任务，Map 以最多2个并发运行隔离的 worker，再统一汇总。",
+    "try": "/team-auto 分别检查 quote.py 与 test_quote.py，并计算3件19.9元打九折，按子任务报告结果。",
+    "observe": "team_plan.tasks 是模型决定的真实任务列表；workers 展示 item_0/1/2 与独立 child run_id。",
+    "notes": "有数量、工具、深度限制，不允许模型无限生成子 Agent。",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/team-auto 分别检查 quote.py 与 test_quote.py，并计算3件19.9元打九折，按子任务报告结果。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-agent-sdk-demos/tree/main/research-agent",
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_14_parallel_team",
+    "next": "cookbook_16_evaluator_optimizer"
+  },
+  {
+    "name": "cookbook_16_evaluator_optimizer",
+    "step": 16,
+    "title": "生成—评审—修订循环",
+    "chapter": "控制与可靠性",
+    "based_on": "cookbook_11_structured",
+    "added": "在结构化输出上添加独立评审模型与有界修订循环；评审未通过不伪装为通过。",
+    "try": "/improve 写一段30到60字的报价说明，必须包含“先验证参数”和“金额保留两位小数”。",
+    "observe": "draft→judge→condition；最多修订2次，最后明确展示 judge 结论。评审是模型意见，不是确定性测试。",
+    "notes": "",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/improve 写一段30到60字的报价说明，必须包含“先验证参数”和“金额保留两位小数”。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_15_dynamic_team",
+    "next": "cookbook_17_clarification"
+  },
+  {
+    "name": "cookbook_17_clarification",
+    "step": 17,
+    "title": "向用户提问后继续执行",
+    "chapter": "人机交互与状态",
+    "based_on": "cookbook_12_planner",
+    "added": "新增 /clarify：保留原始任务，显示模型澄清问题，等待下一条真实输入，再继续原任务。",
+    "try": "/clarify 帮我比较两个报价方案，但我还没有告诉你数量和单价。",
+    "observe": "clarify_question→ask→clarification_input 等待；输入“3件，每件19.9元，九折”后才进入 infer。",
+    "notes": "这不是审批 yes/no；第二个 Input 节点明确 reuse_last=false，不能把原始请求当作澄清回复。",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/clarify 帮我比较两个报价方案，但我还没有告诉你数量和单价。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_16_evaluator_optimizer",
+    "next": "cookbook_18_memory"
+  },
+  {
+    "name": "cookbook_18_memory",
+    "step": 18,
+    "title": "跨 Session 的显式长期记忆",
+    "chapter": "人机交互与状态",
+    "based_on": "cookbook_09_resume",
+    "added": "在会话恢复基础上新增 /remember 与 /recall：经审批保存到工作区记忆，新的 Session 也可检索。",
+    "try": "/remember 青松项目的验收命令是 python -m unittest，禁止用 pytest 替换。",
+    "observe": "批准 remember_approval 后写入 .egoagent/memory/cookbook.json；新建Session发 /recall 青松 验收命令。",
+    "notes": "只记用户明确选择的内容，不把所有聊天自动永久保存；与短期上下文压缩不同。",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/remember 青松项目的验收命令是 python -m unittest，禁止用 pytest 替换。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_17_clarification",
+    "next": "cookbook_19_skill_discovery"
+  },
+  {
+    "name": "cookbook_19_skill_discovery",
+    "step": 19,
+    "title": "搜索 Skill 而非塞满上下文",
+    "chapter": "检索与外部能力",
+    "based_on": "cookbook_06_discovery",
+    "added": "在知识搜索基础上新增 /skill：按需查找并激活 Skill，再由 Agent 调用；空结果明确返回。",
+    "try": "/skill quote_total 计算3件19.9元九折的总额，请先发现工具再调用。",
+    "observe": "skill_search→skill_activate→infer/tools，观察检索 id、激活结果、真实工具输出及使用量。",
+    "notes": "",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/skill quote_total 计算3件19.9元九折的总额，请先发现工具再调用。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_18_memory",
+    "next": "cookbook_20_web_research"
+  },
+  {
+    "name": "cookbook_20_web_research",
+    "step": 20,
+    "title": "联网研究子 Agent 与引用",
+    "chapter": "检索与外部能力",
+    "based_on": "cookbook_13_delegation",
+    "added": "新增 /web：委派给只含 web_search/fetch_url 的研究者，先检索后读原文，报告链接与失败。",
+    "try": "/web 搜索 Python 官方文档，解释 Decimal 为什么适合金额计算，读取原文并附链接。",
+    "observe": "web_worker 子轨迹应有 web_search 和 fetch_url；父助手汇总来源，不把搜索摘要当已读原文。",
+    "notes": "需要可访问公网；不需要搜索 API Key。网络失败是失败，不切换伪造结果。",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/web 搜索 Python 官方文档，解释 Decimal 为什么适合金额计算，读取原文并附链接。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://github.com/anthropics/claude-agent-sdk-demos/tree/main/research-agent"
+    ],
+    "total": 24,
+    "previous": "cookbook_19_skill_discovery",
+    "next": "cookbook_21_budget"
+  },
+  {
+    "name": "cookbook_21_budget",
+    "step": 21,
+    "title": "预算结束与可见降级",
+    "chapter": "控制与可靠性",
+    "based_on": "cookbook_10_durable",
+    "added": "在 Durable 基础上新增 /budget：隔离子流程只允许一次模型调用；到预算立即显示原因而非永远运行。",
+    "try": "/budget 请给一句报价建议，然后尝试第二次模型调用。",
+    "observe": "limited_first 实际调用，limited_second 被预算阻止，limit_notice 输出预算终止提示。",
+    "notes": "故意将演示预算设很低；不会吞掉失败，也不无限重试。",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/budget 请给一句报价建议，然后尝试第二次模型调用。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_20_web_research",
+    "next": "cookbook_22_flow_designer"
+  },
+  {
+    "name": "cookbook_22_flow_designer",
+    "step": 22,
+    "title": "模型创建并执行受限 Flow",
+    "chapter": "创建与改进 Agent",
+    "based_on": "cookbook_11_structured",
+    "added": "新增 /design：模型输出真正的 Flow 配置，批准后保存到工作区并执行；不是让模型口头扮演子 Agent。",
+    "try": "/design 为“把产品说明变成三条简明卖点”设计先提取再润色的两步模型工作流，试用说明：可自动浇水的智能花盆。",
+    "observe": "design 输出 pipeline.nodes/prompts；确认后 design_run 验证并执行生成的节点，design_save 保存 generated-flow.json。",
+    "notes": "只允许模型/输出/结束，最多6节点、8步、3次模型调用。生成失败不会保存，也不会修改系统 Harness。",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/design 为“把产品说明变成三条简明卖点”设计先提取再润色的两步模型工作流，试用说明：可自动浇水的智能花盆。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_21_budget",
+    "next": "cookbook_23_flow_improver"
+  },
+  {
+    "name": "cookbook_23_flow_improver",
+    "step": 23,
+    "title": "基于反馈的受限 Flow 修改",
+    "chapter": "创建与改进 Agent",
+    "based_on": "cookbook_22_flow_designer",
+    "added": "新增 /evolve：读取上关保存的 Flow，根据本次反馈提出最小 prompt 修改，验证并审批后执行候选。",
+    "try": "/evolve 上次卖点太长。请把输出约束改成每条不超过15字，并保留原始事实。",
+    "observe": "load_candidate→propose_edit→validate_edit→approval→evolved_run；只保存 evolved-flow.json，原版保持不变。",
+    "notes": "先运行本关继承的 /design；这里教受限改进机制，不宣称自动提高质量。需对照原版另做评测。",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/evolve 上次卖点太长。请把输出约束改成每条不超过15字，并保留原始事实。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_22_flow_designer",
+    "next": "cookbook_24_adaptive_team"
+  },
+  {
+    "name": "cookbook_24_adaptive_team",
+    "step": 24,
+    "title": "组合：按需团队与上下文治理",
+    "chapter": "综合应用",
+    "based_on": "cookbook_15_dynamic_team",
+    "added": "在动态团队上接入上下文精简、压力压缩、每节点检查点；委派仍按任务需要选择。",
+    "try": "/team-auto 分工检查 quote.py、test_quote.py，并用工具计算3件19.9元九折价格，给出简短汇总。",
+    "observe": "可观察团队子轨迹；累积长对话后观察 curate/compact 的实际删除与压缩事件；检查点记录执行边界。",
+    "notes": "不是所有请求都启动所有功能。前10关分别演示上下文和恢复；本关组合，避免为展示而强行进化。",
+    "examples": [
+      {
+        "label": "运行示例",
+        "text": "/team-auto 分工检查 quote.py、test_quote.py，并用工具计算3件19.9元九折价格，给出简短汇总。"
+      }
+    ],
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk",
+      "https://docs.langchain.com/oss/python/langgraph/workflows-agents"
+    ],
+    "total": 24,
+    "previous": "cookbook_23_flow_improver",
+    "next": null
+  }
+]

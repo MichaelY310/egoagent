@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[6]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from harness_editor.agent_creator import create_agent_from_description, create_agent_from_spec  # noqa: E402
+from egoagent_core.agent_creator import create_agent_from_description, create_agent_from_spec  # noqa: E402
 
 
 def create_agent_system(description: str = "", name: str = None, spec: dict = None):

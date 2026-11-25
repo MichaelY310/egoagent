@@ -8,6 +8,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlsplit
+from .connection_config import resolve_connection
 
 from .app_dns_proxy import (
     app_dns_proxy_for_url,
@@ -24,47 +25,12 @@ class CustomLLM:
     def __init__(self, config: Dict):
         self.config = dict(config)
 
-        # A process-level override lets every Identity use one provider without
-        # copying a secret into dozens of id.json files. Provider-specific keys
-        # are convenient fallbacks when the generic override is absent.
-        siliconflow_key = os.environ.get("SILICONFLOW_API_KEY", "").strip()
-        deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-        configured_key_env = str(config.get("api_key_env", "")).strip()
-        configured_env_key = os.environ.get(configured_key_env, "").strip() if configured_key_env else ""
-        global_key = os.environ.get("EGOAGENT_LLM_API_KEY", "").strip()
-
-        default_base_url = (
-            "https://api.deepseek.com" if deepseek_key
-            else "https://api.siliconflow.cn/v1" if siliconflow_key
-            else ""
-        )
-        default_model = (
-            "deepseek-v4-flash" if deepseek_key
-            else "Qwen/Qwen3-8B" if siliconflow_key
-            else ""
-        )
-        # A routed profile is already the router's final, audited choice.  Do
-        # not silently replace it with a process-wide endpoint after routing;
-        # that made telemetry name a mock/local profile while money was spent
-        # on a different remote provider. Legacy direct Identity configs still
-        # support the original process-level override behavior.
-        routed = isinstance(config.get("selection"), dict)
-        configured_base = str(config.get("base_url", "")).strip()
-        configured_model = str(config.get("model", "")).strip()
-        configured_secret = str(config.get("api_key", "")).strip()
-        if routed:
-            self.base_url = (configured_base or os.environ.get("EGOAGENT_LLM_BASE_URL", "").strip() or default_base_url).rstrip("/")
-            self.model = configured_model or os.environ.get("EGOAGENT_LLM_MODEL", "").strip() or default_model
-            self.api_key = configured_secret or configured_env_key or global_key or deepseek_key or siliconflow_key
-        else:
-            self.base_url = (os.environ.get("EGOAGENT_LLM_BASE_URL", "").strip() or default_base_url or configured_base).rstrip("/")
-            self.model = os.environ.get("EGOAGENT_LLM_MODEL", "").strip() or default_model or configured_model
-            self.api_key = global_key or configured_env_key or deepseek_key or siliconflow_key or configured_secret
-
-        if not self.base_url:
-            raise ValueError("LLM base_url is not configured")
-        if not self.model:
-            raise ValueError("LLM model is not configured")
+        # Identity settings and routed model profiles follow the same rule:
+        # explicit URL/model win; only blank fields inherit process defaults.
+        connection = resolve_connection(config, os.environ)
+        self.base_url = connection["base_url"]
+        self.model = connection["model"]
+        self.api_key = connection["api_key"]
 
         self.max_tokens = self._env_number("EGOAGENT_LLM_MAX_TOKENS", config.get("max_tokens"), int)
         self.temperature = self._env_number("EGOAGENT_LLM_TEMPERATURE", config.get("temperature"), float)
@@ -90,8 +56,8 @@ class CustomLLM:
             self.enable_thinking = bool(config.get("enable_thinking"))
         elif "deepseek.com" in self.base_url.lower():
             # Identity files created before model profiles do not carry an
-            # ``enable_thinking`` field.  Environment overrides can still
-            # route those Identities to DeepSeek V4, where omitting ``thinking``
+            # ``enable_thinking`` field. Blank connection fields may inherit
+            # DeepSeek V4 from global defaults, where omitting ``thinking``
             # enables hidden reasoning by default.  Short interactive/DAG
             # budgets can then be consumed entirely by reasoning and yield an
             # apparently successful but empty response.  Keep the legacy path

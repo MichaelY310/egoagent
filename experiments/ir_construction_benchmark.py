@@ -201,7 +201,7 @@ def run_benchmark(*, role: str = "evolver", repeats: int = 1, mock_oracle: bool 
     client = None
     profile = {"id": "oracle", "model": "deterministic-oracle"}
     if not mock_oracle:
-        from harness_editor.model_router import route_model
+        from egoagent_core.model_router import route_model
         profile = route_model(role, include_secret=True)
         if profile.get("error"): raise RuntimeError(profile["error"])
         client = create_provider(profile)

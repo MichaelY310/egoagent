@@ -52,7 +52,7 @@ class ConfiguredSessionModel:
 
     def __init__(self, *, role: str = "chat", expected_output_tokens: int = 1800):
         # Imports stay lazy so direct fork/merge works without an API key.
-        from harness_editor.ai_service import _require_client, _runtime_config
+        from egoagent_core.ai_service import _require_client, _runtime_config
 
         self.role = str(role or "chat")
         self._config = _runtime_config(self.role, None, 0, expected_output_tokens)
@@ -68,7 +68,7 @@ class ConfiguredSessionModel:
         max_tokens: int,
         temperature: float,
     ) -> dict[str, Any]:
-        from harness_editor.model_router import report_model_result
+        from egoagent_core.model_router import report_model_result
 
         started = time.perf_counter()
         try:

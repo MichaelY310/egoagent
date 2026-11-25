@@ -147,12 +147,12 @@ export default function RightPanel({
 
           {AGENT_OPS.includes(selectedNode.op) && (
             <>
-              <label>Agent (slot 名)</label>
+              <label>使用的角色</label>
               <select
                 value={selectedNode.agent || ''}
                 onChange={(e) => onNodeUpdate(selectedNode.id, { agent: e.target.value || undefined })}
               >
-                <option value="">-- 选择 slot --</option>
+                <option value="">-- 选择角色 --</option>
                 {Object.keys(config.slots).map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
@@ -630,7 +630,7 @@ export default function RightPanel({
           {selectedNode.op === '合并' && (
             <>
               <label>来源</label><ValueField value={selectedNode.source ?? '$last.branches'} onChange={(source) => onNodeUpdate(selectedNode.id, { source })} />
-              <label>合并方式</label><select value={selectedNode.strategy || 'list'} onChange={(e) => onNodeUpdate(selectedNode.id, { strategy: e.target.value as PipelineNode['strategy'] })}><option value="list">保留完整分支</option><option value="values">仅保留分支结果</option><option value="flatten">展开一层列表</option><option value="concat">拼接文本</option><option value="merge">合并对象</option><option value="first">第一项</option><option value="last">最后一项</option></select>
+              <label>合并方式</label><select value={selectedNode.strategy || 'list'} onChange={(e) => onNodeUpdate(selectedNode.id, { strategy: e.target.value as PipelineNode['strategy'] })}><option value="list">保留完整分支</option><option value="reports">仅最终结果与错误（隔离子 Agent 过程）</option><option value="values">仅保留分支结果</option><option value="flatten">展开一层列表</option><option value="concat">拼接文本</option><option value="merge">合并对象</option><option value="first">第一项</option><option value="last">最后一项</option></select>
               <label>输出变量</label><input value={selectedNode.output_var || 'joined'} onChange={(e) => onNodeUpdate(selectedNode.id, { output_var: e.target.value })} />
             </>
           )}
@@ -885,15 +885,17 @@ export default function RightPanel({
           <option value="last">last (最后一条)</option>
         </select>
 
-        <label>运行模式</label>
-        <select value={config.pipeline.mode || 'agent'} onChange={(e) => onConfigChange({ ...config, pipeline: { ...config.pipeline, mode: e.target.value } })}>
+        <label>运行策略（随 Flow 版本保存）</label>
+        <select aria-label="Flow 运行策略" value={config.pipeline.mode || 'agent'} onChange={(e) => onConfigChange({ ...config, pipeline: { ...config.pipeline, mode: e.target.value } })}>
           <option value="agent">Agent：可按权限调用工具</option>
           <option value="ask">Ask：只读分析</option>
           <option value="plan">Plan：只读规划</option>
+          <option value="debug">Debug：复现、修复与验证</option>
           <option value="chat">Chat：禁止写入和进程</option>
-          <option value="evaluate">Evaluate：隔离评测</option>
+          <option value="evaluate">Evaluate：限制联网和全局修改</option>
           <option value="evolve">Evolve：允许受控自进化</option>
         </select>
+        <p className="dag-editor-help">Chat 和独立试跑均使用此版本的配置。工作区审批与沙箱限制仍然生效。</p>
 
         <details className="panel-disclosure" style={{ margin: '8px 0' }}>
           <summary><span>初始上下文</span><small>{Object.keys(config.pipeline.context || {}).length}</small></summary>
@@ -1031,15 +1033,16 @@ export default function RightPanel({
       </div>
 
       {/* Slots */}
-      <details className="panel-section panel-disclosure">
-        <summary><span>Agent Slots</span><small>{Object.keys(config.slots).length}</small></summary>
+      <details className="panel-section panel-disclosure" open>
+        <summary><span>角色与 Identity</span><small>{Object.keys(config.slots).length}</small></summary>
+        <p className="dag-editor-help">每个模型角色选择一个 Identity。节点通过角色名使用它；保存后 Chat 无需再配置。</p>
         {Object.entries(config.slots).map(([name, def]) => (
           <div
             key={name}
             className="slot-item"
             onDrop={(e) => handleSlotDrop(name, e)}
             onDragOver={handleSlotDragOver}
-            style={{ cursor: 'copy' }}
+            style={{ flexDirection: 'column', alignItems: 'stretch' }}
             title="拖放 identity 到此绑定"
           >
             <div>
@@ -1047,11 +1050,16 @@ export default function RightPanel({
               <span className="slot-desc"> — {def.description}</span>
             </div>
             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              {(def as SlotDef & { identity?: string }).identity && (
-                <span style={{ fontSize: 10, color: '#7ecfff', background: '#1a2a3a', padding: '1px 6px', borderRadius: 3 }}>
-                  🎭 {(def as SlotDef & { identity?: string }).identity}
-                </span>
-              )}
+              <select aria-label={`${name} 的 Identity`} value={def.identity || ''}
+                onChange={(event) => onConfigChange({ ...config, slots: {
+                  ...config.slots, [name]: { ...def, identity: event.target.value || undefined },
+                } })}>
+                <option value="">请选择 Identity（未配置）</option>
+                {def.identity && !identityList.includes(def.identity) && <option value={def.identity}>{def.identity}（不存在，请重新选择）</option>}
+                {identityList.map((identity) => <option key={identity} value={identity}>
+                  {identity === 'test_bot' ? 'test_bot · 固定测试脚本，不调用模型' : identity}
+                </option>)}
+              </select>
               {def.required && <span className="slot-required">必填</span>}
               <button
                 className="btn btn-danger btn-sm"
@@ -1065,7 +1073,7 @@ export default function RightPanel({
           </div>
         ))}
         <div className="add-row">
-          <input placeholder="slot 名" value={newSlotName} onChange={(e) => setNewSlotName(e.target.value)} />
+          <input placeholder="角色名，例如 agent" value={newSlotName} onChange={(e) => setNewSlotName(e.target.value)} />
           <input placeholder="描述" value={newSlotDesc} onChange={(e) => setNewSlotDesc(e.target.value)} />
           <button className="btn btn-secondary btn-sm" onClick={() => {
             if (!newSlotName.trim()) return;
@@ -1081,9 +1089,9 @@ export default function RightPanel({
 
       {/* Identity 拖放区 */}
       <details className="panel-section panel-disclosure">
-        <summary><span>Identity 绑定</span><small>{identityList.length}</small></summary>
+        <summary><span>Identity 素材（可拖放）</span><small>{identityList.length}</small></summary>
         <p style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
-          从 Identity 管理页拖放 identity 到上方 slot 即可绑定
+          也可将下面的 Identity 拖到上方角色中；与下拉选择效果相同。
         </p>
         <div className="identity-picker-toolbar">
           <input

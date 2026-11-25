@@ -1,0 +1,84 @@
+{
+  "schema": "ego.product-code-campaign.v1",
+  "campaign_id": "20260904_product_code_agent",
+  "title": "EgoAgent Product Code Agent controlled acceptance campaign",
+  "comparisons": [
+    {
+      "id": "evolution_learning",
+      "title": "Governed evolution during seven recurring releases",
+      "baseline": "20260904_062148_quasar_learning_control_r1",
+      "treatment": "20260904_062444_quasar_learning_evolver_r1",
+      "interpretation": "Both solve all releases. Treatment pays an intentional learning cost and creates, repairs, verifies, then hot-loads a reusable Skill; this pair establishes the learning event, not immediate cost savings."
+    },
+    {
+      "id": "evolved_skill_transfer",
+      "title": "Fresh-session transfer using the evolved Quasar Skill",
+      "baseline": "20260904_063733_quasar_transfer_control_r1",
+      "treatment": "20260904_065355_quasar_transfer_direct_reuse_r3",
+      "interpretation": "Both solve all transfers. The treatment discovers and directly invokes the previously evolved Skill in each fresh task instead of re-reading, rewriting and re-testing the normalization logic."
+    },
+    {
+      "id": "global_skill_reuse_replication",
+      "title": "Core execution versus global Library reuse after publication",
+      "baseline": "20260904_091505_quasar_transfer_core_r2_matched",
+      "treatment": "20260904_091206_quasar_transfer_control_r2_matched",
+      "interpretation": "Both solve all transfers. Any compatible Identity can discover the globally published Skill, confirming interface/implementation separation. This replicate cuts tool calls but costs more model tokens and time because the comprehensive Flow still plans and reviews every turn; simple tasks should be routed to Core."
+    },
+    {
+      "id": "cross_session_memory",
+      "title": "Durable workspace memory across fresh trajectories",
+      "baseline": "20260904_083249_cross_session_memory_off_r1",
+      "treatment": "20260904_083434_cross_session_memory_on_r1",
+      "interpretation": "The fact is never written to a project file and the second step starts a fresh trajectory. Only the memory-enabled Flow retrieves the exact synthetic rollback code."
+    },
+    {
+      "id": "passive_context_compaction",
+      "title": "Passive token-pressure compaction over 25 noisy turns",
+      "baseline": "20260904_081438_context_endurance_25_off_r1",
+      "treatment": "20260904_101415_context_endurance_25_compact_dedup_r3",
+      "interpretation": "Both preserve four exact durable facts. The clean post-fix treatment triggers one compaction and reduces total tokens by 26.9%, but provider uncached input is 10.0% higher in this replicate; compaction controls working-context size and total spend, not deterministic prefix-cache behavior."
+    },
+    {
+      "id": "frequent_proactive_curation",
+      "title": "Frequent proactive curation over 15 noisy turns",
+      "baseline": "20260904_080421_context_endurance_off_r3",
+      "treatment": "20260904_080522_context_endurance_on_r3",
+      "interpretation": "Both are correct, but repeated model-authored history rewrites destroy provider prefix-cache locality and increase cost. This negative result motivated the production Flow's new minimum-context gate."
+    },
+    {
+      "id": "isolated_delegation",
+      "title": "One large repair with and without an isolated child Agent",
+      "baseline": "20260904_074152_large_delegation_off_r2",
+      "treatment": "20260904_074451_large_delegation_on_r1",
+      "interpretation": "Both pass all twelve tests. Delegation cleanly isolates disjoint packages and reduces primary-Agent context, but does not reduce total tokens at this task size; it is a context-isolation mechanism, not a universal cost optimization."
+    },
+    {
+      "id": "small_task_router_boundary",
+      "title": "Core versus Full Flow on a small one-shot repair",
+      "baseline": {"run": "20260904_092723_current_small_task_router_ab_r1", "flow": "product_core_code_agent"},
+      "treatment": {"run": "20260904_092723_current_small_task_router_ab_r1", "flow": "product_adaptive_code_agent"},
+      "interpretation": "Both pass all five tests. No reusable capability, memory, compaction, evolution or delegation benefit is available, so Full pays discovery and independent-review overhead. This is direct evidence for routing small one-shot repairs to Core."
+    },
+    {
+      "id": "lossless_tool_observation_pruning",
+      "title": "Matched large-observation repair with model-facing pruning off/on",
+      "baseline": "20260904_100353_tool_observation_control_dedup_verified_r2",
+      "treatment": "20260904_100055_tool_observation_pruning_dedup_verified_r2",
+      "interpretation": "Both repair the same roughly 50KB source and pass. The treatment preserves the contract-bearing head and bug-bearing tail in working context, keeps the exact full read once in the trajectory, and sharply reduces subsequent model input."
+    }
+  ],
+  "standalone": [
+    {
+      "id": "latest_full_product_flow",
+      "title": "Latest full product Flow on a six-stage release engineering task",
+      "run": "20260904_111926_full_v24_resilience_r1",
+      "interpretation": "The v24 product Flow completes all six stages while exercising discovery, passive compaction checks, component-owned repeat guards, tool-output pruning, durable memory, checkpoints, transactional change review, independent quality/safety reviews and an evolution review."
+    },
+    {
+      "id": "v24_repeat_guard_regression",
+      "title": "Latest production Flow after making the repeat-guard component reachable",
+      "run": "20260904_105818_v24_repeat_guard_regression_r1",
+      "interpretation": "The v24 Flow passes a real five-check dual-subsystem repair after hidden exact-call rejection is disabled in favor of the visible 2/3/5 component policy. No reminder fires on this normal run; deterministic fault injection separately proves the reminder path is reachable."
+    }
+  ]
+}

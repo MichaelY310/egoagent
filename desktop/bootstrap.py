@@ -79,6 +79,35 @@ def can_connect(port):
         return False
 
 
+def available_private_ports(ports):
+    """Keep the public URL stable; avoid taking over occupied internal servers.
+
+    Called only for a cold start, under the startup lock. Reserve candidates
+    together so that two internal services cannot select the same fallback.
+    The child binds them immediately afterwards; health checks catch bind races.
+    """
+    selected = dict(ports)
+    with contextlib.ExitStack() as reservations:
+        for name in ('BACKEND', 'WS', 'VOID'):
+            if name not in selected:
+                continue
+            candidate = reservations.enter_context(socket.socket())
+            if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+                candidate.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            try:
+                candidate.bind(('127.0.0.1', selected[name]))
+            except OSError:
+                candidate.close()
+                while True:
+                    candidate = reservations.enter_context(socket.socket())
+                    candidate.bind(('127.0.0.1', 0))
+                    port = candidate.getsockname()[1]
+                    if port not in selected.values():
+                        selected[name] = port
+                        break
+    return selected
+
+
 def ensure_services(root: Path, ports, timeout=100):
     state_dir = root / '.runtime' / 'desktop'
     with startup_lock(state_dir / 'start.lock'):
@@ -98,6 +127,7 @@ def ensure_services(root: Path, ports, timeout=100):
         python = root / '.venv' / 'Scripts' / 'python.exe'
         if not python.is_file() or not (root / 'void-web' / 'out' / 'server-main.js').is_file():
             raise RuntimeError('缺少 .venv 或 void-web，请先按 README 完成仓库运行环境安装')
+        ports = available_private_ports(ports)
         instance = uuid.uuid4().hex
         stop_file = state_dir / (instance + '.stop')
         log_file = state_dir / 'services.log'
@@ -110,7 +140,8 @@ def ensure_services(root: Path, ports, timeout=100):
                 cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                 creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
             )
-        record = {'pid': process.pid, 'stop_file': str(stop_file), 'root': str(root), 'port': ports['LISTEN']}
+        record = {'pid': process.pid, 'stop_file': str(stop_file), 'root': str(root),
+                  'port': ports['LISTEN'], 'ports': ports}
         temporary = state_dir / 'services.json.tmp'
         temporary.write_text(json.dumps(record), encoding='utf-8')
         temporary.replace(state_dir / 'services.json')

@@ -1,0 +1,9 @@
+{
+  "name": "cookbook_library",
+  "role": "仅供搜索的教学知识库，不是主 Agent。",
+  "llm": {
+    "type": "custom_llm",
+    "base_url": "",
+    "model": ""
+  }
+}

@@ -260,7 +260,7 @@ export interface PipelineNode {
   end_index?: unknown;
   step?: unknown;
   max_words?: unknown;
-  strategy?: 'list' | 'values' | 'flatten' | 'concat' | 'merge' | 'first' | 'last';
+  strategy?: 'list' | 'reports' | 'values' | 'flatten' | 'concat' | 'merge' | 'first' | 'last';
   separator?: string;
 
   // Human, subflow and output nodes.
@@ -411,6 +411,21 @@ export interface HarnessComponentManifest {
 export interface HarnessConfig {
   name: string;
   description: string;
+  cookbook?: {
+    step: number;
+    total: number;
+    title: string;
+    added: string;
+    try: string;
+    observe: string;
+    examples?: Array<{ label: string; text: string; repeat_text?: string; repeat?: number }>;
+    previous?: string;
+    next?: string;
+    notes?: string;
+    chapter?: string;
+    based_on?: string | null;
+    sources?: string[];
+  };
   slots: Record<string, SlotDef>;
   prompts: Record<string, PromptDef>;
   return_mode: 'all' | 'last';

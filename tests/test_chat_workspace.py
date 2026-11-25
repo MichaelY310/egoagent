@@ -1,10 +1,12 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from harness_editor.server import _build_chat_harness
 
 
+@patch.dict("os.environ", {"DEEPSEEK_API_KEY": "unit-test-not-a-real-key"})
 class ChatWorkspaceTests(unittest.TestCase):
     def test_default_chat_stack_is_the_flagship_code_agent(self):
         with tempfile.TemporaryDirectory() as directory:

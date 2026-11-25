@@ -28,7 +28,7 @@ from urllib.parse import quote
 from urllib.request import build_opener, ProxyHandler
 
 VOID_VERSION = '1.99.30044'
-PRODUCT_PACKAGES = ('llm', 'harness_editor', 'self_evolution', 'task_bench',
+PRODUCT_PACKAGES = ('llm', 'egoagent_core', 'egoagent_server', 'harness_editor', 'self_evolution', 'task_bench',
                     'tabletop', 'capability_packs', 'scripts', 'environment')
 DEPENDENCIES = ('yaml', 'requests', 'urllib3', 'certifi', 'charset_normalizer', 'idna', 'websocket', 'tomli')
 SKIP_PARTS = {'__pycache__', 'node_modules', '.git', '.versions', 'sessions', 'data',

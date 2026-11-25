@@ -1,5 +1,6 @@
 """Desktop lifecycle tests: local HTTP only; never invoke a model or real IDE."""
 import json
+import socket
 from pathlib import Path
 import sys
 import threading
@@ -9,6 +10,49 @@ from unittest.mock import Mock, patch
 import pytest
 
 from desktop import bootstrap
+
+
+def test_cold_start_avoids_foreign_internal_port_without_moving_public_url():
+    with socket.socket() as foreign:
+        foreign.bind(('127.0.0.1', 0))
+        foreign.listen()
+        occupied = foreign.getsockname()[1]
+        original = {'LISTEN': 18880, 'BACKEND': occupied}
+        selected = bootstrap.available_private_ports(original)
+        assert selected['LISTEN'] == original['LISTEN']
+        assert selected['BACKEND'] != occupied
+        assert original['BACKEND'] == occupied
+        assert bootstrap.can_connect(occupied)  # The foreign service is untouched.
+        with socket.socket() as child:
+            child.bind(('127.0.0.1', selected['BACKEND']))
+
+
+def test_extension_install_records_independently_allocated_socket(tmp_path):
+    """Run the real installer in an isolated miniature runtime, no live IDE."""
+    import ast
+    import os
+    import shutil
+    source = Path(__file__).resolve().parents[1] / 'start-all.py'
+    tree = ast.parse(source.read_text(encoding='utf-8-sig'))
+    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                    and node.name == 'install_native_extension')
+    extension = tmp_path / 'source'
+    extension.mkdir()
+    (extension / 'package.json').write_text(json.dumps({'contributes': {'configuration': {
+        'properties': {'egoagent.backendUrl': {'default': ''}}}}}), encoding='utf-8')
+    runtime = tmp_path / 'runtime'
+    (runtime / 'extensions').mkdir(parents=True)
+    (runtime / 'product.json').write_text('{}', encoding='utf-8')
+    scope = {'os': os, 'shutil': shutil, 'EXTENSION_SOURCE': extension,
+             'EXTENSION_TARGET': runtime / 'extensions/egoagent-dag-chat',
+             'VOID_ROOT': runtime, 'BACKEND_ORIGIN': 'http://127.0.0.1:50218',
+             '_ports': {'WS': 8766}, 'WEBVIEW_ENDPOINT': 'http://localhost/test'}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), 'exec'), scope)
+    assert scope['install_native_extension']()
+    text = (scope['EXTENSION_TARGET'] / 'connection-runtime.js').read_text(encoding='utf-8')
+    payload = json.loads(text.removeprefix('module.exports = ').strip().removesuffix(';'))
+    assert payload['backendUrl'] == 'http://127.0.0.1:50218'
+    assert payload['webSocketUrl'] == 'ws://127.0.0.1:8766'
 
 
 def test_clipboard_is_automatic_only_for_current_ide_origin():

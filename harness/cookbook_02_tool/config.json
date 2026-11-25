@@ -1,0 +1,125 @@
+{
+  "name": "cookbook_02_tool",
+  "description": "02 · 添加自定义 Tool。保留循环，给 Identity 的 EGO 增加 quote_total；schema 与实现分开。",
+  "catalog": {
+    "category": "example",
+    "visibility": "public",
+    "display_name": "Cookbook 02 · 添加自定义 Tool"
+  },
+  "tags": [
+    "cookbook"
+  ],
+  "slots": {
+    "agent": {
+      "required": true,
+      "identity": "cookbook_tool_user",
+      "description": "本关主助手；在 Build 中更换 Identity。"
+    }
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 240,
+    "max_node_steps": 1200,
+    "workspace_preview": false,
+    "mode": "agent",
+    "event_log": true,
+    "permissions": {
+      "defaults": {
+        "read": "allow",
+        "write": "allow",
+        "process": "deny",
+        "network": "deny",
+        "secret": "deny",
+        "mutation": "deny"
+      }
+    },
+    "context": {
+      "request": ""
+    },
+    "nodes": {
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "reuse_last": true,
+        "outputs": {
+          "text": "request"
+        },
+        "position": {
+          "x": 40,
+          "y": 100
+        },
+        "edges": [
+          {
+            "condition": "input",
+            "to": "infer"
+          }
+        ]
+      },
+      "infer": {
+        "id": "infer",
+        "op": "Agent",
+        "agent": "agent",
+        "tools": "all",
+        "hidden_tools": [
+          "search_capabilities",
+          "activate_capability"
+        ],
+        "max_tool_rounds": 6,
+        "instructions": "只处理用户当前请求。问候只简短回应，不搜文件。不认领 README 中的任务。只有工具真实返回的结果才算证据。工具失败要明确说明。",
+        "position": {
+          "x": 420,
+          "y": 100
+        },
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "tools"
+          },
+          {
+            "condition": "has_text",
+            "to": "input"
+          }
+        ]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "agent",
+        "position": {
+          "x": 780,
+          "y": 100
+        },
+        "edges": [
+          {
+            "condition": "default",
+            "to": "infer"
+          }
+        ]
+      }
+    }
+  },
+  "cookbook": {
+    "step": 2,
+    "total": 24,
+    "title": "添加自定义 Tool",
+    "added": "保留循环，给 Identity 的 EGO 增加 quote_total；schema 与实现分开。",
+    "try": "用 quote_total 算一下：3 件，每件 19.9 元，打九折。",
+    "observe": "展开工具结果，total 应为 53.73；工具在 capability_packs/cookbook_utilities。",
+    "examples": [
+      {
+        "label": "调用自定义工具",
+        "text": "用 quote_total 算一下：3 件，每件 19.9 元，打九折。"
+      }
+    ],
+    "previous": "cookbook_01_react",
+    "next": "cookbook_03_identity",
+    "notes": "",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_01_react",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  }
+}

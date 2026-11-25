@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -48,7 +49,9 @@ class IdentityCompositionTests(unittest.TestCase):
         self.assertLess(system.index(agent.identity.ID["description"]), system.index("[dag_instruction]"))
         self.assertEqual(request[1]["content"], "perform the task")
 
+    @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "unit-test-not-a-real-key"})
     def test_node_tool_allowlist_is_applied_before_global_prompt_budget(self):
+        # Validate composition without depending on the developer's credentials.
         agent = Agent(ROOT / "identity" / "adaptive_deepseek_coder", workspace=ROOT)
         requested = {
             "activate_capability",

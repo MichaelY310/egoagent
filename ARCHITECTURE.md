@@ -37,6 +37,27 @@ they do not slow the code-editing path.
 
 ## 2. Dependency direction
 
+The concrete source boundary is:
+
+- `egoagent_core/` owns reusable services (review transactions, workspace
+  checkpoints, project rules, memory, model routing, context indexing and Agent
+  creation). Its public SDK re-exports the existing root runtime classes; root
+  Python modules, `llm/`, `task_bench/`, `self_evolution/` and declarative assets
+  remain part of the headless core. There is no duplicated runtime implementation.
+- `egoagent_server/` owns HTTP/WebSocket routes and remote/product adapters.
+  `python -m egoagent_server` works without an installed frontend.
+- `harness_editor/src/`, `void_extension/`, `desktop/` and the external
+  `void-web/` runtime are optional presentation layers. Old Python paths under
+  `harness_editor/` are module aliases, preserving a single state store for
+  existing integrations; no core code may import them.
+
+`python -m egoagent_core` runs a Flow without a server. The source-export command
+`python scripts/export_core.py --output ../egoagent-core --with-tests` omits both
+UI and API. Its `scripts/verify_headless.py --tests` installs a forbidden-import
+guard and runs the deterministic core suite. The source distribution still
+includes root runtime modules and asset repositories; it is not a standalone
+wheel. See [headless usage](docs/HEADLESS_CORE_ZH.md).
+
 ```text
 UI / local HTTP adapters
           |
@@ -50,6 +71,9 @@ Filesystem / SQLite / provider transports
 ```
 
 Dependencies should point downward:
+
+- Core never imports `egoagent_server`, `harness_editor`, `void_extension` or
+  `desktop`; tests enforce this for runtime code and executable capabilities.
 
 - HTTP translates requests; it does not own a debugger state machine.
 - DAG nodes call runtime contracts; they do not construct providers/tools in

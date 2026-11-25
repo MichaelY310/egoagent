@@ -39,7 +39,8 @@ def _prompt_spec(value: str) -> tuple[str, str]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run an EgoAgent Harness")
     parser.add_argument("--harness-dir", "--harness_dir", dest="harness_dir", type=Path, required=True)
-    parser.add_argument("--agents", nargs="+", type=_agent_spec, required=True, metavar="SLOT:IDENTITY")
+    parser.add_argument("--agents", nargs="+", type=_agent_spec, default=[], metavar="SLOT:IDENTITY",
+                        help="Identity bindings; optional for Flows without Agent slots.")
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
     parser.add_argument("--prompts", nargs="*", type=_prompt_spec, default=[])
     parser.add_argument(

@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from harness_editor import checkpoint_manager
-from harness_editor.change_tracker import clear_changes, configure_store, get_changes
+from egoagent_core import checkpoint_manager
+from egoagent_core.change_tracker import clear_changes, configure_store, get_changes
 
 
 class CheckpointManagerTests(unittest.TestCase):

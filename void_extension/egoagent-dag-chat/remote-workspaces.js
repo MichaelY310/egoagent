@@ -13,11 +13,23 @@ function authenticatedFetch(input, options = {}) {
 
 function backendUrl() {
   // A remote window must never inherit a local workspace's backend override.
-  return (runtime.id ? runtime.backendUrl : vscode.workspace.getConfiguration('egoagent')
-    .get('backendUrl', runtime.backendUrl || 'http://127.0.0.1:8765')).replace(/\/$/, '');
+  const configuration = vscode.workspace.getConfiguration('egoagent');
+  const setting = configuration.inspect?.('backendUrl');
+  const explicit = setting?.workspaceFolderValue ?? setting?.workspaceValue ?? setting?.globalValue;
+  // VS Code's get() also returns the package.json default. That default must
+  // not override the launcher's installed runtime port after repackaging.
+  return String(runtime.id ? runtime.backendUrl : explicit || runtime.backendUrl
+    || configuration.get('backendUrl', 'http://127.0.0.1:8765')).replace(/\/$/, '');
 }
 
 function webSocketUrl(apiUrl) {
+  // The launcher allocates each private port independently. In particular, a
+  // busy HTTP port does not move the WebSocket listener to HTTP + 1.
+  if (runtime.webSocketUrl && runtime.backendUrl
+      && String(apiUrl).replace(/\/$/, '') === String(runtime.backendUrl).replace(/\/$/, '')) {
+    return String(runtime.webSocketUrl).replace(/\/$/, '');
+  }
+  // Backward compatibility for older remote installations / explicit API URLs.
   const url = new URL(apiUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.port = String(Number(url.port || 8765) + 1);

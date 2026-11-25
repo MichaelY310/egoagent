@@ -1,5 +1,3 @@
-pyyaml
-requests
-websocket-client
-tomli>=2; python_version < "3.11"
+-r requirements-core.txt
+# Optional for the core: downloaded local semantic embedding models.
 fastembed>=0.7,<1

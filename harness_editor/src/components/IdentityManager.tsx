@@ -1,18 +1,20 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import * as api from "../api/client";
+import ToolLibrary from './ToolLibrary';
 
 interface IdData {
   name: string;
-  personality: { traits: string[]; tone: string; language: string };
+  personality?: { traits?: string[] | string; tone?: string; language?: string };
   role: string;
   description: string;
-  llm: {
-    type: string;
-    base_url: string;
-    model: string;
-    api_key: string;
-    temperature: number;
-    max_tokens: number;
+  capability_selection?: api.StartupCapabilities;
+  llm?: {
+    type?: string;
+    base_url?: string;
+    model?: string;
+    api_key?: string;
+    temperature?: number;
+    max_tokens?: number;
   };
 }
 
@@ -73,6 +75,13 @@ const defaultSuperego: SuperegoData = {
   allow_add_knowledge_to_environment: false,
 };
 
+// Missing optional fields are a valid Identity, not a reason to rewrite it.
+// Normalize only the display so saving another field preserves inheritance.
+function listText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return Array.isArray(value) ? value.filter(item => typeof item === 'string').join(', ') : '';
+}
+
 export default function IdentityManager() {
   const [identities, setIdentities] = useState<string[]>([]);
   const [selected, setSelected] = useState<string>("");
@@ -97,6 +106,8 @@ export default function IdentityManager() {
   const [governanceHarness, setGovernanceHarness] = useState("code_agent_auto");
   const [governanceMode, setGovernanceMode] = useState("agent");
   const [governance, setGovernance] = useState<any>(null);
+  const loadRequest = useRef(0);
+  const [loading, setLoading] = useState(false);
 
   const refreshList = useCallback(async () => {
     const list = await api.listIdentities();
@@ -125,10 +136,13 @@ export default function IdentityManager() {
   };
 
   const loadFull = async (name: string) => {
+    const request = ++loadRequest.current;
     setSelected(name);
+    setLoading(true);
     setStatus("加载中...");
     try {
       const data = await api.loadIdentity(name);
+      if (request !== loadRequest.current) return;
       setIdData(data.id);
       setSuperego(data.superego || defaultSuperego);
       setSkills(data.skills || []);
@@ -137,7 +151,11 @@ export default function IdentityManager() {
       setEditingKnowledge("");
       setStatus("");
     } catch (e: unknown) {
+      if (request !== loadRequest.current) return;
+      setSelected("");
       setStatus(`加载失败: ${(e as Error).message}`);
+    } finally {
+      if (request === loadRequest.current) setLoading(false);
     }
   };
 
@@ -419,7 +437,7 @@ export default function IdentityManager() {
                     fontSize: 13,
                   }}
                 >
-                  {t === "id" ? "📋 ID" : t === "superego" ? "🛡 Superego" : t === "skills" ? "🔧 Skills" : "📚 Knowledge"}
+                  {t === "id" ? "📋 ID" : t === "superego" ? "🛡 Superego" : t === "skills" ? "🔧 工具与 Skills" : "📚 Knowledge"}
                 </button>
               ))}
             </div>
@@ -431,7 +449,8 @@ export default function IdentityManager() {
             )}
 
             {/* ID 编辑 */}
-            {tab === "id" && (
+            {loading && <p role="status">正在加载 Identity…</p>}
+            {!loading && tab === "id" && (
               <div>
                 <Field label="名称" value={idData.name} onChange={(v) => setIdData({ ...idData, name: v })} />
                 <Field label="角色 (role)" value={idData.role} onChange={(v) => setIdData({ ...idData, role: v })} />
@@ -446,26 +465,26 @@ export default function IdentityManager() {
                 </div>
 
                 <h4 style={{ color: "#aaa", fontSize: 13, margin: "12px 0 4px" }}>性格 (personality)</h4>
-                <Field label="语气 (tone)" value={idData.personality.tone} onChange={(v) => setIdData({ ...idData, personality: { ...idData.personality, tone: v } })} />
-                <Field label="语言 (language)" value={idData.personality.language} onChange={(v) => setIdData({ ...idData, personality: { ...idData.personality, language: v } })} />
+                <Field label="语气 (tone)" value={idData.personality?.tone || ''} onChange={(v) => setIdData({ ...idData, personality: { ...idData.personality, tone: v } })} />
+                <Field label="语言 (language)" value={idData.personality?.language || ''} onChange={(v) => setIdData({ ...idData, personality: { ...idData.personality, language: v } })} />
                 <div style={{ marginBottom: 8 }}>
                   <label style={labelStyle}>特质 (traits)，逗号分隔</label>
                   <input
-                    value={idData.personality.traits.join(", ")}
+                    value={listText(idData.personality?.traits)}
                     onChange={(e) => setIdData({ ...idData, personality: { ...idData.personality, traits: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) } })}
                     style={inputStyle}
                   />
                 </div>
 
                 <h4 style={{ color: "#aaa", fontSize: 13, margin: "12px 0 4px" }}>LLM 配置</h4>
-                <Field label="类型 (type)" value={idData.llm.type} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, type: v } })} />
-                <Field label="Base URL" value={idData.llm.base_url} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, base_url: v } })} />
-                <Field label="模型 (model)" value={idData.llm.model} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, model: v } })} />
+                <Field label="类型 (type)" value={idData.llm?.type || ''} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, type: v } })} />
+                <Field label="Base URL" value={idData.llm?.base_url || ''} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, base_url: v } })} />
+                <Field label="模型 (model)" value={idData.llm?.model || ''} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, model: v } })} />
                 <p style={{ margin: "0 0 8px", color: "#777", fontSize: 11, lineHeight: 1.5 }}>
-                  API Key 不写入 Identity。请在 Settings 配置服务端模型档案；Base URL 与模型留空时使用当前全局档案。
+                  Base URL 和模型名分别以此处填写的值为准；留空的字段才继承全局设置。自定义地址不可用时会报错，不会自动切换到全局模型。API Key 请通过服务端 api_key_env 配置；全局密钥不会自动发送给其他地址。
                 </p>
-                <Field label="Temperature" value={String(idData.llm.temperature)} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, temperature: parseFloat(v) || 0 } })} />
-                <Field label="Max Tokens" value={String(idData.llm.max_tokens)} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, max_tokens: parseInt(v) || 0 } })} />
+                <Field label="Temperature" value={String(idData.llm?.temperature ?? '')} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, temperature: v.trim() ? parseFloat(v) || 0 : undefined } })} />
+                <Field label="Max Tokens" value={String(idData.llm?.max_tokens ?? '')} onChange={(v) => setIdData({ ...idData, llm: { ...idData.llm, max_tokens: v.trim() ? parseInt(v) || 0 : undefined } })} />
 
                 <button onClick={saveId} style={{ ...btnStyle, marginTop: 12, padding: "8px 20px", fontSize: 14 }}>
                   💾 保存 id.json
@@ -474,7 +493,7 @@ export default function IdentityManager() {
             )}
 
             {/* Superego 编辑 */}
-            {tab === "superego" && (
+            {!loading && tab === "superego" && (
               <div>
                 <div style={{ marginBottom: 8 }}>
                   <label style={labelStyle}>Task Prompt</label>
@@ -491,7 +510,7 @@ export default function IdentityManager() {
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>白名单 (逗号分隔)</label>
                     <input
-                      value={(superego.tool_access?.whitelist || []).join(", ")}
+                      value={listText(superego.tool_access?.whitelist)}
                       onChange={(e) => setSuperego({ ...superego, tool_access: { whitelist: e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean), blacklist: superego.tool_access?.blacklist || [] } })}
                       style={inputStyle}
                     />
@@ -499,7 +518,7 @@ export default function IdentityManager() {
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>黑名单 (逗号分隔)</label>
                     <input
-                      value={(superego.tool_access?.blacklist || []).join(", ")}
+                      value={listText(superego.tool_access?.blacklist)}
                       onChange={(e) => setSuperego({ ...superego, tool_access: { whitelist: superego.tool_access?.whitelist || [], blacklist: e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean) } })}
                       style={inputStyle}
                     />
@@ -511,7 +530,7 @@ export default function IdentityManager() {
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>白名单 (逗号分隔)</label>
                     <input
-                      value={(superego.knowledge_access?.whitelist || []).join(", ")}
+                      value={listText(superego.knowledge_access?.whitelist)}
                       onChange={(e) => setSuperego({ ...superego, knowledge_access: { whitelist: e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean), blacklist: superego.knowledge_access?.blacklist || [] } })}
                       style={inputStyle}
                     />
@@ -519,7 +538,7 @@ export default function IdentityManager() {
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>黑名单 (逗号分隔)</label>
                     <input
-                      value={(superego.knowledge_access?.blacklist || []).join(", ")}
+                      value={listText(superego.knowledge_access?.blacklist)}
                       onChange={(e) => setSuperego({ ...superego, knowledge_access: { whitelist: superego.knowledge_access?.whitelist || [], blacklist: e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean) } })}
                       style={inputStyle}
                     />
@@ -577,7 +596,14 @@ export default function IdentityManager() {
             )}
 
             {/* Skills 管理 */}
-            {tab === "skills" && (
+            {!loading && tab === "skills" && (<>
+              <ToolLibrary key={selected} identity={selected} onSaved={selection => setIdData(previous => {
+                const next = { ...previous };
+                if (selection === null) delete next.capability_selection;
+                else next.capability_selection = selection;
+                return next;
+              })} />
+              <details style={{ padding: '0 18px 18px' }}><summary style={{ cursor: 'pointer', marginBottom: 12 }}>高级：新建或编辑此 Identity 的本地 Skill</summary>
               <div style={{ display: "flex", gap: 12 }}>
                 <div style={{ width: 200, borderRight: "1px solid #333", paddingRight: 8 }}>
                   <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
@@ -634,11 +660,12 @@ export default function IdentityManager() {
                       <button onClick={saveSkillFn} style={{ ...btnStyle, padding: "8px 20px", fontSize: 14 }}>💾 保存 Skill</button>
                     </>
                   ) : (
-                    <div style={{ color: "#555", textAlign: "center", marginTop: 40 }}>选择一个 skill 编辑，或新建一个</div>
+                    <div style={{ color: "var(--text-muted)", textAlign: "center", marginTop: 40 }}>选择本地 Skill 编辑，或新建一个。继承与公共能力请在上方工具库查看。</div>
                   )}
                 </div>
               </div>
-            )}
+              </details>
+            </>)}
 
             {/* Knowledge 管理 */}
             {tab === "knowledge" && (

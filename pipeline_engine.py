@@ -1391,7 +1391,7 @@ class PipelineRunner:
 
     def run(self) -> RunContext:
         from harness import runtime_scope
-        from harness_editor.change_tracker import transaction_scope
+        from egoagent_core.change_tracker import transaction_scope
 
         if (
             self.inject_workspace_preview
@@ -3587,7 +3587,7 @@ class PipelineRunner:
                     {"node": self.ctx.current_node, "message": str(error), "fallback": _preview_value(value)},
                 )
         output_var = node.get("output_var", "_llm_result")
-        self.ctx.data[output_var] = value
+        set_path(self.ctx.data, output_var, value)
         return NodeOutcome(
             {
                 "text": response,
@@ -5787,7 +5787,7 @@ class PipelineRunner:
             except PermissionError as error:
                 raise PipelineError(f"Workspace permission denied: {error}") from error
         if action == "begin_transaction":
-            from harness_editor.change_tracker import begin_transaction
+            from egoagent_core.change_tracker import begin_transaction
 
             requested_id = inputs.get("transaction_id", resolve_reference(node.get("transaction_id"), self.ctx))
             transaction_id = begin_transaction(requested_id or f"{self.ctx.run_id}-{uuid.uuid4().hex[:8]}")
@@ -5800,7 +5800,7 @@ class PipelineRunner:
             self.ctx.data["_change_transaction"] = transaction_id
             tags = ["transaction_started"]
         elif action == "changes":
-            from harness_editor.change_tracker import get_transaction_summary
+            from egoagent_core.change_tracker import get_transaction_summary
 
             transaction_id = inputs.get("transaction_id", resolve_reference(node.get("transaction_id", "$ctx._change_transaction"), self.ctx))
             if not transaction_id:
@@ -5808,7 +5808,7 @@ class PipelineRunner:
             result = {"action": action, **get_transaction_summary(transaction_id)}
             tags = ["changes_pending" if result["pending"] else "changes_resolved"]
         elif action == "review_transaction":
-            from harness_editor.change_tracker import begin_transaction, end_transaction, get_transaction_summary, resolve_transaction
+            from egoagent_core.change_tracker import begin_transaction, end_transaction, get_transaction_summary, resolve_transaction
 
             transaction_id = inputs.get("transaction_id", resolve_reference(node.get("transaction_id", "$ctx._change_transaction"), self.ctx))
             if not transaction_id:
@@ -5835,7 +5835,7 @@ class PipelineRunner:
             self.ctx.data["_change_transaction"] = self.ctx.change_transaction_id
             tags = [{"accepted": "changes_accepted", "rejected": "changes_rejected", "partial": "changes_partial"}.get(result["status"], "changes_resolved")]
         elif action == "rollback_transaction":
-            from harness_editor.change_tracker import begin_transaction, end_transaction, get_transaction_summary, revert_all
+            from egoagent_core.change_tracker import begin_transaction, end_transaction, get_transaction_summary, revert_all
 
             transaction_id = inputs.get("transaction_id", resolve_reference(node.get("transaction_id", "$ctx._change_transaction"), self.ctx))
             if not transaction_id:
@@ -6010,7 +6010,7 @@ class PipelineRunner:
                 }
                 tags = ["workspace_read"]
         elif action == "write_binary":
-            from harness_editor.change_tracker import record_binary_change
+            from egoagent_core.change_tracker import record_binary_change
 
             raw_path = inputs.get("path", resolve_reference(node.get("path"), self.ctx))
             if not raw_path:
@@ -6061,7 +6061,7 @@ class PipelineRunner:
             }
             tags = ["workspace_written"]
         elif action in {"write_text", "write_json"}:
-            from harness_editor.change_tracker import record_change
+            from egoagent_core.change_tracker import record_change
 
             raw_path = inputs.get("path", resolve_reference(node.get("path"), self.ctx))
             if not raw_path:
@@ -6118,7 +6118,7 @@ class PipelineRunner:
             }
             tags = ["workspace_written"]
         elif action == "delete":
-            from harness_editor.change_tracker import record_binary_change, record_change
+            from egoagent_core.change_tracker import record_binary_change, record_change
 
             raw_path = inputs.get("path", resolve_reference(node.get("path"), self.ctx))
             if not raw_path:
@@ -6148,7 +6148,7 @@ class PipelineRunner:
                 result = {"action": action, "path": self._workspace_relative(path), "deleted": True, "tracked": tracked}
                 tags = ["workspace_deleted"]
         elif action in {"move", "rename"}:
-            from harness_editor.change_tracker import record_move
+            from egoagent_core.change_tracker import record_move
 
             raw_source = inputs.get("source", resolve_reference(node.get("source", node.get("path")), self.ctx))
             raw_target = inputs.get("target", resolve_reference(node.get("target"), self.ctx))
@@ -6197,7 +6197,7 @@ class PipelineRunner:
 
     def _apply_search_replace_edits(self, raw_edits: Any, raw_allowed_paths: Any, node: dict) -> dict:
         """Apply parsed edit blocks with confinement, rollback and per-hunk review data."""
-        from harness_editor.change_tracker import record_change
+        from egoagent_core.change_tracker import record_change
 
         if not isinstance(raw_edits, list):
             raise PipelineError("Workspace apply_search_replace requires an edits list")
@@ -6519,6 +6519,7 @@ class PipelineRunner:
         base_data = copy.deepcopy(self.ctx.data)
         join_node = node.get("join")
         max_workers = max(1, min(int(node.get("max_workers", len(branches))), len(branches)))
+        event_lock = threading.RLock()
 
         def run_branch(index: int, spec: dict) -> dict:
             from harness import Session
@@ -6530,12 +6531,18 @@ class PipelineRunner:
             branch_harness.session.messages = copy.deepcopy(base_messages)
             branch_harness.session.full_messages = copy.deepcopy(base_full_messages)
             branch_harness.session.state = copy.deepcopy(base_state)
-            events: list[tuple[str, dict]] = []
+            def emit_branch(event: str, payload: dict) -> None:
+                # Progress must arrive while workers run, not after the join.
+                # Keep transcript merging deterministic below; forward the native
+                # child run ids/recording marker without duplicating its trace.
+                if event != "done":
+                    with event_lock:
+                        self.ctx.emit(event, {**payload, "branch": spec["name"]})
             branch_data = copy.deepcopy(base_data)
             branch_data.update(resolve_reference(spec.get("data", {}), self.ctx))
             runner = PipelineRunner(
                 branch_harness,
-                on_output=lambda event, payload: events.append((event, payload)),
+                on_output=emit_branch,
                 get_input=lambda: None,
                 is_running=self.ctx.is_running,
                 initial_data=branch_data,
@@ -6559,7 +6566,6 @@ class PipelineRunner:
                 "outputs": child.node_outputs,
                 "messages": branch_harness.session.messages[len(base_messages):],
                 "full_messages": branch_harness.session.full_messages[len(base_full_messages):],
-                "events": events,
                 "stats": child.stats,
                 "error": error,
             }
@@ -6579,9 +6585,6 @@ class PipelineRunner:
             self.ctx.stats.add(branch.pop("stats"))
             self.ctx.harness.session.messages.extend(branch.pop("messages"))
             self.ctx.harness.session.full_messages.extend(branch.pop("full_messages"))
-            for event, payload in branch.pop("events"):
-                if event not in {"done"}:
-                    self.ctx.emit(event, {**payload, "branch": branch["name"]})
             if branch.get("error"):
                 failures.append({"name": branch["name"], **branch["error"]})
         if failures and node.get("fail_fast", True):
@@ -6680,6 +6683,14 @@ class PipelineRunner:
 
         if strategy == "list":
             result = values
+        elif strategy == "reports":
+            # Forward final results + explicit failure, not branch context,
+            # intermediate tool outputs, or its full node-output dictionary.
+            result = [{"name": value.get("name", str(index)),
+                       "value": None if value.get("error") else copy.deepcopy(unwrap(value)),
+                       "error": copy.deepcopy(value.get("error"))}
+                      if isinstance(value, dict) else {"name": str(index), "value": value, "error": None}
+                      for index, value in enumerate(values)]
         elif strategy == "values":
             result = [copy.deepcopy(unwrap(value)) for value in values]
         elif strategy == "flatten":
@@ -6707,7 +6718,7 @@ class PipelineRunner:
         else:
             raise PipelineError(f"unknown Join strategy: {strategy}")
         output_var = node.get("output_var", "joined")
-        self.ctx.data[output_var] = result
+        set_path(self.ctx.data, output_var, result)
         return NodeOutcome({"value": result, "text": result if isinstance(result, str) else None}, ["joined"])
 
     def _approval_node(self, node: dict, inputs: dict) -> NodeOutcome:
@@ -6833,6 +6844,16 @@ class PipelineRunner:
             if len(dynamic_graph.get("nodes", {})) > max_nodes:
                 raise PipelineError(f"inline subflow exceeds max_dynamic_nodes ({max_nodes})")
             assert_valid_pipeline(dynamic_graph)
+            allowed_ops = node.get("allowed_ops")
+            if allowed_ops is not None:
+                if not isinstance(allowed_ops, list) or not allowed_ops:
+                    raise PipelineError("inline subflow allowed_ops must be a non-empty array")
+                allowed = {canonical_op(str(op)) for op in allowed_ops}
+                denied = {node_id: canonical_op(spec.get("op", ""))
+                          for node_id, spec in dynamic_graph.get("nodes", {}).items()
+                          if canonical_op(spec.get("op", "")) not in allowed}
+                if denied:
+                    raise PipelineError(f"inline subflow operations outside allowed_ops: {denied}")
             if not node.get("allow_unsafe", False):
                 forbidden = {
                     node_id: canonical_op(spec.get("op", ""))
@@ -6988,7 +7009,7 @@ class PipelineRunner:
         elif result_mode != "messages":
             raise PipelineError(f"unknown subflow result_mode: {result_mode}")
         output_var = node.get("output_var", "_sub_result")
-        self.ctx.data[output_var] = result
+        set_path(self.ctx.data, output_var, result)
         output_contract = component.get("outputs", {})
         if not isinstance(output_contract, dict):
             raise PipelineError(f"subflow {name!r} component.outputs must be an object")
@@ -7716,7 +7737,7 @@ class PipelineRunner:
         safe_label = "".join(char if char.isalnum() or char in "-_" else "_" for char in str(label or "checkpoint"))[:60]
         path = self._checkpoint_root() / f"{self.ctx.run_id}-{safe_label}.json"
         try:
-            from harness_editor.change_tracker import get_transaction_summary
+            from egoagent_core.change_tracker import get_transaction_summary
             change_transaction = get_transaction_summary(self.ctx.change_transaction_id)
         except Exception:
             change_transaction = {"transaction_id": self.ctx.change_transaction_id, "status": "unavailable"}

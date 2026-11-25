@@ -1,0 +1,173 @@
+{
+  "name": "cookbook_01_react",
+  "description": "01 · ReAct：最小循环。只有 输入→Agent→工具→Agent；没有工具调用时回到输入。",
+  "catalog": {
+    "category": "example",
+    "visibility": "public",
+    "display_name": "Cookbook 01 · ReAct：最小循环"
+  },
+  "tags": [
+    "cookbook"
+  ],
+  "slots": {
+    "agent": {
+      "required": true,
+      "identity": "cookbook_reader",
+      "description": "本关主助手；在 Build 中更换 Identity。"
+    }
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 240,
+    "max_node_steps": 1200,
+    "workspace_preview": false,
+    "mode": "agent",
+    "event_log": true,
+    "permissions": {
+      "defaults": {
+        "read": "allow",
+        "write": "allow",
+        "process": "deny",
+        "network": "deny",
+        "secret": "deny",
+        "mutation": "deny"
+      }
+    },
+    "context": {
+      "request": ""
+    },
+    "nodes": {
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "reuse_last": true,
+        "outputs": {
+          "text": "request"
+        },
+        "position": {
+          "x": 40,
+          "y": 100
+        },
+        "edges": [
+          {
+            "condition": "input",
+            "to": "infer",
+            "source_port": "input",
+            "target_port": "flow",
+            "route": "bezier",
+            "reroutes": [],
+            "channel_offset": 0,
+            "curvature": 0.72,
+            "label_offset": 0
+          }
+        ],
+        "editor_position": {
+          "x": 295.9339488199221,
+          "y": -421.66360153574374
+        },
+        "inputs": {}
+      },
+      "infer": {
+        "id": "infer",
+        "op": "Agent",
+        "agent": "agent",
+        "tools": "all",
+        "hidden_tools": [
+          "search_capabilities",
+          "activate_capability"
+        ],
+        "max_tool_rounds": 6,
+        "instructions": "只处理用户当前请求。问候只简短回应，不搜文件。不认领 README 中的任务。只有工具真实返回的结果才算证据。工具失败要明确说明。",
+        "position": {
+          "x": 420,
+          "y": 100
+        },
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "tools",
+            "source_port": "has_tool_calls",
+            "target_port": "flow",
+            "route": "bezier",
+            "reroutes": [],
+            "channel_offset": 0,
+            "curvature": 0.72,
+            "label_offset": 0
+          },
+          {
+            "condition": "has_text",
+            "to": "input",
+            "source_port": "has_text",
+            "target_port": "flow",
+            "route": "bezier",
+            "reroutes": [],
+            "channel_offset": 0,
+            "curvature": 0.72,
+            "label_offset": 0
+          }
+        ],
+        "editor_position": {
+          "x": 286.3723893788619,
+          "y": -50.42174520338736
+        },
+        "inputs": {}
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "agent",
+        "position": {
+          "x": 780,
+          "y": 100
+        },
+        "edges": [
+          {
+            "condition": "default",
+            "to": "infer",
+            "source_port": "default",
+            "target_port": "flow",
+            "route": "bezier",
+            "reroutes": [],
+            "channel_offset": 0,
+            "curvature": 0.72,
+            "label_offset": 0
+          }
+        ],
+        "editor_position": {
+          "x": 305.4895575154477,
+          "y": 355.40338880265676
+        },
+        "inputs": {}
+      }
+    },
+    "data_links": []
+  },
+  "cookbook": {
+    "step": 1,
+    "total": 24,
+    "title": "ReAct：最小循环",
+    "added": "只有 输入→Agent→工具→Agent；没有工具调用时回到输入。",
+    "try": "你好",
+    "observe": "应只简短问候；再问“请只读列出当前目录的 Python 文件”，观察 infer→tools→infer。",
+    "examples": [
+      {
+        "label": "1 · 问候，不应搜索文件",
+        "text": "你好"
+      },
+      {
+        "label": "2 · 触发工具循环",
+        "text": "请只读列出当前目录的 Python 文件，不要修改文件。"
+      }
+    ],
+    "previous": null,
+    "next": "cookbook_02_tool",
+    "notes": "默认使用全局真实模型；无 API 会报错，不会切假模型。建议工作区：examples/cookbook/workspace。",
+    "chapter": "基础与上下文",
+    "based_on": null,
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  }
+}

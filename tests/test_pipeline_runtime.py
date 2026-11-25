@@ -168,7 +168,7 @@ class PipelineRuntimeTests(unittest.TestCase):
         (ROOT / "tmp").mkdir(exist_ok=True)
         self.temp = tempfile.TemporaryDirectory(dir=ROOT / "tmp")
         self.root = Path(self.temp.name)
-        from harness_editor.change_tracker import clear_changes, configure_store
+        from egoagent_core.change_tracker import clear_changes, configure_store
         configure_store(self.root / "change-journal.json")
         clear_changes()
 
@@ -2099,7 +2099,7 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root / "reports" / "metadata.json").read_text(encoding="utf-8")), {"accepted": True, "score": 8})
 
     def test_workspace_binary_write_is_readable_and_reviewable(self):
-        from harness_editor.change_tracker import get_changes, reject_change, undo_change
+        from egoagent_core.change_tracker import get_changes, reject_change, undo_change
 
         graph = {
             "start": "write",
@@ -2129,7 +2129,7 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.assertEqual((self.root / "assets" / "pixel.bin").read_bytes(), b"\x00\x01\x02\xff")
 
     def test_workspace_move_and_delete_are_tracked_and_reversible(self):
-        from harness_editor.change_tracker import clear_changes, get_changes, reject_change
+        from egoagent_core.change_tracker import clear_changes, get_changes, reject_change
 
         source = self.root / "old.txt"
         source.write_text("move me\n", encoding="utf-8")
@@ -2230,7 +2230,7 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.assertEqual(resumed.data["_resumed_from"], Path(checkpoint).resolve().relative_to(self.root).as_posix())
 
     def test_agent_edit_transaction_rejects_pending_hunks_and_restores_file(self):
-        from harness_editor.change_tracker import clear_changes, get_active_transaction, record_change
+        from egoagent_core.change_tracker import clear_changes, get_active_transaction, record_change
 
         clear_changes()
         target = self.root / "demo.txt"

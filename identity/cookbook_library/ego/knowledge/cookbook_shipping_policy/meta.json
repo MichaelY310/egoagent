@@ -1,0 +1,11 @@
+{
+  "name": "cookbook_shipping_policy",
+  "type": "knowledge",
+  "description": "Cookbook 商店配送规则：订单满200元免邮，否则运费12元；仅用于合成教学例子。",
+  "tags": [
+    "cookbook",
+    "shipping",
+    "配送",
+    "免邮"
+  ]
+}

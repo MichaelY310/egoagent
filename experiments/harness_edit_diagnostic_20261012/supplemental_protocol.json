@@ -1,0 +1,8 @@
+{
+  "status": "Exploratory integration audit, after observing unit-test results of cases 1-4; not preregistered confirmatory evidence",
+  "reason": "Upstream unit tests mock the producer or inline the new template. Consequently a partial production patch may pass while the deployed producer-consumer chain remains broken.",
+  "selection": "All non-UI multi-component cases in the frozen sample: 40fa3652, 147121ff, 640165a5. Do not modify group selectors, upstream patches, or primary tests. Inspector UI/CSS remains only in the primary test matrix.",
+  "inputs": "Use response fixtures and malformed-tool/truncation scenarios already supplied by the upstream tests. Load actual production YAML instead of the tests' inline template. Connect actual agent and actual model adapter instead of the test-only billed model. No new benchmark tasks, model-generated answers or invented harness defects.",
+  "billing": "Use the unchanged upstream OpenRouter payload whose usage.cost is 0.01, rather than the separate agent test model's cost_per_call=1.0. Preserve the upstream agent-test budget/call-cost ratio 2.5 and step_limit=8. max_consecutive_format_errors=0, as in that test. Only provider I/O is replaced by the upstream response fixture; real cost parsing, error propagation and agent budget accounting execute.",
+  "interpretation": "These are authored integration probes of real upstream bugs, not untouched upstream tests, blind benchmark wins, model evaluations, or evidence of adaptive grouping superiority. Report separately. All four component subsets run. Fixed baselines stay frozen. Count no additional independent research samples."
+}

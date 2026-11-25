@@ -2,6 +2,7 @@ import inspect
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ from subagent_lifecycle import finish_subagent, link_subagent
 
 
 class SubagentLifecycleTests(unittest.TestCase):
+    @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "unit-test-not-a-real-key"})
     def test_product_adaptive_identity_combines_execution_and_evolution_tools(self):
         project_root = Path(__file__).resolve().parent.parent
         agent = AgentFactory(identity_roots=(project_root / "identity",)).create(

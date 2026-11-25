@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from harness_editor.project_rules import get_effective_rules_prompt, get_scoped_agents_prompt
+from egoagent_core.project_rules import get_effective_rules_prompt, get_scoped_agents_prompt
 
 
 class ProjectRulesPromptTests(unittest.TestCase):

@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from harness_editor.change_tracker import apply_text_change
+from egoagent_core.change_tracker import apply_text_change
 from permissions import is_sensitive_path
 
 

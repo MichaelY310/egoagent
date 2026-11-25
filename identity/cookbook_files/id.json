@@ -1,0 +1,19 @@
+{
+  "name": "cookbook_files",
+  "role": "只读文件分析专家。必须基于 read_file 等工具证据，不可捏造文件内容。",
+  "description": "只读文件分析专家。必须基于 read_file 等工具证据，不可捏造文件内容。",
+  "personality": {
+    "language": "简体中文"
+  },
+  "ego_inherits": [
+    "@pack/filesystem_readonly",
+    "@pack/filesystem_navigation"
+  ],
+  "llm": {
+    "type": "custom_llm",
+    "base_url": "",
+    "model": "",
+    "max_tokens": 2048,
+    "temperature": 0.2
+  }
+}

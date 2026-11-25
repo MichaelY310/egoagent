@@ -8,8 +8,23 @@ export type IdeContextItem = {
   content: string;
 };
 
-declare function acquireVsCodeApi(): { postMessage: (message: unknown) => void };
+declare function acquireVsCodeApi(): {
+  postMessage: (message: unknown) => void;
+  getState: () => { workbenchSession?: unknown } | undefined;
+  setState: (state: unknown) => void;
+};
 const vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+
+// Webview origins can change after a reload. Use the IDE's durable webview
+// state as well as localStorage; never put credentials or runtime outputs here.
+export function readIdeWorkbenchSession(): unknown {
+  return vscodeApi?.getState()?.workbenchSession;
+}
+
+export function writeIdeWorkbenchSession(session: unknown): void {
+  vscodeApi?.setState({ workbenchSession: session });
+  postToIde('session-state', { session });
+}
 
 const pendingRequests = new Map<string, { resolve: (value: unknown) => void; reject: (reason: Error) => void; timer: number }>();
 
@@ -37,6 +52,12 @@ export function postToIde(type: string, payload: Record<string, unknown> = {}): 
 export function openFileInIde(path: string, line = 1, endLine?: number): boolean {
   if (!path) return false;
   return postToIde('open-file', { path, line, endLine });
+}
+
+/** Editing actions need an acknowledgement, not just a successful postMessage. */
+export async function editCapabilityFileInIde(path: string): Promise<void> {
+  const result = await requestFromIde<boolean>('open-file', { path });
+  if (!result) throw new Error(`请在 EgoAgent IDE 内打开此页面，或手动打开文件：${path}`);
 }
 
 export function openAgentChangeInIde(id: string, hunkId?: string): Promise<boolean> {

@@ -360,6 +360,9 @@ def validate_json_schema(value: Any, schema: dict, path: str = "$output") -> lis
             extras = sorted(set(value) - set(schema.get("properties", {})))
             for key in extras:
                 errors.append(f"{path}.{key} is not allowed")
+        elif isinstance(schema.get("additionalProperties"), dict):
+            for key in sorted(set(value) - set(schema.get("properties", {}))):
+                errors.extend(validate_json_schema(value[key], schema["additionalProperties"], f"{path}.{key}"))
         if "minProperties" in schema and len(value) < schema["minProperties"]:
             errors.append(f"{path} has fewer than minProperties")
         if "maxProperties" in schema and len(value) > schema["maxProperties"]:

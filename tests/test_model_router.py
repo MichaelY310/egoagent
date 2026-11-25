@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from harness_editor import model_router
+from egoagent_core import model_router
 
 
 class ModelRouterTests(unittest.TestCase):

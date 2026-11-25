@@ -1,0 +1,236 @@
+{
+  "schema": "egoagent.feature-maturity-verification.v1",
+  "audit_date": "2026-11-23",
+  "target": "current working tree, not HEAD alone",
+  "head_at_start": "de0252a",
+  "overall_health": "AMBER",
+  "general_release_readiness": "RED until high-impact boundary issues are fixed",
+  "recommended_positioning": "trusted-local-developer preview with explicit Beta and Experimental boundaries",
+  "report": "docs/FEATURE_MATURITY_AUDIT_20261123_ZH.md",
+  "scope": {
+    "feature_sections": [
+      "Code IDE and interaction",
+      "Flow and core runtime",
+      "Identity, tools, capabilities and knowledge",
+      "Projects, sessions, background execution and observation",
+      "Task evaluation and training data",
+      "Evolution and research",
+      "Security, deployment and release"
+    ],
+    "snapshot_source_files": 1302,
+    "source_hashes_unchanged_after_tests": true,
+    "tested_snapshot_hashes_unchanged_after_tests": true,
+    "excluded": [
+      "vendored Void Web and Meilisearch implementation",
+      "virtual environment and node_modules source audit",
+      "real credentials and user session contents",
+      "raw experiment runs/results and historical evolution data",
+      "generated Workbench bundle deep review"
+    ],
+    "not_a_claim": "Not an exhaustive line-by-line audit of every tool, API endpoint, experiment or platform."
+  },
+  "inventory": {
+    "top_level_flow_configs": 135,
+    "default_visible_flow_api_items": 74,
+    "detailed_flow_api_items": 135,
+    "canonical_node_types": 28,
+    "default_palette_types": 27,
+    "cookbook_flows": 24,
+    "identity_api_items": 52,
+    "python_test_files": 105,
+    "node_test_files": 14,
+    "flow_audit_categories": {
+      "template": 85,
+      "internal_worker": 14,
+      "replica": 20,
+      "component": 12,
+      "evolution": 4
+    },
+    "warning": "Counts describe configurations and registered mechanisms, not independently certified products or real-model success rates."
+  },
+  "validation": {
+    "python_full_final": {
+      "status": "passed_with_skips",
+      "passed": 888,
+      "failed": 0,
+      "skipped": 3,
+      "subtests_passed": 258,
+      "duration_seconds": 283.28,
+      "python_version": "3.13.1",
+      "pytest_version": "9.1.1",
+      "external_python_socket_attempts_blocked": 0,
+      "embedding_provider": "disabled",
+      "real_model_credentials_used": false,
+      "raw_log": "tmp/feature-audit-20261123/python-final.txt",
+      "junit": "tmp/feature-audit-20261123/python-final-results.xml",
+      "skip_reasons": [
+        "Harbor symlink fixture: Windows symlink creation unavailable",
+        "Permission traversal/symlink fixture: Windows privilege unavailable",
+        "Real container runtime: no explicit local test image configured"
+      ]
+    },
+    "python_initial": {
+      "passed": 883,
+      "failed": 5,
+      "skipped": 3,
+      "subtests_passed": 258,
+      "duration_seconds": 284.477,
+      "audit_setup_failures": 2,
+      "setup_cause": "Isolated source copy had no independent Git index required by export_core; corrected in the copy only.",
+      "transient_failures": 3,
+      "transient_error": "PermissionError [WinError 5] at egoagent_core/change_tracker.py:1186 os.replace",
+      "transient_tests": [
+        "test_background_workspace.BackgroundWorkspaceTests.test_isolated_changes_preview_conflict_and_reviewable_apply",
+        "test_change_tracker.ChangeTrackerReviewTests.test_binary_replace_reject_undo_and_restart",
+        "test_change_tracker.ChangeTrackerReviewTests.test_empty_new_file_is_reviewable"
+      ],
+      "transient_root_cause": "not established; do not infer antivirus, filesystem or concurrency cause without additional evidence",
+      "junit": "tmp/feature-audit-20261123/python-results.xml"
+    },
+    "python_focused_retry": {
+      "passed": 28,
+      "failed": 0,
+      "modules": ["test_core_separation.py", "test_change_tracker.py", "test_background_workspace.py"],
+      "junit": "tmp/feature-audit-20261123/python-retry-results.xml"
+    },
+    "node_final": {
+      "passed": 126,
+      "failed": 0,
+      "skipped": 0,
+      "node_version": "24.22.0",
+      "scope": "Native Chat and Workbench logic/contract tests, including VM and fake DOM; not complete IDE E2E",
+      "raw_log": "tmp/feature-audit-20261123/node-results-retry.txt",
+      "initial_setup_note": "First attempt used incorrect cwd and a dependency-free copy; ENOENT and MODULE_NOT_FOUND corrected by running read-only tests at project root with existing dependencies."
+    },
+    "frontend": {
+      "typescript": "passed: tsc --project tsconfig.json --noEmit",
+      "vite_build": "passed",
+      "modules_transformed": 247,
+      "vite_version": "6.4.3",
+      "vite_duration_seconds": 4.62,
+      "fresh_dependency_install": false,
+      "output": "tmp/feature-audit-20261123/frontend-dist",
+      "raw_log": "tmp/feature-audit-20261123/frontend-build.txt"
+    },
+    "flow_structure": {
+      "passed": 135,
+      "failed": 0,
+      "pinned_contracts": 15,
+      "script": "scripts/audit_harness_catalog.py",
+      "scope": "Structure, local slots, subflow dependencies and component interfaces only",
+      "raw_report": "tmp/feature-audit-20261123/flow-audit.json"
+    },
+    "http_smoke": {
+      "status": "passed",
+      "homepage": 200,
+      "initial_static_assets": 6,
+      "api_endpoints": [
+        "/api/harnesses",
+        "/api/harnesses/detailed",
+        "/api/dag/contracts",
+        "/api/identities",
+        "/v1/models"
+      ],
+      "all_http_statuses": 200,
+      "scope": "Fresh API source export, temporary loopback port, temporary built Workbench; no main startup, no durable worker, no real model call",
+      "raw_report": "tmp/feature-audit-20261123/http-smoke.json"
+    }
+  },
+  "controlled_reproductions": [
+    {
+      "id": "parallel-parent-policy",
+      "priority": "P1",
+      "status": "confirmed_unfixed",
+      "source": ["pipeline_engine.py:6543", "pipeline_engine.py:6574", "pipeline_engine.py:1161"],
+      "observation": "Explicit parent chat policy became agent policy in a thread branch; different policy object, no parent context and no approval callback.",
+      "evidence": "tmp/feature-audit-20261123/runtime-repro.json"
+    },
+    {
+      "id": "knowledge-secret-authorization",
+      "priority": "P1",
+      "status": "confirmed_unfixed",
+      "source": ["environment.py:14", "agent.py:2019", "llm/env_config.py:41"],
+      "observation": "Synthetic environment value rendered by Knowledge and remained unredacted with an empty SecretView allowlist.",
+      "evidence": "tmp/feature-audit-20261123/security-repro.json"
+    },
+    {
+      "id": "anthropic-credential-priority",
+      "priority": "P1",
+      "status": "confirmed_unfixed",
+      "source": ["llm/providers.py:60", "llm/connection_config.py:44"],
+      "observation": "Global dummy ANTHROPIC_API_KEY replaced an explicit dummy key and was selected for a custom audit.invalid endpoint header; no HTTP request made.",
+      "evidence": "tmp/feature-audit-20261123/runtime-repro.json"
+    },
+    {
+      "id": "windows-update-containment",
+      "priority": "P1",
+      "status": "confirmed_unfixed",
+      "source": ["product_runtime.py:305", "product_runtime.py:342"],
+      "observation": "Drive-qualified ZIP member wrote a marker outside the simulated installation root, entirely within audit tmp.",
+      "precondition": "User imports a controlled or malformed local update ZIP; not a no-interaction remote exploit.",
+      "evidence": "tmp/feature-audit-20261123/security-repro.json"
+    },
+    {
+      "id": "required-signature-unverified",
+      "priority": "P1",
+      "status": "confirmed_unfixed",
+      "source": ["agent_package.py:241", "package_registry.py:217"],
+      "observation": "require_signature=True accepted a dummy signed package without a trusted signing key, returning present-unverified; package was not installed.",
+      "evidence": "tmp/feature-audit-20261123/package-signature-repro.json"
+    },
+    {
+      "id": "timeout-late-side-effect",
+      "priority": "P2",
+      "status": "confirmed_unfixed",
+      "source": ["pipeline_engine.py:7819", "pipeline_engine.py:1774"],
+      "observation": "Non-cooperative callable wrote a temporary marker after NodeTimeout was raised; this does not negate separate Process-node process-tree termination.",
+      "evidence": "tmp/feature-audit-20261123/runtime-repro.json"
+    },
+    {
+      "id": "diagnostic-prompts-flag",
+      "priority": "P2",
+      "status": "confirmed_unfixed",
+      "source": ["product_runtime.py:58", "product_runtime.py:291"],
+      "observation": "Default false prompt inclusion setting did not remove a synthetic prompt from a synthetic log ZIP; system diagnostics probe mocked, no actual logs read or uploaded.",
+      "evidence": "tmp/feature-audit-20261123/diagnostics-repro.json"
+    }
+  ],
+  "additional_static_findings": [
+    "Default Legacy Evolution evaluates Identity text rather than the selected Harness and modified capabilities.",
+    "V2 structural product path imports experiments and commits candidates from simulated failure information without real task benefit gate.",
+    "Data node persistent actions are not classified as side_effecting for inflight checkpoints.",
+    "remove_node_and_bypass rewrites parent edges outside a narrowly declared mutation surface.",
+    "Session and trajectory loading lack stale-response protection.",
+    "File-filter bulk accept ignores per-change failure.",
+    "Background handoff can classify a file exceeding the size limit as deleted.",
+    "Whole-conversation positive training projection can contain locally down-rated assistant content.",
+    "Think-tag filtering lacks cross-delta tag buffering.",
+    "Parallel fail_fast waits for branch completion and budget accounting is aggregated after execution.",
+    "Knowledge catalog accepts formats not accepted by the activation loader.",
+    "Legacy Evolution retains independent provider credential fallback outside the common connection resolver."
+  ],
+  "not_validated_this_round": [
+    "Current real paid-model task quality or provider matrix",
+    "Complete Void/WebView2 user-flow E2E",
+    "Fresh dependency installation and fresh-machine distribution",
+    "Actual SSH/WSL deployment",
+    "Real container image execution",
+    "Windows symlink scenarios requiring additional privilege",
+    "GPU, distributed training and full training framework compatibility",
+    "Official full benchmark scores or general evolution efficacy",
+    "Every plugin and experiment line by line"
+  ],
+  "changes": {
+    "created_deliverables": [
+      "docs/FEATURE_MATURITY_AUDIT_20261123_ZH.md",
+      "docs/FEATURE_MATURITY_VERIFICATION_20261123.json"
+    ],
+    "updated_documentation": ["PROGRESS.md"],
+    "business_code_changed": false,
+    "bugs_fixed": false,
+    "dependencies_installed": false,
+    "git_commit_or_push": false,
+    "external_publication": false,
+    "scratch_materials": "tmp/feature-audit-20261123/"
+  }
+}

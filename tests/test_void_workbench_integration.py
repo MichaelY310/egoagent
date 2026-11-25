@@ -564,7 +564,8 @@ assert.equal(adopt('selected-run', {{running:false, waiting_for_input:false}}), 
         self.assertIn("state.runId = String(result.run_id", chat)
         self.assertIn("/api/execution/state' + runQuery()", chat)
         self.assertIn("const DEFAULT_CODE_HARNESS = 'code_agent_auto'", chat)
-        self.assertIn("const DEFAULT_CODE_IDENTITY = 'adaptive_deepseek_coder'", chat)
+        self.assertNotIn("const DEFAULT_CODE_IDENTITY", chat)
+        self.assertIn("Identity 与运行配置统一在 Build 中保存", extension)
 
     def test_chat_has_no_duplicate_run_tab_and_keeps_compact_stop_control(self):
         extension = (EXTENSION / "extension-v21.js").read_text(encoding="utf-8")
@@ -597,7 +598,9 @@ assert.equal(adopt('selected-run', {{running:false, waiting_for_input:false}}), 
         self.assertIn("initialInput: submittedText", chat)
         self.assertIn("Number(error?.status) !== 404", chat)
         self.assertIn("function markConfigurationChange()", chat)
-        self.assertGreaterEqual(chat.count("markConfigurationChange();"), 4)
+        for selector in ("harnessSelect", "harnessVersionSelect"):
+            self.assertRegex(chat, re.escape(f"$('{selector}').addEventListener('change'")
+                             + r"[^}]*markConfigurationChange\(\);")
         self.assertIn("下一条消息会在当前 Session 中使用新配置", chat)
         self.assertIn("resume_session: resumeSession", chat)
         self.assertIn("initial_input: String(initialInput || '')", chat)
@@ -606,11 +609,13 @@ assert.equal(adopt('selected-run', {{running:false, waiting_for_input:false}}), 
         self.assertIn("sessionConfigs: saved.sessionConfigs", chat)
         self.assertIn("rememberCurrentAgentConfig();", chat)
         self.assertIn("const savedConfig = state.sessionConfigs[sessionConfigKey(runId)]", chat)
-        self.assertIn("同一 Session 可逐轮切换", extension)
+        self.assertIn('id="editSelectedFlow"', extension)
+        self.assertNotIn('id="modeSelect"', extension)
+        self.assertNotIn('id="identitySelect"', extension)
         self.assertIn("String(event.result || '').trim().includes(errorText)", chat)
         self.assertIn("state.bindings = {};", chat)
-        self.assertIn("if (slots.length === 1) state.bindings[slots[0]] = state.identity", chat)
-        self.assertIn("const singleSlot = Object.keys(slots).length === 1", chat)
+        self.assertIn("Object.entries(config.slots || {})", chat)
+        self.assertIn("state.mode = String(config.pipeline?.mode || 'agent')", chat)
 
     def test_builder_and_chat_runs_are_explicitly_isolated_and_sessions_can_be_observed(self):
         app = (ROOT / "harness_editor" / "src" / "App.tsx").read_text(encoding="utf-8")
@@ -630,7 +635,7 @@ assert.equal(adopt('selected-run', {{running:false, waiting_for_input:false}}), 
         self.assertNotIn("Chat 改配置会创建新的 Session", app)
         self.assertIn("<FlowRunViewer rootId={linkedRunId}", app)
         self.assertIn("readFlowObservation", client)
-        self.assertIn("useState<BuilderMode>('build')", app)
+        self.assertIn("useState<BuilderMode>(restoredBuilder.draft?.locked && !explicitInitialNavigation ? 'locked' : 'build')", app)
         self.assertIn("if (!state?.harness) throw new Error('Session 没有记录 Harness')", app)
         self.assertIn("const target = String(runId || '').trim()", app)
         self.assertNotIn("refreshExecutionRuns", app)

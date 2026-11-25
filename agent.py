@@ -222,6 +222,9 @@ class Agent:
         self.load_environments(environments)
         self._load_pinned_capabilities()
 
+        from egoagent_core.tool_library import apply_identity_selection
+        apply_identity_selection(self)
+
         self.hooks = self._load_hooks()
         from tool_pipeline import AgentToolExecutor
         self.tool_executor = AgentToolExecutor(self)
@@ -251,6 +254,8 @@ class Agent:
         self.init_environment()
         self.load_environments(self._extra_environment_inputs)
         self._load_pinned_capabilities()
+        from egoagent_core.tool_library import apply_identity_selection
+        apply_identity_selection(self)
         self.hooks = self._load_hooks()
         return self
 
@@ -1651,7 +1656,7 @@ class Agent:
         if after is None:
             return
         from harness import get_current_run_context
-        from harness_editor.change_tracker import record_binary_change, record_change
+        from egoagent_core.change_tracker import record_binary_change, record_change
 
         root = Path(self.workspace).resolve()
         active_run = get_current_run_context()
@@ -1808,7 +1813,7 @@ class Agent:
         if not target:
             return
         try:
-            from harness_editor.project_rules import get_scoped_agents_prompt
+            from egoagent_core.project_rules import get_scoped_agents_prompt
 
             self.scoped_context_instructions = get_scoped_agents_prompt(
                 str(Path(self.workspace).resolve()),
@@ -1967,7 +1972,7 @@ class Agent:
                     # 变更追踪: 执行后记录变更
                     if _track_file_path is not None:
                         try:
-                            from harness_editor.change_tracker import record_change
+                            from egoagent_core.change_tracker import record_change
                             try:
                                 with open(_track_file_path, 'r', encoding='utf-8', newline='') as _f:
                                     _track_new_content = _f.read()

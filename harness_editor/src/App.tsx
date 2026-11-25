@@ -19,6 +19,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import Sidebar from './components/Sidebar';
+import CookbookRecipe from './components/CookbookRecipe';
 import FlowRunViewer from './components/FlowRunViewer';
 import { configToFlow, layoutFlowNodes } from './flowGraph';
 import RightPanel from './components/RightPanel';
@@ -30,7 +31,7 @@ import PipelineNodeComponent from './nodes/PipelineNode';
 import ConditionEdge from './edges/ConditionEdge';
 import { GraphInteractionContext } from './GraphInteractionContext';
 import * as api from './api/client';
-import { EMBEDDED_IN_IDE, INITIAL_LINK_RUN_ID, INITIAL_TAB, RUNTIME_LABEL, WORKSPACE, isCurrentWorkspace } from './api/runtime';
+import { EMBEDDED_IN_IDE, INITIAL_LINK_RUN_ID, INITIAL_EDIT_HARNESS, INITIAL_EDIT_VERSION, INITIAL_TAB, RUNTIME_LABEL, WORKSPACE, isCurrentWorkspace } from './api/runtime';
 import type { HarnessConfig, PipelineNode, EdgeCondition, OpType, ExecutionState, NodeTrace, BezierKnot } from './types';
 import {
   EVENT_PREFIX,
@@ -43,6 +44,8 @@ import {
 } from './graphSockets';
 import {
   loadWorkbenchSession,
+  builderPanelVisibility,
+  hasRestoredIdeSession,
   publishWorkbenchEvent,
   updateWorkbenchSession,
   type WorkbenchRoute,
@@ -77,6 +80,7 @@ const edgeTypes = { conditionEdge: ConditionEdge };
 // EgoAgent has several data-heavy workbenches. Keep the DAG editor fast by only
 // downloading and evaluating a workbench when the user opens it.
 const IdentityManager = lazy(() => import('./components/IdentityManager'));
+const ToolLibrary = lazy(() => import('./components/ToolLibrary'));
 const EnvironmentManager = lazy(() => import('./components/EnvironmentManager'));
 const SessionExplorer = lazy(() => import('./components/SessionExplorer'));
 const Settings = lazy(() => import('./components/Settings'));
@@ -123,6 +127,8 @@ const IDLE_EXECUTION_STATE: ExecutionState = {
 const STUDIO_TABS: Array<{ id: TabType; icon: string; label: string; detail: string; group: 'primary' | 'manage' | 'system' }> = [
   { id: 'home', icon: '⌂', label: 'Home', detail: '构建、评测、改进与发布', group: 'primary' },
   { id: 'harness', icon: '◇', label: 'Build', detail: 'Identity + EGO + DAG', group: 'primary' },
+  { id: 'identity', icon: '◎', label: 'Identity', detail: '角色、Ego 与能力', group: 'primary' },
+  { id: 'tools', icon: '⚒', label: '工具与 Skills', detail: '查看来源、编辑源码、配置 Identity 能力', group: 'primary' },
   { id: 'tasks', icon: '▦', label: 'Evaluate', detail: '任务、数据集、回放与评分', group: 'primary' },
   { id: 'observe', icon: '◷', label: '运行相簿', detail: '所有入口的实时 Flow、录制与回放', group: 'primary' },
   { id: 'library', icon: '▤', label: 'Library', detail: '发现并复用本地能力', group: 'primary' },
@@ -135,7 +141,6 @@ const STUDIO_TABS: Array<{ id: TabType; icon: string; label: string; detail: str
   { id: 'background', icon: '◉', label: 'Background', detail: '后台 Agent 运行', group: 'manage' },
   { id: 'changes', icon: '±', label: 'Agent Changes', detail: '逐块审阅文件改动', group: 'manage' },
   { id: 'checkpoints', icon: '◷', label: 'Checkpoints', detail: '快照与恢复', group: 'manage' },
-  { id: 'identity', icon: '◎', label: 'Identity', detail: '角色、Ego 与能力', group: 'manage' },
   { id: 'environment', icon: '◈', label: 'Environment', detail: '工具与运行环境', group: 'manage' },
   { id: 'sessions', icon: '▥', label: 'Sessions', detail: '会话与执行记录', group: 'manage' },
   { id: 'flow', icon: '◍', label: 'Heart Flow', detail: '跨项目专注与续接实验', group: 'manage' },
@@ -147,9 +152,10 @@ const DEFAULT_TAB_META = STUDIO_TABS[0];
 const STUDIO_TAB_IDS = new Set<TabType>(STUDIO_TABS.map((item) => item.id));
 
 function readInitialTab(): TabType {
+  const restored = loadWorkbenchSession().route;
+  if (hasRestoredIdeSession() && restored && STUDIO_TAB_IDS.has(restored)) return restored;
   const requested = INITIAL_TAB as TabType | null;
   if (requested && STUDIO_TAB_IDS.has(requested)) return requested;
-  const restored = loadWorkbenchSession().route;
   return restored && STUDIO_TAB_IDS.has(restored) ? restored : 'home';
 }
 
@@ -246,7 +252,7 @@ function clampViewportZoom(zoom: number) {
 }
 
 
-function initialBuilderState(): { config: HarnessConfig; nodes: Node[]; edges: Edge[]; selectedNodeId: string | null; selectedEdgeId: string | null; showOutput: boolean; outputView: 'conversation' | 'timeline' } {
+function initialBuilderState() {
   const stored = loadWorkbenchSession().builder;
   const config = stored?.config?.pipeline?.nodes ? stored.config : DEFAULT_CONFIG;
   const graph = configToFlow(config);
@@ -257,12 +263,13 @@ function initialBuilderState(): { config: HarnessConfig; nodes: Node[]; edges: E
     }));
   }
   return {
+    draft: stored,
     config,
     ...graph,
     selectedNodeId: stored?.selectedNodeId || null,
     selectedEdgeId: stored?.selectedEdgeId || null,
     showOutput: stored?.showOutput === true,
-    outputView: stored?.outputView === 'timeline' ? 'timeline' : 'conversation',
+    outputView: stored?.outputView === 'timeline' ? 'timeline' as const : 'conversation' as const,
   };
 }
 
@@ -381,8 +388,10 @@ export default function App() {
   const restoredBuilderRef = useRef<ReturnType<typeof initialBuilderState> | null>(null);
   if (!restoredBuilderRef.current) restoredBuilderRef.current = initialBuilderState();
   const restoredBuilder = restoredBuilderRef.current;
+  const restoredView = useRef({ session: loadWorkbenchSession(), native: hasRestoredIdeSession() }).current;
+  const explicitInitialNavigation = !restoredView.native && Boolean(INITIAL_EDIT_HARNESS || INITIAL_LINK_RUN_ID);
   const [tab, setTab] = useState<TabType>(readInitialTab);
-  const [observationTarget, setObservationTarget] = useState('');
+  const [observationTarget, setObservationTarget] = useState(restoredView.session.observation?.albumRunId || '');
   const [theme, setTheme] = useState<WorkbenchTheme>(readWorkbenchTheme);
   const [runtimeOnline, setRuntimeOnline] = useState<boolean | null>(null);
   const [config, setConfig] = useState<HarnessConfig>(restoredBuilder.config);
@@ -392,12 +401,12 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(restoredBuilder.selectedNodeId);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(restoredBuilder.selectedEdgeId);
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
-  const [showBuilderPalette, setShowBuilderPalette] = useState(!EMBEDDED_IN_IDE);
-  const [showBuilderInspector, setShowBuilderInspector] = useState(!EMBEDDED_IN_IDE);
+  const [showBuilderPalette, setShowBuilderPalette] = useState(() => builderPanelVisibility(restoredBuilder.draft).palette);
+  const [showBuilderInspector, setShowBuilderInspector] = useState(() => builderPanelVisibility(restoredBuilder.draft).inspector);
   const [harnessList, setHarnessList] = useState<string[]>([]);
   const [harnessCatalog, setHarnessCatalog] = useState<api.HarnessCatalogItem[]>([]);
   const [harnessVersions, setHarnessVersions] = useState<api.HarnessVersion[]>([]);
-  const [selectedHarnessVersion, setSelectedHarnessVersion] = useState('');
+  const [selectedHarnessVersion, setSelectedHarnessVersion] = useState(restoredBuilder.draft?.harnessVersion || '');
   const [latestHarnessVersion, setLatestHarnessVersion] = useState('');
   const [componentList, setComponentList] = useState<api.HarnessCatalogItem[]>([]);
   const [identityList, setIdentityList] = useState<string[]>([]);
@@ -406,7 +415,7 @@ export default function App() {
   // URL linking is transactional: remain an editable draft until both the
   // requested Session state and its exact Harness have loaded successfully.
   // Otherwise a stale/legacy run must never leave a false frozen canvas.
-  const [builderMode, setBuilderMode] = useState<BuilderMode>('build');
+  const [builderMode, setBuilderMode] = useState<BuilderMode>(restoredBuilder.draft?.locked && !explicitInitialNavigation ? 'locked' : 'build');
   const [linkedRunId, setLinkedRunId] = useState('');
   const [historicalReplay, setHistoricalReplay] = useState<{ runId: string; taskId: string } | null>(null);
   const [leaveLinkedDialogOpen, setLeaveLinkedDialogOpen] = useState(false);
@@ -424,8 +433,9 @@ export default function App() {
   const [inputText, setInputText] = useState('');
   const [saveMsg, setSaveMsg] = useState('');
   const [showOutput, setShowOutput] = useState(restoredBuilder.showOutput);
-  const [showMinimap, setShowMinimap] = useState(false);
-  const [showLiveArchitecture, setShowLiveArchitecture] = useState(true);
+  const [showMinimap, setShowMinimap] = useState(restoredBuilder.draft?.showMinimap ?? false);
+  const [showLiveArchitecture, setShowLiveArchitecture] = useState(restoredBuilder.draft?.showLiveArchitecture ?? true);
+  const [viewport, setViewport] = useState(restoredBuilder.draft?.viewport);
   const [autoLayoutOptions, setAutoLayoutOptions] = useState<AutoLayoutOptions>(DEFAULT_AUTO_LAYOUT_OPTIONS);
   const [autoLayoutReport, setAutoLayoutReport] = useState<{ before: LayoutMetrics; after: LayoutMetrics } | null>(null);
   const [outputView, setOutputView] = useState<'conversation' | 'timeline'>(restoredBuilder.outputView);
@@ -1292,6 +1302,8 @@ export default function App() {
       cfg.pipeline = cfg.pipeline || { start: '', max_steps: 100, workspace_preview: false, nodes: {} };
       setConfig(cfg);
       setHarnessVersions(versionIndex.versions || []);
+      if (cfg.cookbook) setShowLiveArchitecture(false);
+      setViewport(undefined);
       setLatestHarnessVersion(versionIndex.latest || '');
       setSelectedHarnessVersion(resolvedVersion || String((cfg as any)._flow_version || ''));
       const { nodes, edges } = configToFlow(cfg);
@@ -1320,6 +1332,8 @@ export default function App() {
     const next = structuredClone(DEFAULT_CONFIG);
     setHistoricalReplay(null);
     setConfig(next);
+    setViewport(undefined);
+    setSelectedHarnessVersion('');
     setFlowNodes([]);
     setFlowEdges([]);
     graphHistoryPast.current = [];
@@ -1365,6 +1379,7 @@ export default function App() {
       setBuilderMode('linked');
       setLeaveLinkedDialogOpen(false);
       setLinkedRunId(target);
+      setViewport(undefined);
       activeExecutionRunId.current = target;
       runtimeRunIds.current = new Set([target]);
       setRuntimeRuns([]);
@@ -1970,24 +1985,7 @@ export default function App() {
       setConfig(updated);
       const savedForRun = await api.saveHarness(updated.name, updated);
 
-      const agents: Record<string, string> = {};
-      const missingSlots: string[] = [];
-      Object.entries(updated.slots).forEach(([slotName, slotDef]: [string, any]) => {
-        const identity = slotDef.identity;
-        if (!identity && slotDef.required) {
-          missingSlots.push(slotName);
-        }
-        agents[slotName] = `identity/${identity || slotName}`;
-      });
-      if (missingSlots.length > 0) {
-        const message = `请先绑定 slot: ${missingSlots.join(', ')}（从右侧面板拖放 Identity）`;
-        setSaveMsg(message);
-        setShowOutput(true);
-        chatMsgId.current += 1;
-        setChatMessages((previous) => [...previous, { id: chatMsgId.current, agent: 'system', text: `无法启动：${message}`, tools: [], blocked: [] }]);
-        return;
-      }
-      const started = await api.startExecution(updated.name, agents, startPaused ? 'paused' : 'auto', String(savedForRun.version || 'latest'));
+      const started = await api.startExecution(updated.name, startPaused ? 'paused' : 'auto', String(savedForRun.version || 'latest'));
       const runId = String(started.run_id || started.state?.run_id || '');
       builderExecutionRunId.current = runId || undefined;
       activeExecutionRunId.current = runId || undefined;
@@ -2146,6 +2144,17 @@ export default function App() {
         setTab('harness');
         void enterLinkedSession(String(message.runId));
       }
+      if (message.type === 'edit-flow' && message.harness) {
+        if (execState.running && builderMode !== 'linked') {
+          setSaveMsg('请先停止独立试跑，再编辑其他 Flow。');
+          return;
+        }
+        if (!window.confirm('在 Build 中打开此 Flow 的已保存版本？当前未保存的草稿将被替换；不会停止 Chat Session。')) return;
+        setTab('harness');
+        setBuilderMode('build');
+        setShowBuilderInspector(true);
+        void loadConfig(String(message.harness), String(message.version || 'latest'));
+      }
       if (message.type === 'context-handoff' && Array.isArray(message.items)) {
         const items = message.items as IdeContextItem[];
         updateWorkbenchSession({ handoff: { items, updatedAt: Date.now() } });
@@ -2155,15 +2164,59 @@ export default function App() {
     };
     window.addEventListener('message', receiveShellMessage);
     return () => window.removeEventListener('message', receiveShellMessage);
-  }, [enterLinkedSession]);
+  }, [enterLinkedSession, loadConfig, execState.running, builderMode]);
 
-  const initialLinkHandled = useRef(false);
+  const initialEditHandled = useRef(restoredView.native);
+  useEffect(() => {
+    if (initialEditHandled.current || !INITIAL_EDIT_HARNESS) return;
+    initialEditHandled.current = true;
+    setTab('harness');
+    setBuilderMode('build');
+    setShowBuilderInspector(true);
+    void loadConfig(INITIAL_EDIT_HARNESS, INITIAL_EDIT_VERSION);
+  }, [loadConfig]);
+
+  const initialLinkHandled = useRef(restoredView.native);
   useEffect(() => {
     if (initialLinkHandled.current || !INITIAL_LINK_RUN_ID) return;
     initialLinkHandled.current = true;
     setTab('harness');
     void enterLinkedSession(INITIAL_LINK_RUN_ID);
   }, [enterLinkedSession]);
+
+  const [restoringObservation, setRestoringObservation] = useState(!explicitInitialNavigation && Boolean(
+    restoredView.session.observation?.linkedRunId || restoredView.session.observation?.replayRunId,
+  ));
+  const observationRestoreStarted = useRef(false);
+  useEffect(() => {
+    if (!restoringObservation || observationRestoreStarted.current) return;
+    observationRestoreStarted.current = true;
+    const observation = restoredView.session.observation;
+    // Reattach read-only to the exact recorded run. Never call execution/start.
+    const restore = observation?.linkedRunId ? enterLinkedSession(observation.linkedRunId)
+      : openTaskRunReplay(observation!.replayRunId!);
+    void restore.finally(() => setRestoringObservation(false));
+  }, [restoringObservation, restoredView, enterLinkedSession, openTaskRunReplay]);
+
+  useEffect(() => {
+    if (restoringObservation) return;
+    updateWorkbenchSession({ observation: {
+      linkedRunId: builderMode === 'linked' ? linkedRunId : '',
+      replayRunId: historicalReplay?.runId || '',
+      albumRunId: observationTarget,
+    } });
+  }, [restoringObservation, builderMode, linkedRunId, historicalReplay, observationTarget]);
+
+  useEffect(() => {
+    // Refresh version choices without reloading the graph over a restored draft.
+    let cancelled = false;
+    void api.listHarnessVersions(config.name).then((index) => {
+      if (cancelled) return;
+      setHarnessVersions(index.versions || []);
+      setLatestHarnessVersion(index.latest || '');
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [config.name]);
 
   const persistBuilderDraft = useCallback(() => {
     const positions = Object.fromEntries(flowNodes.map((node) => [node.id, node.position]));
@@ -2175,23 +2228,39 @@ export default function App() {
         selectedEdgeId,
         showOutput,
         outputView,
+        harnessVersion: selectedHarnessVersion,
+        viewport,
+        showPalette: showBuilderPalette,
+        showInspector: showBuilderInspector,
+        panelLayoutVersion: 1,
+        showMinimap,
+        showLiveArchitecture,
+        locked: builderMode === 'locked',
       },
     });
-  }, [config, flowNodes, flowEdges, selectedNodeId, selectedEdgeId, showOutput, outputView]);
+  }, [config, flowNodes, flowEdges, selectedNodeId, selectedEdgeId, showOutput, outputView,
+    selectedHarnessVersion, viewport, showBuilderPalette, showBuilderInspector, showMinimap, showLiveArchitecture, builderMode]);
 
   useEffect(() => {
-    if (builderMode !== 'build' || execState.running) return;
+    if (builderMode === 'linked' || historicalReplay || restoringObservation || execState.running) return;
     const timer = window.setTimeout(persistBuilderDraft, 350);
     return () => window.clearTimeout(timer);
-  }, [builderMode, execState.running, persistBuilderDraft]);
+  }, [builderMode, historicalReplay, restoringObservation, execState.running, persistBuilderDraft]);
 
   useEffect(() => {
-    const persistWhenHidden = () => {
-      if (document.visibilityState === 'hidden' && builderMode === 'build' && !execState.running) persistBuilderDraft();
+    const flushDraft = () => {
+      if (builderMode !== 'linked' && !historicalReplay && !restoringObservation && !execState.running) persistBuilderDraft();
     };
+    const persistWhenHidden = () => { if (document.visibilityState === 'hidden') flushDraft(); };
     document.addEventListener('visibilitychange', persistWhenHidden);
-    return () => document.removeEventListener('visibilitychange', persistWhenHidden);
-  }, [builderMode, execState.running, persistBuilderDraft]);
+    window.addEventListener('pagehide', flushDraft);
+    window.addEventListener('beforeunload', flushDraft);
+    return () => {
+      document.removeEventListener('visibilitychange', persistWhenHidden);
+      window.removeEventListener('pagehide', flushDraft);
+      window.removeEventListener('beforeunload', flushDraft);
+    };
+  }, [builderMode, historicalReplay, restoringObservation, execState.running, persistBuilderDraft]);
 
   useEffect(() => {
     publishWorkbenchEvent('runtime-status', {
@@ -2329,7 +2398,7 @@ export default function App() {
       {tab === 'harness' && (
         <>
           {builderMode === 'build' && showBuilderPalette && <Sidebar components={componentList} contracts={dagContracts} />}
-          <div className={`flow-area builder-${builderMode}`} ref={reactFlowWrapper}>
+          <div className={`flow-area builder-${builderMode}${config.cookbook ? ' has-cookbook' : ''}`} ref={reactFlowWrapper}>
             <div className="builder-context-bar" role="region" aria-label="Build 锁定状态">
               {builderMode === 'linked' ? (
                 <div className="builder-linked-identity" role="status">
@@ -2382,15 +2451,29 @@ export default function App() {
                 {builderMode === 'linked' ? <><i>●</i><span><b>实时观察</b><small>输入与控制仍属于原 Chat</small></span></> : historicalReplay ? <><i>◷</i><span><b>历史回放</b><small>真实节点输入输出与当时 Flow 版本</small></span></> : <><i>{builderMode === 'locked' ? '■' : '✦'}</i><span><b>{builderMode === 'locked' ? '只运行' : '独立草稿'}</b><small>{builderExecutionRunId.current ? `独立 Run ${builderExecutionRunId.current.slice(-8)}` : '与 Chat Session 分离'}</small></span></>}
               </div>
             </div>
+            {config.cookbook && <CookbookRecipe key={config.name} recipe={config.cookbook}
+              disabled={builderMode !== 'build' || execState.running}
+              onOpen={(name) => void loadConfig(name)} />}
+            <div className="builder-canvas-stage">
             {builderMode === 'linked' ? <FlowRunViewer rootId={linkedRunId} onAlbum={() => setTab('observe')} /> : <ReactFlowProvider>
               <GraphInteractionContext.Provider value={graphInteraction}>
               <ReactFlow
+                key={config.cookbook ? `${config.name}:${selectedHarnessVersion}` : 'builder'}
                 nodes={flowNodes}
                 edges={flowEdges}
                 onNodesChange={builderMode === 'build' ? onNodesChange : (changes) => onNodesChange(changes.filter((change) => change.type === 'dimensions'))}
                 onEdgesChange={builderMode === 'build' ? onEdgesChange : undefined}
                 onConnect={builderMode === 'build' ? onConnect : undefined}
-                onInit={setRfInstance}
+                onInit={(instance) => {
+                  setRfInstance(instance);
+                  if (config.cookbook && !viewport) {
+                    // Nodes are measured after mount; fitting an empty canvas
+                    // first otherwise leaves a new recipe zoomed to 200%.
+                    window.setTimeout(() => instance.fitView({ padding: 0.2, maxZoom: 1 }), 120);
+                  }
+                }}
+                defaultViewport={viewport}
+                onMoveEnd={(_event, next) => setViewport(next)}
                 onDrop={builderMode === 'build' ? onDrop : undefined}
                 onDragOver={builderMode === 'build' ? onDragOver : undefined}
                 onNodeClick={onNodeClick}
@@ -2414,7 +2497,7 @@ export default function App() {
                 // edited through explicit Blender-style reroute sockets.
                 zoomOnDoubleClick={false}
                 onlyRenderVisibleElements={flowNodes.length > 200}
-                fitView
+                fitView={!viewport}
                 connectionLineType={ConnectionLineType.Bezier}
                 deleteKeyCode={[]}
               >
@@ -2816,6 +2899,7 @@ export default function App() {
                 <span>连线: {flowEdges.length}</span>
               </div>
             )}
+            </div>
           </div>
 
           {builderMode === 'build' && showBuilderInspector && <RightPanel
@@ -2868,6 +2952,10 @@ export default function App() {
 
       {tab === 'library' && (
         <div className="studio-page studio-page-scroll"><CapabilityLibrary /></div>
+      )}
+
+      {tab === 'tools' && (
+        <div className="studio-page studio-page-scroll"><ToolLibrary /></div>
       )}
 
       {tab === 'changes' && (

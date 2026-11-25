@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from agent import Agent
 from harness import Harness
-from harness_editor import agent_creator
+from egoagent_core import agent_creator
 
 
 ROOT = Path(__file__).resolve().parents[1]

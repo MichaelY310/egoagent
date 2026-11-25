@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from harness_editor.change_tracker import (
+from egoagent_core.change_tracker import (
     accept_change,
     apply_text_change,
     clear_changes,

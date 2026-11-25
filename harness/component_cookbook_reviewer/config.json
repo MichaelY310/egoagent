@@ -1,0 +1,80 @@
+{
+  "name": "component_cookbook_reviewer",
+  "description": "独立上下文复核器；只接收本次请求，返回结构化建议，不冒充已运行工具。",
+  "catalog": {
+    "category": "example",
+    "visibility": "internal"
+  },
+  "component": {
+    "display_name": "Cookbook · 复核子流程",
+    "category": "Cookbook",
+    "share_session": false,
+    "inputs": {
+      "request": {
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "仅传入本次请求。"
+      }
+    },
+    "outputs": {
+      "review": {
+        "path": "review",
+        "schema": {
+          "type": "object"
+        }
+      }
+    }
+  },
+  "slots": {
+    "reviewer": {
+      "required": true,
+      "identity": "cookbook_mentor",
+      "description": "复核角色"
+    }
+  },
+  "prompts": {
+    "review": {
+      "default": "复核用户请求，给出简短建议。你未运行任何工具，不得声称验证过文件。只返回 JSON 对象，字段 approach(字符串), checks(字符串数组), uncertainty(字符串)。用户请求：\\n{request}"
+    }
+  },
+  "return_mode": "last",
+  "pipeline": {
+    "start": "review",
+    "max_steps": 5,
+    "workspace_preview": false,
+    "nodes": {
+      "review": {
+        "id": "review",
+        "op": "模型",
+        "agent": "reviewer",
+        "prompt": "review",
+        "parse_as": "json_object",
+        "max_tokens": 700,
+        "temperature": 0.2,
+        "output_var": "review",
+        "position": {
+          "x": 40,
+          "y": 100
+        },
+        "edges": [
+          {
+            "condition": "has_text",
+            "to": "done"
+          }
+        ]
+      },
+      "done": {
+        "id": "done",
+        "op": "结束",
+        "value": "$ctx.review",
+        "position": {
+          "x": 400,
+          "y": 100
+        },
+        "edges": []
+      }
+    }
+  }
+}

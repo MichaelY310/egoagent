@@ -43,13 +43,19 @@ test('legacy events missing only version are recovered for this exact run', () =
   state.runId = '';
   assert.equal(context.executionMatchesSelection(scope), false);
 });
-test('never mix a different session, workspace, version, mode, identity or builder', () => {
+test('never mix a different session, workspace, version, harness or builder', () => {
   const {context, state, scope} = fixture();
   for (const mismatch of [{run_id:'other'}, {workspace:'C:/other'}, {harness_version:'v2'},
-    {mode:'agent'}, {agents:{agent:'other'}}, {surface:'builder'}, {harness:'other'}]) {
+    {surface:'builder'}, {harness:'other'}]) {
     context.handleEvent({type:'token',scope:{...scope,...mismatch},data:{text:'wrong'}});
   }
   assert.equal(state.messages.length, 0);
+});
+
+test('historical overrides remain visible for the exact recorded run', () => {
+  const {context, state, scope} = fixture();
+  context.handleEvent({type:'token',scope:{...scope,mode:'plan',agents:{agent:'test_bot'}},data:{text:'historical'}});
+  assert.equal(state.messages[0].text, 'historical');
 });
 test('healthy WebSocket still reconciles dropped events, without rapid full polling', () => {
   const {context, state, polls} = fixture();

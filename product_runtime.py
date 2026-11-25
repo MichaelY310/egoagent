@@ -244,10 +244,7 @@ def configure_provider(root: Path | str, payload: dict[str, Any]) -> dict[str, A
             save_local_secret(root, secret_name, api_key)
         elif not os.environ.get(secret_name):
             raise ProductRuntimeError(f"API key missing; enter it once or set {secret_name}")
-    try:
-        from harness_editor.model_router import assign_model_role, get_role_assignments, upsert_model_profile
-    except ImportError:
-        from model_router import assign_model_role, get_role_assignments, upsert_model_profile
+    from egoagent_core.model_router import assign_model_role, get_role_assignments, upsert_model_profile
     profile_id = re.sub(r"[^a-z0-9_-]+", "-", str(payload.get("id") or f"{provider}-{model}").lower()).strip("-")
     roles = list(payload.get("roles") or ["chat", "tool_use", "edit", "apply", "autocomplete", "reasoning", "judge", "evolver"])
     public = upsert_model_profile({

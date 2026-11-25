@@ -1,0 +1,280 @@
+{
+  "name": "cookbook_04_approval",
+  "description": "04 · 人工审批与安全写入。新增 /save 分支：预览上次回答，批准才写 .egoagent/cookbook/answer.txt；拒绝不写。",
+  "catalog": {
+    "category": "example",
+    "visibility": "public",
+    "display_name": "Cookbook 04 · 人工审批与安全写入"
+  },
+  "tags": [
+    "cookbook"
+  ],
+  "slots": {
+    "agent": {
+      "required": true,
+      "identity": "cookbook_mentor",
+      "description": "本关主助手；在 Build 中更换 Identity。"
+    }
+  },
+  "prompts": {},
+  "return_mode": "last",
+  "pipeline": {
+    "start": "input",
+    "max_steps": 240,
+    "max_node_steps": 1200,
+    "workspace_preview": false,
+    "mode": "agent",
+    "event_log": true,
+    "permissions": {
+      "defaults": {
+        "read": "allow",
+        "write": "allow",
+        "process": "deny",
+        "network": "deny",
+        "secret": "deny",
+        "mutation": "deny"
+      }
+    },
+    "context": {
+      "request": ""
+    },
+    "nodes": {
+      "input": {
+        "id": "input",
+        "op": "输入",
+        "reuse_last": true,
+        "outputs": {
+          "text": "request"
+        },
+        "position": {
+          "x": 40,
+          "y": 100
+        },
+        "edges": [
+          {
+            "condition": "input",
+            "to": "save_requested"
+          }
+        ]
+      },
+      "infer": {
+        "id": "infer",
+        "op": "Agent",
+        "agent": "agent",
+        "tools": "all",
+        "hidden_tools": [
+          "search_capabilities",
+          "activate_capability"
+        ],
+        "max_tool_rounds": 6,
+        "instructions": "只处理用户当前请求。问候只简短回应，不搜文件。不认领 README 中的任务。只有工具真实返回的结果才算证据。工具失败要明确说明。",
+        "position": {
+          "x": 420,
+          "y": 100
+        },
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "tools"
+          },
+          {
+            "condition": "has_text",
+            "to": "remember_answer"
+          }
+        ]
+      },
+      "tools": {
+        "id": "tools",
+        "op": "工具",
+        "agent": "agent",
+        "position": {
+          "x": 780,
+          "y": 100
+        },
+        "edges": [
+          {
+            "condition": "default",
+            "to": "infer"
+          }
+        ]
+      },
+      "save_requested": {
+        "id": "save_requested",
+        "op": "条件",
+        "expression": "ctx.request == '/save'",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "has_answer"
+          },
+          {
+            "condition": "false",
+            "to": "infer"
+          }
+        ],
+        "position": {
+          "x": 40,
+          "y": 320
+        }
+      },
+      "has_answer": {
+        "id": "has_answer",
+        "op": "条件",
+        "expression": "bool(session.state.get('cookbook_last_answer'))",
+        "edges": [
+          {
+            "condition": "true",
+            "to": "approve_save"
+          },
+          {
+            "condition": "false",
+            "to": "no_answer"
+          }
+        ],
+        "position": {
+          "x": 400,
+          "y": 500
+        }
+      },
+      "approve_save": {
+        "id": "approve_save",
+        "op": "审批",
+        "prompt_text": "是否把以下上次回答写入 .egoagent/cookbook/answer.txt？已有文件将覆盖。",
+        "data": "$session.state.cookbook_last_answer",
+        "editable": false,
+        "default": "rejected",
+        "edges": [
+          {
+            "condition": "approved",
+            "to": "save_answer"
+          },
+          {
+            "condition": "rejected",
+            "to": "save_rejected"
+          }
+        ],
+        "position": {
+          "x": 760,
+          "y": 500
+        }
+      },
+      "save_answer": {
+        "id": "save_answer",
+        "op": "工作区",
+        "action": "write_text",
+        "path": ".egoagent/cookbook/answer.txt",
+        "value": "$session.state.cookbook_last_answer",
+        "overwrite": true,
+        "edges": [
+          {
+            "condition": "default",
+            "to": "saved"
+          }
+        ],
+        "position": {
+          "x": 1120,
+          "y": 500
+        }
+      },
+      "saved": {
+        "id": "saved",
+        "op": "输出",
+        "value": "已按你的批准保存到 .egoagent/cookbook/answer.txt。",
+        "record": true,
+        "edges": [
+          {
+            "condition": "default",
+            "to": "input"
+          }
+        ],
+        "position": {
+          "x": 1480,
+          "y": 500
+        },
+        "continue": true
+      },
+      "save_rejected": {
+        "id": "save_rejected",
+        "op": "输出",
+        "value": "已拒绝，本次没有写入文件。",
+        "record": true,
+        "edges": [
+          {
+            "condition": "default",
+            "to": "input"
+          }
+        ],
+        "position": {
+          "x": 1120,
+          "y": 730
+        },
+        "continue": true
+      },
+      "no_answer": {
+        "id": "no_answer",
+        "op": "输出",
+        "value": "还没有可保存的回答；先提问，等回答后再发 /save。",
+        "record": true,
+        "edges": [
+          {
+            "condition": "default",
+            "to": "input"
+          }
+        ],
+        "position": {
+          "x": 760,
+          "y": 850
+        },
+        "continue": true
+      },
+      "remember_answer": {
+        "id": "remember_answer",
+        "op": "数据",
+        "action": "set",
+        "scope": "session",
+        "key": "cookbook_last_answer",
+        "value": "$node.infer.text",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "input"
+          }
+        ],
+        "position": {
+          "x": 1120,
+          "y": 100
+        }
+      }
+    }
+  },
+  "cookbook": {
+    "step": 4,
+    "total": 24,
+    "title": "人工审批与安全写入",
+    "added": "新增 /save 分支：预览上次回答，批准才写 .egoagent/cookbook/answer.txt；拒绝不写。",
+    "try": "先问：3 件19.9元打九折多少钱？\n等回答后单独发送：/save",
+    "observe": "先点拒绝确认无文件，再 /save 并批准；其余路径仍只读，不给模型 shell。",
+    "examples": [
+      {
+        "label": "1 · 先得到回答",
+        "text": "用 quote_total 算一下：3 件，每件 19.9 元，打九折。"
+      },
+      {
+        "label": "2 · 等回答后发送，先拒绝一次",
+        "text": "/save"
+      },
+      {
+        "label": "3 · 再发送，这次批准",
+        "text": "/save"
+      }
+    ],
+    "previous": "cookbook_03_identity",
+    "next": "cookbook_05_subflow",
+    "notes": "",
+    "chapter": "基础与上下文",
+    "based_on": "cookbook_03_identity",
+    "sources": [
+      "https://github.com/anthropics/claude-cookbooks/tree/main/claude_agent_sdk"
+    ]
+  }
+}

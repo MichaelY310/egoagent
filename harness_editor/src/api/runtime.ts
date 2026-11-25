@@ -10,6 +10,9 @@ declare global {
       runtimeLabel?: string;
       tab?: string;
       linkRunId?: string;
+      editHarness?: string;
+      editVersion?: string;
+      workbenchSession?: unknown;
     };
   }
 }
@@ -28,6 +31,8 @@ export const WS_BASE = trimTrailingSlash(
 );
 export const INITIAL_TAB = bootstrap.tab || query.get('tab') || '';
 export const INITIAL_LINK_RUN_ID = bootstrap.linkRunId || query.get('link_run') || '';
+export const INITIAL_EDIT_HARNESS = bootstrap.editHarness || query.get('edit_harness') || '';
+export const INITIAL_EDIT_VERSION = bootstrap.editVersion || query.get('edit_version') || 'latest';
 export const EMBEDDED_IN_IDE = Boolean(window.__EGOAGENT_WORKBENCH__) || query.get('embed') === '1';
 
 export function canonicalWorkspace(value: unknown): string {

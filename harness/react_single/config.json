@@ -1,50 +1,99 @@
 {
-    "name": "react_single",
-    "description": "Single agent ReAct loop. 用户输入 → 推理 → 有工具则执行后继续推理，无工具则等待下一轮输入。",
-    "slots": {
-        "agent": {
-            "description": "The main agent that interacts with the user",
-            "required": true
-        }
-    },
-    "return_mode": "all",
-    "pipeline": {
-        "start": "wait_input",
-        "max_steps": 100,
-        "nodes": {
-            "wait_input": {
-                "op": "等待输入",
-                "edges": [
-                    {
-                        "condition": "input",
-                        "to": "infer"
-                    }
-                ]
-            },
-            "infer": {
-                "op": "推理",
-                "agent": "agent",
-                "edges": [
-                    {
-                        "condition": "has_tool_calls",
-                        "to": "exec_tools"
-                    },
-                    {
-                        "condition": "has_text",
-                        "to": "wait_input"
-                    }
-                ]
-            },
-            "exec_tools": {
-                "op": "执行工具",
-                "agent": "agent",
-                "edges": [
-                    {
-                        "condition": "default",
-                        "to": "infer"
-                    }
-                ]
-            }
-        }
+  "name": "react_single",
+  "description": "Single agent ReAct loop. 用户输入 → 推理 → 有工具则执行后继续推理，无工具则等待下一轮输入。",
+  "slots": {
+    "agent": {
+      "description": "The main agent that interacts with the user",
+      "required": true,
+      "identity": "dante"
     }
+  },
+  "return_mode": "all",
+  "pipeline": {
+    "start": "wait_input",
+    "max_steps": 100,
+    "nodes": {
+      "wait_input": {
+        "op": "等待输入",
+        "edges": [
+          {
+            "condition": "input",
+            "to": "infer",
+            "source_port": "input",
+            "target_port": "flow",
+            "route": "bezier",
+            "reroutes": [],
+            "channel_offset": 0,
+            "curvature": 0.72,
+            "label_offset": 0
+          }
+        ],
+        "id": "wait_input",
+        "editor_position": {
+          "x": 80,
+          "y": 78
+        },
+        "inputs": {}
+      },
+      "infer": {
+        "op": "推理",
+        "agent": "agent",
+        "edges": [
+          {
+            "condition": "has_tool_calls",
+            "to": "exec_tools",
+            "source_port": "has_tool_calls",
+            "target_port": "flow",
+            "route": "bezier",
+            "reroutes": [],
+            "channel_offset": 0,
+            "curvature": 0.72,
+            "label_offset": 0
+          },
+          {
+            "condition": "has_text",
+            "to": "wait_input",
+            "source_port": "has_text",
+            "target_port": "flow",
+            "route": "bezier",
+            "reroutes": [],
+            "channel_offset": 0,
+            "curvature": 0.72,
+            "label_offset": 0
+          }
+        ],
+        "id": "infer",
+        "editor_position": {
+          "x": 389.3296903460838,
+          "y": -97.8287795992714
+        },
+        "inputs": {}
+      },
+      "exec_tools": {
+        "op": "执行工具",
+        "agent": "agent",
+        "edges": [
+          {
+            "condition": "default",
+            "to": "infer",
+            "source_port": "default",
+            "target_port": "flow",
+            "route": "bezier",
+            "reroutes": [],
+            "channel_offset": 0,
+            "curvature": 0.72,
+            "label_offset": 0
+          }
+        ],
+        "id": "exec_tools",
+        "editor_position": {
+          "x": 680,
+          "y": 78
+        },
+        "inputs": {}
+      }
+    },
+    "data_links": []
+  },
+  "prompts": {}
 }

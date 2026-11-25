@@ -26,6 +26,7 @@
   },
   "activationEvents": [
     "onView:egoagent.dagChat",
+    "onWebviewPanel:egoagent.workbench",
     "onCommand:egoagent.openWorkbench",
     "onCommand:egoagent.openStudio",
     "onStartupFinished"

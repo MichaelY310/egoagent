@@ -41,17 +41,11 @@ button.danger { color: var(--vscode-errorForeground); border: 1px solid color-mi
 select, input[type="search"] { min-width: 0; width: 100%; color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border); padding: 4px 6px; outline: none; }
 select:focus, textarea:focus, input:focus, .composer-input:focus { border-color: var(--vscode-focusBorder); }
 .harness-options { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--vscode-descriptionForeground); font-size: 10px; }
-.harness-options label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
-.harness-options input { width: auto; margin: 0; }
+.harness-options button { flex-shrink: 0; font-size: 10px; }
 .harness-meta { margin: 6px 0; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.4; }
+.harness-meta.configuration-warning { color: var(--vscode-editorWarning-foreground, #b77700); }
 details { border-top: 1px solid color-mix(in srgb, var(--vscode-widget-border) 55%, transparent); margin-top: 8px; }
 summary { padding: 7px 0 4px; cursor: pointer; color: var(--vscode-foreground); font-weight: 600; font-size: 11px; }
-.slot-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px; align-items: center; margin: 4px 0; font-size: 11px; }
-.slot-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dag-nodes { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 0 2px; }
-.dag-node { padding: 3px 6px; border: 1px solid var(--vscode-widget-border); border-radius: 10px; color: var(--vscode-descriptionForeground); font-size: 10px; }
-.dag-node.entered { color: #8bda9a; border-color: #357342; }
-.dag-node.current { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border-color: transparent; }
 
 .session-strip { display: flex; align-items: center; gap: 4px; min-height: 31px; padding: 3px 8px; border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-widget-border)); background: color-mix(in srgb, var(--vscode-editor-background) 40%, transparent); }
 .session-tabs { display: flex; flex: 1; min-width: 0; gap: 4px; overflow-x: auto; scrollbar-width: thin; }
@@ -310,3 +304,8 @@ h3 { margin: 15px 0 6px; font-size: 11px; text-transform: uppercase; letter-spac
 .approval-controls button.automatic { color: var(--vscode-editorWarning-foreground, #b07700); border-color: currentColor; }
 #approvalModeDialog { max-width: min(440px, 85vw); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); border: 1px solid var(--vscode-widget-border, #888); border-radius: 8px; padding: 20px; line-height: 1.6; }
 #approvalModeDialog::backdrop { background: #0006; }
+/* The Agent's project remains visible even when only Build is open. */
+.chat-workspace { display:flex; align-items:center; gap:8px; padding:5px 8px; color:var(--vscode-descriptionForeground); font-size:11px; border-bottom:1px solid var(--vscode-panel-border); }
+.chat-workspace > span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chat-workspace > button { flex-shrink:0; font:inherit; padding:3px 7px; color:var(--vscode-button-foreground); background:var(--vscode-button-background); border:0; border-radius:3px; cursor:pointer; }
+.chat-workspace.missing { color:var(--vscode-editorWarning-foreground); }

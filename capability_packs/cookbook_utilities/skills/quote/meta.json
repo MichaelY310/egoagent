@@ -1,0 +1,32 @@
+{
+  "type": "function",
+  "name": "quote_total",
+  "title": "报价计算器",
+  "description": "Compute an exact quote: quantity × unit_price, then discount_percent. Pure calculation, no files or network.",
+  "permissions": ["read"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "quantity": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000000
+      },
+      "unit_price": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1000000000
+      },
+      "discount_percent": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "default": 0
+      }
+    },
+    "required": [
+      "quantity",
+      "unit_price"
+    ]
+  }
+}

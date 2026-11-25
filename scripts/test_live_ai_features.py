@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from harness_editor.ai_service import get_ai_status, run_ai_operation
+from egoagent_core.ai_service import get_ai_status, run_ai_operation
 from llm.custom_llm import CustomLLM
 
 
@@ -70,7 +70,7 @@ def main():
     print(f"REVIEW ok issues={len(review['issues'])}")
 
     commit = run_ai_operation("commit-message", {
-        "changes": "modified llm/custom_llm.py\nadded harness_editor/ai_service.py\nmodified void_extension/egoagent-dag-chat/extension-v12.js",
+        "changes": "modified llm/custom_llm.py\nadded egoagent_core/ai_service.py\nmodified void_extension/egoagent-dag-chat/extension-v12.js",
     })
     require(":" in commit.get("message", ""), "commit message was not conventional")
     print(f"COMMIT_MESSAGE ok value={commit['message']}")

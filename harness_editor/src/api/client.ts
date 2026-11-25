@@ -295,11 +295,10 @@ export async function listExecutionRuns(): Promise<{ runs: import('../types').Ex
   return request('GET', `/api/execution/runs${query}`);
 }
 
-export async function startExecution(harness: string, agents: Record<string, string>, debugMode: 'auto' | 'paused' = 'auto', harnessVersion = 'latest') {
+export async function startExecution(harness: string, debugMode: 'auto' | 'paused' = 'auto', harnessVersion = 'latest') {
   return request("POST", "/api/execution/start", {
     harness,
     harness_version: harnessVersion,
-    agents,
     debug_mode: debugMode,
     surface: 'builder',
     workspace: WORKSPACE || undefined,
@@ -460,6 +459,22 @@ export type CapabilityItem = {
 export async function listCapabilities(kind = ''): Promise<{ items: CapabilityItem[]; stats: Record<string, any>; pinned: string[] }> {
   return request("POST", "/api/capabilities/list", { workspace: WORKSPACE || undefined, kind: kind || undefined, limit: 2000 });
 }
+
+export type StartupCapabilities = { version: 1; tools: string[] } | null;
+export type ToolLibraryItem = {
+  id: string; ref: string; name: string; description: string; type: 'tool' | 'skill'; source: string;
+  path: string; entry_file: string | null; files: { name: string; path: string }[];
+  parameters: Record<string, unknown>; usable: boolean; problem: string; usage_count: number;
+};
+export type IdentityCapabilities = {
+  identity: string; selection: StartupCapabilities; defaults: string[]; revision: string;
+};
+export const listToolLibrary = (refresh = false): Promise<{ items: ToolLibraryItem[] }> =>
+  request('POST', '/api/tool-library/list', { workspace: WORKSPACE || undefined, refresh });
+export const readIdentityCapabilities = (identity: string): Promise<IdentityCapabilities> =>
+  request('POST', '/api/tool-library/identity', { workspace: WORKSPACE || undefined, identity });
+export const saveIdentityCapabilities = (identity: string, selection: StartupCapabilities, revision: string): Promise<IdentityCapabilities> =>
+  request('POST', '/api/tool-library/save', { workspace: WORKSPACE || undefined, identity, selection, revision });
 
 export async function searchCapabilities(query: string, kinds: string[] = [], limit = 50, mode: 'auto' | 'hybrid' | 'semantic' | 'lexical' = 'auto') {
   return request("POST", "/api/capabilities/search", { workspace: WORKSPACE || undefined, query, kinds, limit, mode });
